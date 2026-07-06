@@ -2,8 +2,21 @@
  * Tauri adapter — implements PiDesktopApi by calling our Rust backend via invoke().
  */
 
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+// Access Tauri IPC via window.__TAURI_INTERNALS__ (set by Tauri before any script runs)
+function getTauriWindow() {
+  return (window as any).__TAURI_INTERNALS__;
+}
+
+async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const win = getTauriWindow();
+  if (!win) throw new Error("Tauri IPC not available (window.__TAURI_INTERNALS__ missing)");
+  return win.invoke(cmd, args) as Promise<T>;
+}
+
+async function tauriListen<T>(event: string, handler: (event: { payload: T }) => void) {
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen(event, handler);
+}
 import type { DesktopAppState, SelectedTranscriptRecord, TranscriptMessage } from "./desktop-state";
 import { createEmptyDesktopAppState } from "./desktop-state";
 import type {
@@ -72,7 +85,7 @@ export function createTauriPiApp(): PiDesktopApi {
     // Then create the session
     for (let i = 0; i < 10; i++) {
       try {
-        await invoke("create_session", { cwd: "/tmp" });
+        await tauriInvoke("create_session", { cwd: "/tmp" });
         rustReady = true;
         rustReadyResolve?.();
         console.log("tauri-adapter: Rust session created");
@@ -92,11 +105,11 @@ export function createTauriPiApp(): PiDesktopApi {
 
   (async () => {
     for (let i = 0; i < 30; i++) {
-      try { await invoke("is_streaming"); break; }
+      try { await tauriInvoke("is_streaming"); break; }
       catch { await new Promise((r) => setTimeout(r, 200)); }
     }
     try {
-      unsubEvent = await listen<any>("agent-event", (event) => {
+      unsubEvent = await tauriListen<any>("agent-event", (event) => {
         handleAgentEvent(event.payload);
       });
     } catch {
@@ -172,7 +185,7 @@ export function createTauriPiApp(): PiDesktopApi {
   async function refreshTranscript() {
     if (!rustReady) return;
     try {
-      const messages = await invoke<any[]>("get_messages");
+      const messages = await tauriInvoke<any[]>("get_messages");
       const converted: TranscriptMessage[] = messages.map((msg: any) => ({
         id: msg.id || crypto.randomUUID(),
         role: msg.type === "User" ? "user" as const : "assistant" as const,
@@ -318,7 +331,7 @@ export function createTauriPiApp(): PiDesktopApi {
     async startThread(input: { rootWorkspaceId: string; environment: string; prompt?: string }) {
       await rustReadyPromise;
       if (input.prompt) {
-        try { await invoke("send_message", { text: input.prompt }); }
+        try { await tauriInvoke("send_message", { text: input.prompt }); }
         catch (e) { console.error("send_message failed:", e); }
       }
       return state;
@@ -329,7 +342,7 @@ export function createTauriPiApp(): PiDesktopApi {
     async setChildSupervisionLoop() { return state; },
 
     async cancelCurrentRun() {
-      try { await invoke("abort"); } catch {}
+      try { await tauriInvoke("abort"); } catch {}
       state = { ...state, revision: nextRev(),
         workspaces: state.workspaces.map((w) =>
           w.id === state.selectedWorkspaceId ? {
@@ -460,7 +473,7 @@ export function createTauriPiApp(): PiDesktopApi {
     async submitComposer(text: string) {
       await rustReadyPromise;
       try {
-        await invoke("send_message", { text });
+        await tauriInvoke("send_message", { text });
       } catch (e) {
         console.error("submit failed:", e);
         state = { ...state, revision: nextRev(), lastError: String(e) };
