@@ -6,12 +6,37 @@ use pi_agent_core::types::AgentMessage;
 use serde_json::json;
 use tauri::AppHandle;
 
+// Sub-modules — each mirrors an original Electron module.
+// Warnings suppressed until all cmd wrappers are migrated.
+#[allow(dead_code)]
 mod git;
+#[allow(dead_code)]
 mod terminal;
-
-// Central re-exports — sub-modules and lib.rs use these
 mod internal;
 mod runtime;
+#[allow(dead_code)]
+mod workspace;
+#[allow(dead_code)]
+mod session;
+#[allow(dead_code)]
+mod composer;
+#[allow(dead_code)]
+mod model;
+#[allow(dead_code)]
+mod theme;
+#[allow(dead_code)]
+mod notifications;
+#[allow(dead_code)]
+mod orchestration;
+#[allow(dead_code)]
+mod worktree;
+#[allow(dead_code)]
+mod timeline;
+#[allow(dead_code)]
+mod providers;
+#[allow(dead_code)]
+mod persistence;
+
 pub use internal::*;
 pub use runtime::build_runtime_snapshot;
 
