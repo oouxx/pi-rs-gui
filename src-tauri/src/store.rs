@@ -11,6 +11,9 @@ use pi_agent_core::types::{AgentEvent, AgentMessage};
 use pi_coding_agent::core::agent_session::AgentSession;
 use pi_coding_agent::core::sdk::{create_agent_session, CreateAgentSessionOptions};
 
+mod git;
+mod terminal;
+
 type DesktopState = serde_json::Value;
 
 fn now_iso() -> String {
@@ -675,20 +678,56 @@ pub mod cmds {
         Ok(store.state.lock().await.clone())
     }
     #[tauri::command]
-    pub async fn open_workspace_in_finder(workspace_id: String) -> Result<(), String> {
-        let _ = workspace_id; Ok(())
+    pub async fn open_workspace_in_finder(store: State<'_, Arc<Store>>, workspace_id: String) -> Result<(), String> {
+        let state = store.state.lock().await;
+        let path = state["workspaces"].as_array()
+            .and_then(|ws| ws.iter().find(|w| w["id"] == workspace_id))
+            .and_then(|w| w["path"].as_str())
+            .map(|s| s.to_string());
+        drop(state);
+        if let Some(p) = path {
+            let _ = open::that(&p);
+        }
+        Ok(())
     }
     #[tauri::command]
-    pub async fn open_skill_in_finder(workspace_id: String, file_path: String) -> Result<(), String> {
-        let _ = (workspace_id, file_path); Ok(())
+    pub async fn open_skill_in_finder(store: State<'_, Arc<Store>>, workspace_id: String, file_path: String) -> Result<(), String> {
+        let state = store.state.lock().await;
+        let path = workspace_path_from_state(&state, &workspace_id)
+            .map(|base| std::path::Path::new(&base).join(&file_path).to_string_lossy().to_string());
+        drop(state);
+        if let Some(p) = path {
+            let _ = open::that(&p);
+        }
+        Ok(())
     }
     #[tauri::command]
-    pub async fn open_extension_in_finder(workspace_id: String, file_path: String) -> Result<(), String> {
-        let _ = (workspace_id, file_path); Ok(())
+    pub async fn open_extension_in_finder(store: State<'_, Arc<Store>>, workspace_id: String, file_path: String) -> Result<(), String> {
+        let state = store.state.lock().await;
+        let path = workspace_path_from_state(&state, &workspace_id)
+            .map(|base| std::path::Path::new(&base).join(&file_path).to_string_lossy().to_string());
+        drop(state);
+        if let Some(p) = path {
+            let _ = open::that(&p);
+        }
+        Ok(())
     }
     stub!(create_worktree, input: serde_json::Value);
     stub!(remove_worktree, input: serde_json::Value);
-    stub!(sync_current_workspace);
+    #[tauri::command]
+    pub async fn sync_current_workspace(_app: AppHandle, store: State<'_, Arc<Store>>) -> Result<DesktopState, String> {
+        // Persist current state to ~/.pi/agent/ui-state.json (matching original electron)
+        let state = store.state.lock().await.clone();
+        if let Some(home) = std::env::var("HOME").ok() {
+            let dir = std::path::Path::new(&home).join(".pi").join("agent");
+            let _ = std::fs::create_dir_all(&dir);
+            let path = dir.join("ui-state.json");
+            if let Ok(json) = serde_json::to_string_pretty(&state) {
+                let _ = std::fs::write(&path, &json);
+            }
+        }
+        Ok(state)
+    }
 
     // Session stubs
     stub!(fork_thread, input: serde_json::Value);
@@ -779,26 +818,48 @@ pub mod cmds {
         Ok(json!({"state": store.state.lock().await.clone(), "result": {"cancelled": false}}))
     }
 
-    // Workspace files stubs
+    // Workspace files — uses real git/fs implementations from `store::git`
+    fn workspace_path_from_state(state: &DesktopState, ws_id: &str) -> Option<String> {
+        state["workspaces"].as_array()
+            .and_then(|ws| ws.iter().find(|w| w["id"] == ws_id))
+            .and_then(|w| w["path"].as_str())
+            .map(|s| s.to_string())
+    }
+
     #[tauri::command]
-    pub async fn list_workspace_files(_workspace_id: String, _options: Option<serde_json::Value>) -> Result<Vec<String>, String> {
-        Ok(vec![])
+    pub async fn list_workspace_files(store: State<'_, Arc<Store>>, workspace_id: String, _options: Option<serde_json::Value>) -> Result<Vec<String>, String> {
+        let state = store.state.lock().await;
+        let path = workspace_path_from_state(&state, &workspace_id).ok_or("unknown workspace")?;
+        drop(state);
+        git::list_workspace_files(&path)
     }
     #[tauri::command]
-    pub async fn read_workspace_file(_workspace_id: String, _file_path: String) -> Result<serde_json::Value, String> {
-        Ok(json!({"path": "", "content": "", "truncated": false, "binary": false, "sizeBytes": 0}))
+    pub async fn read_workspace_file(store: State<'_, Arc<Store>>, workspace_id: String, file_path: String) -> Result<serde_json::Value, String> {
+        let state = store.state.lock().await;
+        let path = workspace_path_from_state(&state, &workspace_id).ok_or("unknown workspace")?;
+        drop(state);
+        git::read_workspace_file(&path, &file_path)
     }
     #[tauri::command]
-    pub async fn get_changed_files(_workspace_id: String) -> Result<Vec<serde_json::Value>, String> {
-        Ok(vec![])
+    pub async fn get_changed_files(store: State<'_, Arc<Store>>, workspace_id: String) -> Result<Vec<serde_json::Value>, String> {
+        let state = store.state.lock().await;
+        let path = workspace_path_from_state(&state, &workspace_id).ok_or("unknown workspace")?;
+        drop(state);
+        git::get_changed_files(&path)
     }
     #[tauri::command]
-    pub async fn get_file_diff(_workspace_id: String, _file_path: String) -> Result<String, String> {
-        Ok(String::new())
+    pub async fn get_file_diff(store: State<'_, Arc<Store>>, workspace_id: String, file_path: String) -> Result<String, String> {
+        let state = store.state.lock().await;
+        let path = workspace_path_from_state(&state, &workspace_id).ok_or("unknown workspace")?;
+        drop(state);
+        git::get_file_diff(&path, &file_path)
     }
     #[tauri::command]
-    pub async fn stage_file(_workspace_id: String, _file_path: String) -> Result<(), String> {
-        Ok(())
+    pub async fn stage_file(store: State<'_, Arc<Store>>, workspace_id: String, file_path: String) -> Result<(), String> {
+        let state = store.state.lock().await;
+        let path = workspace_path_from_state(&state, &workspace_id).ok_or("unknown workspace")?;
+        drop(state);
+        git::stage_file(&path, &file_path)
     }
 
     // Theme stubs
@@ -814,41 +875,32 @@ pub mod cmds {
     // ── Terminal stubs (pty not yet integrated) ──
     #[tauri::command]
     pub async fn ensure_terminal_panel(workspace_id: String, terminal_scope_id: String, _size: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
-        Ok(json!({"workspaceId": workspace_id, "rootKey": terminal_scope_id, "activeSessionId": "", "sessions": []}))
+        Ok(terminal::stub_terminal_panel(&workspace_id, &terminal_scope_id))
     }
     #[tauri::command]
     pub async fn create_terminal_session(workspace_id: String, terminal_scope_id: String, _size: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
-        Ok(json!({"workspaceId": workspace_id, "rootKey": terminal_scope_id, "activeSessionId": "", "sessions": []}))
+        Ok(terminal::stub_terminal_panel(&workspace_id, &terminal_scope_id))
     }
     #[tauri::command]
     pub async fn set_active_terminal_session(workspace_id: String, terminal_scope_id: String, terminal_id: String) -> Result<serde_json::Value, String> {
-        Ok(json!({"workspaceId": workspace_id, "rootKey": terminal_scope_id, "activeSessionId": terminal_id, "sessions": []}))
+        let mut p = terminal::stub_terminal_panel(&workspace_id, &terminal_scope_id);
+        p["activeSessionId"] = json!(terminal_id);
+        Ok(p)
     }
     #[tauri::command]
-    pub async fn write_terminal(_terminal_id: String, _data: String) -> Result<(), String> {
-        Ok(())
+    pub async fn write_terminal(_terminal_id: String, _data: String) -> Result<(), String> { Ok(()) }
+    #[tauri::command]
+    pub async fn resize_terminal(_terminal_id: String, _size: serde_json::Value) -> Result<(), String> { Ok(()) }
+    #[tauri::command]
+    pub async fn restart_terminal_session(_terminal_id: String, _size: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
+        Ok(terminal::stub_terminal_panel("", "default"))
     }
     #[tauri::command]
-    pub async fn resize_terminal(_terminal_id: String, _size: serde_json::Value) -> Result<(), String> {
-        Ok(())
-    }
+    pub async fn close_terminal_session(_terminal_id: String) -> Result<Option<serde_json::Value>, String> { Ok(None) }
     #[tauri::command]
-    pub async fn restart_terminal_session(terminal_id: String, _size: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
-        let _ = terminal_id;
-        Ok(json!({"workspaceId": "", "rootKey": "default", "activeSessionId": "", "sessions": []}))
-    }
+    pub async fn set_terminal_title(_terminal_id: String, _title: String) -> Result<(), String> { Ok(()) }
     #[tauri::command]
-    pub async fn close_terminal_session(_terminal_id: String) -> Result<Option<serde_json::Value>, String> {
-        Ok(None)
-    }
-    #[tauri::command]
-    pub async fn set_terminal_title(_terminal_id: String, _title: String) -> Result<(), String> {
-        Ok(())
-    }
-    #[tauri::command]
-    pub async fn set_terminal_focused(_focused: bool) -> Result<(), String> {
-        Ok(())
-    }
+    pub async fn set_terminal_focused(_focused: bool) -> Result<(), String> { Ok(()) }
 }
 
 // ── Tests ──────────────────────────────────────────────────
