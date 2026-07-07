@@ -462,6 +462,9 @@ pub mod cmds {
     #[tauri::command]
     pub async fn set_default_model(app: AppHandle, store: State<'_, Arc<Store>>, workspace_id: String, provider: String, model_id: String) -> Result<DesktopState, String> {
         Ok(store.mutate(&app, |s| {
+            if s["runtimeByWorkspace"][&workspace_id].is_null() {
+                s["runtimeByWorkspace"][&workspace_id] = json!({"settings": {}});
+            }
             s["runtimeByWorkspace"][&workspace_id]["settings"]["defaultProvider"] = json!(provider);
             s["runtimeByWorkspace"][&workspace_id]["settings"]["defaultModelId"] = json!(model_id);
         }).await)
@@ -657,8 +660,25 @@ pub mod cmds {
     }
 
     // Model stubs
-    stub!(set_default_thinking_level, workspace_id: String, thinking_level: String);
-    stub!(set_session_thinking_level, workspace_id: String, session_id: String, thinking_level: String);
+    #[tauri::command]
+    pub async fn set_default_thinking_level(app: AppHandle, store: State<'_, Arc<Store>>, workspace_id: String, thinking_level: String) -> Result<DesktopState, String> {
+        Ok(store.mutate(&app, |s| {
+            if s["runtimeByWorkspace"][&workspace_id].is_null() {
+                s["runtimeByWorkspace"][&workspace_id] = json!({"settings": {}});
+            }
+            s["runtimeByWorkspace"][&workspace_id]["settings"]["defaultThinkingLevel"] = json!(thinking_level);
+        }).await)
+    }
+    #[tauri::command]
+    pub async fn set_session_thinking_level(app: AppHandle, store: State<'_, Arc<Store>>, workspace_id: String, session_id: String, thinking_level: String) -> Result<DesktopState, String> {
+        Ok(store.mutate(&app, |s| {
+            if let Some(ws) = s["workspaces"].as_array_mut().unwrap().iter_mut().find(|w| w["id"] == workspace_id) {
+                if let Some(sess) = ws["sessions"].as_array_mut().unwrap().iter_mut().find(|s| s["id"] == session_id) {
+                    sess["thinkingLevel"] = json!(thinking_level);
+                }
+            }
+        }).await)
+    }
     stub!(login_provider, workspace_id: String, provider_id: String);
     stub!(logout_provider, workspace_id: String, provider_id: String);
     stub!(set_provider_api_key, workspace_id: String, provider_id: String, api_key: String);
