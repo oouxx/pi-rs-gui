@@ -49,7 +49,7 @@ pub mod cmds {
 
     #[tauri::command]
     pub async fn create_agent_session_cmd(app: AppHandle, store: State<'_, Arc<Store>>, cwd: String) -> Result<String, String> {
-        store.create_agent_session(&app, &cwd).await
+        store.create_agent_session(&app, &cwd, None).await
     }
 
     #[tauri::command]
@@ -211,7 +211,7 @@ pub mod cmds {
         eprintln!("[IPC ←] submit_composer: len={}", text.len());
         if store.session.lock().await.is_none() {
             eprintln!("[LLM] no session, creating one");
-            store.create_agent_session(&app, "/tmp").await.map_err(|e| format!("{e}"))?;
+            store.create_agent_session(&app, "/tmp", None).await.map_err(|e| format!("{e}"))?;
         }
         eprintln!("[LLM] sending message...");
         store.send_message(&app, &text).await.map_err(|e| e.to_string())?;
@@ -232,7 +232,7 @@ pub mod cmds {
             }
         }
         if store.session.lock().await.is_none() {
-            store.create_agent_session(&app, "/tmp").await.map_err(|e| format!("{e}"))?;
+            store.create_agent_session(&app, "/tmp", None).await.map_err(|e| format!("{e}"))?;
         }
         if let Some(p) = input["prompt"].as_str().filter(|p| !p.is_empty()) {
             store.send_message(&app, p).await.map_err(|e| e.to_string())?;

@@ -181,7 +181,9 @@ impl Store {
         result
     }
 
-    pub async fn create_agent_session(self: &Arc<Self>, app: &AppHandle, cwd: &str) -> Result<String, String> {
+    /// Create an agent session. If `session_file` is provided, it loads
+    /// an existing JSONL session file instead of creating a new one.
+    pub async fn create_agent_session(self: &Arc<Self>, app: &AppHandle, cwd: &str, session_file: Option<String>) -> Result<String, String> {
         pi_ai::providers::register_builtins::register_built_in_api_providers();
 
         let state = self.state.lock().await;
@@ -191,7 +193,7 @@ impl Store {
         let thinking_level = state["runtimeByWorkspace"][&ws_id]["settings"]["defaultThinkingLevel"].as_str().map(|s| s.to_string());
         drop(state);
 
-        eprintln!("[LLM] create session: provider={provider:?} model={model_id:?}");
+        eprintln!("[LLM] create session: provider={provider:?} model={model_id:?} session_file={session_file:?}");
 
         use pi_coding_agent::core::model_registry::ModelRegistry;
         let registry = ModelRegistry::new(ModelRegistry::builtin_models_list());
@@ -200,6 +202,7 @@ impl Store {
 
         let stream_fn = pi_coding_agent::core::sdk::create_default_stream_fn();
 
+        let sf = session_file.clone();
         let opts = || CreateAgentSessionOptions {
             cwd: cwd.to_string(), agent_dir: None,
             model: initial_model.clone(), thinking_level: thinking_level.clone(),
@@ -208,21 +211,25 @@ impl Store {
             stream_fn: Some(stream_fn.clone()), convert_to_llm: None, extension_paths: vec![],
             enable_extensions: false, cli_provider: None, cli_model: None,
             persist_session: true,
-            session_file: None,
+            session_file: sf.clone(),
         };
         let (mut session, result) = create_agent_session(opts()).await.map_err(|e| format!("{e}"))?;
         eprintln!("[LLM] session created: model_fallback={:?}", result.model_fallback_message);
-        // Log the actual model being used by inspecting the session config
         eprintln!("[LLM] session cwd={} id={} name={:?}", session.get_cwd(), session.get_session_id(), session.get_session_name());
         eprintln!("[LLM] session scoped_models count={}", session.get_scoped_models().len());
-        if let Some(last_text) = session.get_last_assistant_text() { eprintln!("[LLM] session last_text='{last_text}'"); }
+        // Capture the session file path for persistence restore
+        let sess_file_path = session.get_session_manager().get_session_file()
+            .map(|p| p.to_string_lossy().to_string());
+        eprintln!("[LLM] session file: {:?}", sess_file_path);
         let sid = format!("sess-{}", uuid::Uuid::new_v4());
         *self.session_id.lock().await = Some(sid.clone());
         self.mutate(app, |s| {
-            s["workspaces"][0]["sessions"].as_array_mut().unwrap().push(json!({
+            let sess = json!({
                 "id": sid, "title": "New thread", "updatedAt": now_iso(),
                 "preview": "", "status": "idle", "hasUnseenUpdate": false,
-            }));
+                "sessionFile": sess_file_path,
+            });
+            s["workspaces"][0]["sessions"].as_array_mut().unwrap().push(sess);
             s["selectedSessionId"] = json!(&sid);
         }).await;
         let store = self.clone();
