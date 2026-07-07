@@ -9,6 +9,11 @@ edition = "2021"
 name = "pi_rs_gui_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[patch."https://github.com/oouxx/pi-rs"]
+pi-coding-agent = { path = "/Users/wxx/Desktop/github/pi-rs/crates/pi-coding-agent" }
+pi-agent-core = { path = "/Users/wxx/Desktop/github/pi-rs/crates/pi-agent-core" }
+pi-ai = { path = "/Users/wxx/Desktop/github/pi-rs/crates/pi-ai" }
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

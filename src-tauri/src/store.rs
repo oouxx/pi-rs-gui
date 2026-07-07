@@ -720,6 +720,7 @@ mod tests {
             append_system_prompt: None, session_name: Some("test-openrouter".into()),
             stream_fn: None, convert_to_llm: None, extension_paths: vec![],
             enable_extensions: false, cli_provider: None, cli_model: None,
+            persist_session: false, session_file: None,
         };
         let (mut session, _result) = pi_coding_agent::core::sdk::create_agent_session(options).await.expect("create_agent_session failed");
         let response_text = Arc::new(tokio::sync::Mutex::new(String::new()));

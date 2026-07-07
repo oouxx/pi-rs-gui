@@ -207,6 +207,8 @@ impl Store {
             custom_prompt: None, append_system_prompt: None, session_name: None,
             stream_fn: Some(stream_fn.clone()), convert_to_llm: None, extension_paths: vec![],
             enable_extensions: false, cli_provider: None, cli_model: None,
+            persist_session: true,
+            session_file: None,
         };
         let (mut session, result) = create_agent_session(opts()).await.map_err(|e| format!("{e}"))?;
         eprintln!("[LLM] session created: model_fallback={:?}", result.model_fallback_message);

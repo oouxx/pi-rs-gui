@@ -2703,7 +2703,6 @@ dependencies = [
 [[package]]
 name = "pi-agent-core"
 version = "1.78.0"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.78.15#8d304ec5a64ab422a1a9106629c2e78de0f3bfb2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2726,7 +2725,6 @@ dependencies = [
 [[package]]
 name = "pi-ai"
 version = "1.78.0"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.78.15#8d304ec5a64ab422a1a9106629c2e78de0f3bfb2"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2744,7 +2742,6 @@ dependencies = [
 [[package]]
 name = "pi-coding-agent"
 version = "1.78.0"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.78.15#8d304ec5a64ab422a1a9106629c2e78de0f3bfb2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2792,7 +2789,6 @@ dependencies = [
 [[package]]
 name = "pi-tui"
 version = "1.78.0"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.78.15#8d304ec5a64ab422a1a9106629c2e78de0f3bfb2"
 dependencies = [
  "chrono",
  "crossterm",
