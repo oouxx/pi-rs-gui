@@ -401,8 +401,9 @@ pub mod cmds {
     // ── Timeline / Session tree ──
 
     #[tauri::command]
-    pub async fn get_session_tree(_target: serde_json::Value) -> Result<serde_json::Value, String> {
-        Ok(timeline::stub_session_tree())
+    pub async fn get_session_tree(store: State<'_, Arc<Store>>, _target: serde_json::Value) -> Result<serde_json::Value, String> {
+        let sid = store.state.lock().await["selectedSessionId"].as_str().unwrap_or("").to_string();
+        Ok(timeline::stub_session_tree(&sid))
     }
 
     #[tauri::command]

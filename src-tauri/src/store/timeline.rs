@@ -5,8 +5,13 @@
 use serde_json::json;
 use crate::store::internal::DesktopState;
 
-pub fn stub_session_tree() -> serde_json::Value {
-    json!({"id": "", "label": "root", "children": []})
+pub fn stub_session_tree(session_id: &str) -> serde_json::Value {
+    json!({
+        "id": session_id,
+        "label": "root",
+        "roots": [],
+        "leafId": session_id,
+    })
 }
 
 pub fn stub_navigate_result(state: &DesktopState) -> serde_json::Value {
