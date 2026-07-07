@@ -29,7 +29,7 @@ use tauri::State;
 
 pub mod cmds {
     use super::*;
-    use super::{workspace, session, composer, model, theme, notifications, git, terminal, timeline, providers, persistence};
+    use super::{worktree, workspace, session, composer, model, theme, notifications, git, terminal, timeline, providers, persistence};
 
     macro_rules! stub {
         ($name:ident) => {
@@ -148,8 +148,26 @@ pub mod cmds {
         Ok(())
     }
 
-    stub!(create_worktree, input: serde_json::Value);
-    stub!(remove_worktree, input: serde_json::Value);
+    #[tauri::command]
+    pub async fn create_worktree(store: State<'_, Arc<Store>>, input: serde_json::Value) -> Result<serde_json::Value, String> {
+        let ws_id = input["workspaceId"].as_str().unwrap_or("ws-default");
+        let state = store.state.lock().await;
+        let ws_path = workspace::workspace_path(&state, ws_id).ok_or("unknown workspace")?;
+        let target_path = input["path"].as_str().ok_or("missing path")?;
+        let branch = input["branchName"].as_str();
+        drop(state);
+        worktree::create_worktree(&ws_path, target_path, branch)
+    }
+
+    #[tauri::command]
+    pub async fn remove_worktree(store: State<'_, Arc<Store>>, input: serde_json::Value) -> Result<serde_json::Value, String> {
+        let ws_id = input["workspaceId"].as_str().unwrap_or("ws-default");
+        let state = store.state.lock().await;
+        let ws_path = workspace::workspace_path(&state, ws_id).ok_or("unknown workspace")?;
+        let target_path = input["path"].as_str().ok_or("missing path")?;
+        drop(state);
+        worktree::remove_worktree(&ws_path, target_path)
+    }
 
     #[tauri::command]
     pub async fn sync_current_workspace(store: State<'_, Arc<Store>>) -> Result<DesktopState, String> {
