@@ -177,14 +177,24 @@ impl Store {
         let s = self.clone();
         let a = app.clone();
         let t = text.to_string();
+        let sid2 = sid.clone();
+        // Emit user_message event immediately from the command context
+        let _ = app.emit("agent-event", FrontendEvent {
+            event_type: "user_message".into(), session_id: sid,
+            data: json!({"text": text, "timestamp": chrono::Utc::now().timestamp_millis()}),
+        });
         tokio::spawn(async move {
-            let _ = a.emit("agent-event", FrontendEvent {
-                event_type: "user_message".into(), session_id: sid.clone(),
-                data: json!({"text": t, "timestamp": chrono::Utc::now().timestamp_millis()}),
-            });
             session.add_user_text(&t).await;
+            // Put the session back so transcript reads can find it
             *s.session.lock().await = Some(session);
             s.is_streaming.store(false, Ordering::SeqCst);
+            // Emit a synthetic agent-event that the frontend's handler
+            // recognizes as a trigger to refresh the transcript.
+            let _ = a.emit("agent-event", FrontendEvent {
+                event_type: "turn_end".into(),
+                session_id: sid2,
+                data: json!({"message": null, "tool_results": []}),
+            });
         });
         Ok(())
     }
