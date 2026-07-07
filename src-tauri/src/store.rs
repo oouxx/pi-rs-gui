@@ -624,15 +624,15 @@ pub mod cmds {
 
     #[tauri::command]
     pub async fn ensure_terminal_panel(workspace_id: String, terminal_scope_id: String, _size: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
-        Ok(terminal::stub_terminal_panel(&workspace_id, &terminal_scope_id))
+        Ok(terminal::ensure_terminal_panel(&workspace_id, &terminal_scope_id))
     }
     #[tauri::command]
     pub async fn create_terminal_session(workspace_id: String, terminal_scope_id: String, _size: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
-        Ok(terminal::stub_terminal_panel(&workspace_id, &terminal_scope_id))
+        Ok(terminal::create_terminal_session(&workspace_id, &terminal_scope_id))
     }
     #[tauri::command]
     pub async fn set_active_terminal_session(workspace_id: String, terminal_scope_id: String, terminal_id: String) -> Result<serde_json::Value, String> {
-        let mut p = terminal::stub_terminal_panel(&workspace_id, &terminal_scope_id);
+        let mut p = terminal::ensure_terminal_panel(&workspace_id, &terminal_scope_id);
         p["activeSessionId"] = json!(terminal_id);
         Ok(p)
     }
@@ -642,7 +642,7 @@ pub mod cmds {
     pub async fn resize_terminal(_terminal_id: String, _size: serde_json::Value) -> Result<(), String> { Ok(()) }
     #[tauri::command]
     pub async fn restart_terminal_session(_terminal_id: String, _size: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
-        Ok(terminal::stub_terminal_panel("", "default"))
+        Ok(terminal::ensure_terminal_panel("", "default"))
     }
     #[tauri::command]
     pub async fn close_terminal_session(_terminal_id: String) -> Result<Option<serde_json::Value>, String> { Ok(None) }

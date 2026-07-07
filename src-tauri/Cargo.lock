@@ -2814,6 +2814,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "futures",
+ "once_cell",
  "open",
  "pi-agent-core",
  "pi-ai",
