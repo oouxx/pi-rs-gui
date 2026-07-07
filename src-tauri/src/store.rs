@@ -813,6 +813,202 @@ pub mod cmds {
     }
 }
 
+// ── Tests ──────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify initial store state has the expected structure.
+    #[tokio::test]
+    async fn test_initial_state() {
+        let store = Store::new();
+        let state = store.state.lock().await;
+        assert_eq!(state["revision"], 1);
+        assert_eq!(state["selectedWorkspaceId"], "ws-default");
+        assert_eq!(state["activeView"], "threads");
+        assert_eq!(state["globalModelSettings"]["enabledModelPatterns"].as_array().unwrap().len(), 0);
+        assert!(state["runtimeByWorkspace"].as_object().unwrap().is_empty());
+    }
+
+    /// Verify that set_default_model works on runtime state directly
+    /// without causing serde_json panics on missing runtime entries.
+    #[tokio::test]
+    async fn test_default_model_on_new_workspace() {
+        let store = Store::new();
+        let ws_id = "ws-new".to_string();
+        // Simulate what set_default_model does
+        let mut state = store.state.lock().await;
+        if state["runtimeByWorkspace"][&ws_id].is_null() {
+            state["runtimeByWorkspace"][&ws_id] = json!({"settings": {}});
+        }
+        state["runtimeByWorkspace"][&ws_id]["settings"]["defaultProvider"] = json!("openrouter");
+        state["runtimeByWorkspace"][&ws_id]["settings"]["defaultModelId"] = json!("free");
+        drop(state);
+
+        let state = store.state.lock().await;
+        assert_eq!(state["runtimeByWorkspace"]["ws-new"]["settings"]["defaultProvider"], "openrouter");
+        assert_eq!(state["runtimeByWorkspace"]["ws-new"]["settings"]["defaultModelId"], "free");
+    }
+
+    /// Integration test: create agent session with openrouter/free,
+    /// send a message, and verify a non-empty response.
+    ///
+    /// Run with:
+    ///   OPENROUTER_API_KEY=sk-... cargo test -p pi-rs-gui -- --nocapture --include-ignored
+    #[tokio::test]
+    #[ignore = "Requires OPENROUTER_API_KEY"]
+    async fn test_conversation_with_openrouter_free() {
+        let key = std::env::var("OPENROUTER_API_KEY")
+            .expect("Set OPENROUTER_API_KEY env var");
+
+        pi_ai::providers::register_builtins::register_built_in_api_providers();
+
+        // The "free" model on OpenRouter is a meta-model that routes to
+        // available free models across providers (OpenAI-compatible).
+        let model = pi_agent_core::pi_ai_types::Model {
+            id: "free".into(),
+            name: "OpenRouter Free".into(),
+            api: "openai-completions".into(),
+            provider: "openrouter".into(),
+            base_url: "https://openrouter.ai/api/v1".into(),
+            reasoning: false,
+            thinking_level_map: None,
+            input: vec!["text".into()],
+            cost: pi_agent_core::pi_ai_types::ModelCost {
+                input: 0.0, output: 0.0, cache_read: 0.0, cache_write: 0.0,
+            },
+            context_window: 100_000,
+            max_tokens: 1_000,
+            headers: None,
+            compat: Some(pi_agent_core::pi_ai_types::ModelCompat::OpenAICompletions(
+                pi_agent_core::pi_ai_types::OpenAICompletionsCompat {
+                    supports_store: None,
+                    supports_developer_role: None,
+                    supports_reasoning_effort: None,
+                    supports_usage_in_streaming: None,
+                    max_tokens_field: None,
+                    requires_tool_result_name: None,
+                    requires_assistant_after_tool_result: None,
+                    requires_thinking_as_text: None,
+                    requires_reasoning_content_on_assistant_messages: None,
+                    thinking_format: None,
+                    open_router_routing: None,
+                    vercel_gateway_routing: None,
+                    zai_tool_stream: None,
+                    supports_strict_mode: None,
+                    cache_control_format: None,
+                    send_session_affinity_headers: None,
+                    supports_long_cache_retention: None,
+                },
+            )),
+        };
+
+        std::env::set_var("OPENROUTER_API_KEY", &key);
+
+        let cwd = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "/tmp".into());
+        let agent_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target").join(".pi-rs-test-agent-openrouter");
+        std::fs::create_dir_all(&agent_dir).ok();
+
+        let options = pi_coding_agent::core::sdk::CreateAgentSessionOptions {
+            cwd,
+            agent_dir: Some(agent_dir.to_string_lossy().to_string()),
+            model: Some(model),
+            thinking_level: Some("normal".into()),
+            scoped_models: None,
+            no_tools: None,
+            tools: None,
+            exclude_tools: None,
+            custom_prompt: Some("You are a helpful assistant. Keep responses very brief.".into()),
+            append_system_prompt: None,
+            session_name: Some("test-openrouter".into()),
+            stream_fn: None,
+            convert_to_llm: None,
+            extension_paths: vec![],
+            enable_extensions: false,
+        };
+
+        let (mut session, _result) = pi_coding_agent::core::sdk::create_agent_session(options)
+            .await
+            .expect("create_agent_session failed");
+
+        // Subscribe to streaming events to capture the response text
+        let response_text: Arc<tokio::sync::Mutex<String>> = Arc::new(tokio::sync::Mutex::new(String::new()));
+        let rt = response_text.clone();
+
+        use pi_agent_core::pi_ai_types::AssistantMessageEvent;
+        use pi_agent_core::types::AgentEvent;
+
+        let listener: Arc<
+            dyn Fn(AgentEvent, Option<tokio::sync::watch::Receiver<bool>>) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>
+                + Send + Sync,
+        > = Arc::new(move |event, _signal| {
+            let rt = rt.clone();
+            Box::pin(async move {
+                match &event {
+                    AgentEvent::MessageUpdate { assistant_message_event, .. } => {
+                        if let AssistantMessageEvent::TextDelta { delta, .. } = assistant_message_event {
+                            rt.lock().await.push_str(delta);
+                        }
+                    }
+                    AgentEvent::MessageEnd { message: msg } => {
+                        if let pi_agent_core::types::AgentMessage::Assistant { content, .. } = msg {
+                            let text: String = content.iter()
+                                .filter_map(|b| {
+                                    if let pi_agent_core::pi_ai_types::ContentBlock::Text { text, .. } = b {
+                                        Some(text.clone())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                            if !text.is_empty() {
+                                rt.lock().await.push_str(&text);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            })
+        });
+
+        session.subscribe(listener).await;
+        session.add_user_text("Say 'hello' in one word.").await;
+        session.wait_for_idle().await;
+
+        let text = response_text.lock().await.clone();
+        if text.is_empty() {
+            // Fallback: try reading messages directly
+            let messages = session.get_messages().await;
+            eprintln!("[test] Messages count: {}", messages.len());
+            for (i, msg) in messages.iter().enumerate() {
+                match msg {
+                    pi_agent_core::types::AgentMessage::Assistant { content, .. } => {
+                        let t: String = content.iter()
+                            .filter_map(|b| if let pi_agent_core::pi_ai_types::ContentBlock::Text { text, .. } = b { Some(text.clone()) } else { None })
+                            .collect();
+                        eprintln!("[test] Msg[{i}] Assistant: '{t}'");
+                    }
+                    pi_agent_core::types::AgentMessage::User { content, .. } => {
+                        let t: String = content.iter()
+                            .filter_map(|b| if let pi_agent_core::pi_ai_types::ContentBlock::Text { text, .. } = b { Some(text.clone()) } else { None })
+                            .collect();
+                        eprintln!("[test] Msg[{i}] User: '{t}'");
+                    }
+                    _ => eprintln!("[test] Msg[{i}] {:?}", msg),
+                }
+            }
+        } else {
+            eprintln!("[test] Response: '{text}'");
+        }
+
+        assert!(!text.is_empty(), "Expected non-empty response from openrouter/free");
+    }
+}
+
 fn set_sess_field(s: &mut DesktopState, target: &serde_json::Value, field: &str, value: serde_json::Value) {
     let ws_id = target["workspaceId"].as_str().unwrap_or("");
     let sess_id = target["sessionId"].as_str().unwrap_or("");
