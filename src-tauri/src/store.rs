@@ -212,12 +212,20 @@ pub mod cmds {
         if store.session.lock().await.is_none() {
             eprintln!("[LLM] no session, creating one");
             let state = store.state.lock().await;
-            let cwd = state["selectedWorkspaceId"].as_str()
-                .and_then(|ws_id| workspace::workspace_path(&state, ws_id))
+            let sid = state["selectedSessionId"].as_str().unwrap_or("");
+            let ws_id = state["selectedWorkspaceId"].as_str().unwrap_or("ws-default");
+            let cwd = workspace::workspace_path(&state, ws_id)
                 .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()))
                 .unwrap_or_else(|| "/tmp".into());
+            // Look up sessionFile for an existing (restored) session
+            let session_file: Option<String> = state["workspaces"].as_array()
+                .and_then(|ws| ws.iter().find(|w| w["id"] == ws_id))
+                .and_then(|w| w["sessions"].as_array())
+                .and_then(|ss| ss.iter().find(|s| s["id"] == sid))
+                .and_then(|s| s["sessionFile"].as_str().filter(|f| !f.is_empty()))
+                .map(String::from);
             drop(state);
-            store.create_agent_session(&app, &cwd, None).await.map_err(|e| format!("{e}"))?;
+            store.create_agent_session(&app, &cwd, session_file).await.map_err(|e| format!("{e}"))?;
         }
         eprintln!("[LLM] sending message...");
         store.send_message(&app, &text).await.map_err(|e| e.to_string())?;
@@ -239,11 +247,18 @@ pub mod cmds {
         }
         if store.session.lock().await.is_none() {
             let state = store.state.lock().await;
+            let sid = state["selectedSessionId"].as_str().unwrap_or("");
             let cwd = workspace::workspace_path(&state, ws_id)
                 .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()))
                 .unwrap_or_else(|| "/tmp".into());
+            let session_file: Option<String> = state["workspaces"].as_array()
+                .and_then(|ws| ws.iter().find(|w| w["id"] == ws_id))
+                .and_then(|w| w["sessions"].as_array())
+                .and_then(|ss| ss.iter().find(|s| s["id"] == sid))
+                .and_then(|s| s["sessionFile"].as_str().filter(|f| !f.is_empty()))
+                .map(String::from);
             drop(state);
-            store.create_agent_session(&app, &cwd, None).await.map_err(|e| format!("{e}"))?;
+            store.create_agent_session(&app, &cwd, session_file).await.map_err(|e| format!("{e}"))?;
         }
         if let Some(p) = input["prompt"].as_str().filter(|p| !p.is_empty()) {
             store.send_message(&app, p).await.map_err(|e| e.to_string())?;
@@ -535,8 +550,28 @@ pub mod cmds {
     // ── Transcript ──
 
     #[tauri::command]
-    pub async fn get_selected_transcript(store: State<'_, Arc<Store>>) -> Result<Option<serde_json::Value>, String> {
+    pub async fn get_selected_transcript(app: AppHandle, store: State<'_, Arc<Store>>) -> Result<Option<serde_json::Value>, String> {
         eprintln!("[IPC →] get_selected_transcript");
+        // If no active session but the selected session has a sessionFile, auto-load it
+        if store.session.lock().await.is_none() {
+            let state = store.state.lock().await;
+            let sid = state["selectedSessionId"].as_str().unwrap_or("");
+            let ws_id = state["selectedWorkspaceId"].as_str().unwrap_or("ws-default");
+            let session_file: Option<String> = state["workspaces"].as_array()
+                .and_then(|ws| ws.iter().find(|w| w["id"] == ws_id))
+                .and_then(|w| w["sessions"].as_array())
+                .and_then(|ss| ss.iter().find(|s| s["id"] == sid))
+                .and_then(|s| s["sessionFile"].as_str().filter(|f| !f.is_empty()))
+                .map(String::from);
+            let cwd = workspace::workspace_path(&state, ws_id)
+                .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()))
+                .unwrap_or_else(|| "/tmp".into());
+            drop(state);
+            if let Some(sf) = session_file {
+                eprintln!("[LLM] auto-loading session from: {sf}");
+                let _ = store.create_agent_session(&app, &cwd, Some(sf)).await;
+            }
+        }
         let messages = store.get_messages().await;
         if messages.is_empty() { return Ok(None); }
         let sid_state = store.state.lock().await["selectedSessionId"].as_str().unwrap_or("").to_string();
