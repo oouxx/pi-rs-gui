@@ -1,19 +1,42 @@
 //! Session tree + transcript — mirrors parts of `app-store-timeline.ts`.
-//! Full session tree navigation and transcript caching requires the
-//! session-driver's fork/entry APIs. Currently basic stubs.
+//! Builds a SessionTreeSnapshot from the actual messages in a session.
 
 use serde_json::json;
-use crate::store::internal::DesktopState;
+use pi_agent_core::types::AgentMessage;
 
-pub fn stub_session_tree(session_id: &str) -> serde_json::Value {
+/// Build a SessionTreeSnapshot from the current session's messages.
+pub fn build_session_tree(session_id: &str, messages: &[AgentMessage]) -> serde_json::Value {
+    let roots: Vec<serde_json::Value> = messages.iter().enumerate().map(|(i, msg)| {
+        let (role, text, ts) = match msg {
+            AgentMessage::User { content, timestamp } => {
+                let text: String = content.iter()
+                    .filter_map(|b| if let pi_agent_core::pi_ai_types::ContentBlock::Text { text, .. } = b { Some(text.clone()) } else { None })
+                    .collect();
+                ("user", text, *timestamp)
+            }
+            AgentMessage::Assistant { content, timestamp, .. } => {
+                let text: String = content.iter()
+                    .filter_map(|b| if let pi_agent_core::pi_ai_types::ContentBlock::Text { text, .. } = b { Some(text.clone()) } else { None })
+                    .collect();
+                ("assistant", text, *timestamp)
+            }
+            _ => ("system", String::new(), 0),
+        };
+        let preview = if text.len() > 80 { format!("{}…", &text[..80]) } else { text };
+        json!({
+            "id": format!("msg-{}", i),
+            "kind": "message",
+            "role": role,
+            "title": format!("{} at {}", role, ts),
+            "preview": preview,
+            "children": [],
+        })
+    }).collect();
+
     json!({
         "id": session_id,
         "label": "root",
-        "roots": [],
-        "leafId": session_id,
+        "roots": roots,
+        "leafId": messages.len().to_string(),
     })
-}
-
-pub fn stub_navigate_result(state: &DesktopState) -> serde_json::Value {
-    json!({"state": state.clone(), "result": {"cancelled": false}})
 }

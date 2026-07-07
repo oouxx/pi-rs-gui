@@ -462,13 +462,19 @@ pub mod cmds {
         let sid = target["sessionId"].as_str()
             .or_else(|| state["selectedSessionId"].as_str())
             .unwrap_or("").to_string();
-        Ok(timeline::stub_session_tree(&sid))
+        drop(state);
+        let msgs = store.get_messages().await;
+        Ok(timeline::build_session_tree(&sid, &msgs))
     }
 
     #[tauri::command]
-    pub async fn navigate_session_tree(store: State<'_, Arc<Store>>, _target: serde_json::Value, _target_id: String, _options: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
-        let state = store.state.lock().await;
-        Ok(timeline::stub_navigate_result(&state))
+    pub async fn navigate_session_tree(app: AppHandle, store: State<'_, Arc<Store>>, target: serde_json::Value, _target_id: String, _options: Option<serde_json::Value>) -> Result<serde_json::Value, String> {
+        let new_state = store.mutate(&app, |s| {
+            if let Some(sid) = target["sessionId"].as_str() {
+                s["selectedSessionId"] = json!(sid);
+            }
+        }).await;
+        Ok(json!({"state": new_state, "result": {"cancelled": false}}))
     }
 
     // ── Transcript ──
