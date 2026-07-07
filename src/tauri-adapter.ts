@@ -250,14 +250,8 @@ export async function createTauriPiApp(): Promise<PiDesktopApi> {
       const unsubTranscript = await tauriListen<SelectedTranscriptRecord | null>("pi-gui:selected-transcript-changed", (e) => {
         transcriptListeners.forEach((fn) => fn(e.payload));
       });
-      // Listen for agent events to trigger transcript refresh
-      await tauriListen<any>("agent-event", (event) => {
-        const { event_type } = event.payload;
-        // Refresh transcript on message events and turn end
-        if (["message_end", "turn_end", "tool_execution_end"].includes(event_type)) {
-          refreshTranscript(transcriptListeners);
-        }
-      });
+      // Agent events — transcript is pushed directly via pi-gui:selected-transcript-changed
+      await tauriListen<any>("agent-event", () => {});
     } catch (e) {
       console.warn("tauri-adapter: event listener setup failed:", e);
     }

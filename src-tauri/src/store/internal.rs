@@ -297,12 +297,34 @@ impl Store {
             s.is_streaming.store(false, Ordering::SeqCst);
             let _ = a.emit("agent-event", FrontendEvent {
                 event_type: "turn_end".into(),
-                session_id: sid2,
+                session_id: sid2.clone(),
                 data: json!({"message": null, "tool_results": []}),
             });
-            // Force a state refresh so the frontend can pick up the updated session messages
-            let st = s.state.lock().await.clone();
-            let _ = a.emit("pi-gui:state-changed", &st);
+            // Push the updated transcript directly — no IPC roundtrip needed
+            let msgs2 = s.get_messages().await;
+            let state = s.state.lock().await;
+            let ws_id = state["selectedWorkspaceId"].as_str().unwrap_or("ws-default");
+            let sess_id = state["selectedSessionId"].as_str().unwrap_or("");
+            let transcript: Vec<serde_json::Value> = msgs2.iter().filter_map(|msg| {
+                let (role, content, ts) = match msg {
+                    AgentMessage::User { content, timestamp } => ("user", content, *timestamp),
+                    AgentMessage::Assistant { content, timestamp, .. } => ("assistant", content, *timestamp),
+                    _ => return None,
+                };
+                let text: String = content.iter()
+                    .filter_map(|b| if let pi_agent_core::pi_ai_types::ContentBlock::Text { text, .. } = b { Some(text.clone()) } else { None })
+                    .collect();
+                let ts_secs = ts as f64 / 1000.0;
+                let created = chrono::DateTime::from_timestamp(ts_secs as i64, 0)
+                    .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+                    .unwrap_or_else(now_iso);
+                Some(json!({"id": format!("msg-{}", ts), "kind": "message", "role": role, "text": text, "createdAt": created}))
+            }).collect();
+            if !transcript.is_empty() {
+                let payload = json!({"workspaceId": ws_id, "sessionId": sess_id, "transcript": transcript});
+                let _ = a.emit("pi-gui:selected-transcript-changed", &payload);
+            }
+            drop(state);
         });
         Ok(())
     }
