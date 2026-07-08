@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 use serde_json::Value;
-use crate::store::internal::{DesktopState, default_state};
+use crate::state::internal::{DesktopState, default_state};
 
 /// Agent config directory root used by pi-rs (`~/.pi-rs/agent/`).
 fn agent_dir() -> Option<PathBuf> {

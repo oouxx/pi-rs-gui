@@ -1,7 +1,7 @@
 //! Composer operations — mirrors original `app-store-composer.ts`.
 
 use serde_json::json;
-use crate::store::internal::DesktopState;
+use crate::state::internal::DesktopState;
 
 pub fn update_composer_draft(state: &mut DesktopState, draft: &str) {
     state["composerDraft"] = json!(draft);

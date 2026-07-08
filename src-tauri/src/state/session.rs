@@ -1,7 +1,7 @@
 //! Session operations — mirrors original `app-store-session-state.ts` + session parts of `app-store-workspace.ts`.
 
 use serde_json::json;
-use crate::store::internal::{DesktopState, set_sess_field, now_iso};
+use crate::state::internal::{DesktopState, set_sess_field, now_iso};
 
 pub fn select_session(state: &mut DesktopState, target: &serde_json::Value) {
     if let Some(ws_id) = target["workspaceId"].as_str() { state["selectedWorkspaceId"] = json!(ws_id); }

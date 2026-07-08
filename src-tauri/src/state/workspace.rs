@@ -2,7 +2,7 @@
 
 use serde_json::json;
 
-use crate::store::internal::{DesktopState, now_iso, next_id};
+use crate::state::internal::{DesktopState, now_iso, next_id};
 
 pub fn add_workspace(state: &mut DesktopState, path: &str) {
     let ws_list = match state["workspaces"].as_array_mut() {

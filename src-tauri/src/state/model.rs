@@ -1,7 +1,7 @@
 //! Model/provider settings — mirrors model settings parts of original `app-store.ts`.
 
 use serde_json::json;
-use crate::store::internal::DesktopState;
+use crate::state::internal::DesktopState;
 
 /// Ensure a runtime entry exists for the given workspace, creating it if absent.
 pub fn ensure_runtime(state: &mut DesktopState, ws_id: &str) {

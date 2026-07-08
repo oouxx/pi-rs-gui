@@ -1,7 +1,7 @@
 //! Notification preferences — mirrors original `notification-manager.ts` + `notification-permission.ts`.
 
 use serde_json::json;
-use crate::store::internal::DesktopState;
+use crate::state::internal::DesktopState;
 
 pub fn set_notification_preferences(state: &mut DesktopState, prefs: serde_json::Value) {
     state["notificationPreferences"] = prefs;
