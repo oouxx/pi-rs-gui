@@ -11,7 +11,7 @@ import { useChat } from "@/hooks/useChat"
 
 export default function PiSidebar() {
   const { mode, setMode } = useAppMode()
-  const { workspaces, activeSessionId, selectSession, createSession, deleteSession, loading } = useChat()
+  const { workspaces, activeSessionId, selectSession, deleteSession, loading } = useChat()
   const [search, setSearch] = useState("")
   const [collapsedWs, setCollapsedWs] = useState<Set<string>>(new Set())
   const [collapsedEmptyWs, setCollapsedEmptyWs] = useState<Set<string>>(new Set())
@@ -36,7 +36,7 @@ export default function PiSidebar() {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={async () => { await createSession(); setMode("chat"); }} tooltip="New thread">
+            <SidebarMenuButton onClick={() => setMode("chat")} tooltip="New thread">
               <Plus />
               <span>New thread</span>
             </SidebarMenuButton>
