@@ -97,7 +97,22 @@ export function useChat() {
     });
 
     const unsub = api.onSelectedTranscriptChanged((t) => {
+      // Ignore transcript updates for non-active sessions
+      if (t && (t.workspaceId !== activeWsIdRef.current || t.sessionId !== activeSessionIdRef.current)) return;
+
       setMessages(t ? transcriptToDisplay(t.transcript) : []);
+
+      // Auto-title: after first assistant response, rename from user's message
+      if (autoTitlePendingRef.current && t && t.transcript.length >= 2) {
+        autoTitlePendingRef.current = false
+        const msgs: any[] = t.transcript as any
+        const firstUser = msgs.find((m) => m.role === "user")
+        if (firstUser) {
+          const title = (firstUser.text ?? firstUser.content ?? "").trim().slice(0, 60)
+          if (title) api.renameSession({ workspaceId: t.workspaceId, sessionId: t.sessionId }, title).catch(() => {})
+        }
+      }
+
       // Streaming ends when we get a non-null transcript update with content
       if (t && t.transcript.length > 0) {
         setStreaming(false);
@@ -136,6 +151,8 @@ export function useChat() {
     return () => clearInterval(interval);
   }, [streaming, activeSessionId]);
 
+  const autoTitlePendingRef = useRef(false)
+
   const sendMessage = useCallback(async (text: string) => {
     const api = window.piApp;
     if (!api || !text.trim() || streamingRef.current) return;
@@ -156,9 +173,12 @@ export function useChat() {
     }
     if (!wsId) return;
 
-    // Don't pre-create session — submitComposer handles it.
-    // Just call submitComposer directly; if no session exists the
-    // backend creates one and sets selectedSessionId.
+    // Flag for auto-title: if current session has default title, rename
+    // after assistant responds with the first ~60 chars of user's message.
+    const sid = activeSessionIdRef.current
+    const needsTitle = sid && workspaces.flatMap((w) => w.sessions).find((s) => s.id === sid)?.title === "Untitled"
+    if (needsTitle) autoTitlePendingRef.current = true
+
     setStreaming(true);
     streamingRef.current = true;
     try {
@@ -175,7 +195,7 @@ export function useChat() {
       setStreaming(false);
       streamingRef.current = false;
     }
-  }, []);
+  }, [workspaces]);
 
   const selectSession = useCallback(async (sessionId: string) => {
     const api = window.piApp;
