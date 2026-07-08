@@ -119,7 +119,7 @@ export function useChat() {
       const state = await api.getState()
       const ws = state.workspaces.find((w) => w.id === state.selectedWorkspaceId)
       if (!ws) {
-        await api.addWorkspacePath("/tmp")
+        await api.addWorkspacePath("~/.pi-rs")
         const newState = await api.getState()
         wsId = newState.workspaces[0]?.id ?? ""
       } else {
@@ -164,7 +164,7 @@ export function useChat() {
       const state = await api.getState()
       const ws = state.workspaces.find((w) => w.id === state.selectedWorkspaceId)
       if (!ws) {
-        await api.addWorkspacePath("/tmp")
+        await api.addWorkspacePath("~/.pi-rs")
         const newState = await api.getState()
         wsId = newState.workspaces[0]?.id ?? ""
       } else { wsId = ws.id }

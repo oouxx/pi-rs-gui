@@ -7,6 +7,14 @@ use pi_agent_core::types::AgentMessage;
 use crate::state::*;
 use crate::state::{worktree, workspace, session, composer, model, theme, notifications, git, terminal, timeline, providers, persistence, skills, extensions};
 
+fn cwd_fallback(path: Option<String>) -> String {
+    path.or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()))
+        .unwrap_or_else(|| {
+            std::env::var("HOME").map(|h| format!("{}/.pi-rs", h))
+                .unwrap_or_else(|_| "/tmp".into())
+        })
+}
+
 
     // ── Core ──
 
@@ -190,9 +198,8 @@ use crate::state::{worktree, workspace, session, composer, model, theme, notific
             let state = store.state.lock().await;
             let sid = state["selectedSessionId"].as_str().unwrap_or("");
             let ws_id = state["selectedWorkspaceId"].as_str().unwrap_or("ws-default");
-            let cwd = workspace::workspace_path(&state, ws_id)
-                .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()))
-                .unwrap_or_else(|| "/tmp".into());
+            let cwd = cwd_fallback(workspace::workspace_path(&state, ws_id)
+                .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())));
             // Look up sessionFile for an existing (restored) session
             let session_file: Option<String> = state["workspaces"].as_array()
                 .and_then(|ws| ws.iter().find(|w| w["id"] == ws_id))
@@ -224,9 +231,8 @@ use crate::state::{worktree, workspace, session, composer, model, theme, notific
         if store.session.lock().await.is_none() {
             let state = store.state.lock().await;
             let sid = state["selectedSessionId"].as_str().unwrap_or("");
-            let cwd = workspace::workspace_path(&state, ws_id)
-                .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()))
-                .unwrap_or_else(|| "/tmp".into());
+            let cwd = cwd_fallback(workspace::workspace_path(&state, ws_id)
+                .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())));
             let session_file: Option<String> = state["workspaces"].as_array()
                 .and_then(|ws| ws.iter().find(|w| w["id"] == ws_id))
                 .and_then(|w| w["sessions"].as_array())
@@ -486,9 +492,8 @@ use crate::state::{worktree, workspace, session, composer, model, theme, notific
                 .and_then(|ss| ss.iter().find(|s| s["id"] == sid))
                 .and_then(|s| s["sessionFile"].as_str().filter(|f| !f.is_empty()))
                 .map(String::from);
-            let cwd = workspace::workspace_path(&state, ws_id)
-                .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()))
-                .unwrap_or_else(|| "/tmp".into());
+            let cwd = cwd_fallback(workspace::workspace_path(&state, ws_id)
+                .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())));
             drop(state);
             if let Some(sf) = session_file {
                 eprintln!("[LLM] auto-loading session from: {sf}");

@@ -78,7 +78,7 @@ mod tests {
             )),
         };
         std::env::set_var("OPENROUTER_API_KEY", &key);
-        let cwd = std::env::current_dir().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| "/tmp".into());
+        let cwd = std::env::current_dir().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()));
         let agent_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join(".pi-rs-test-agent-openrouter");
         std::fs::create_dir_all(&agent_dir).ok();
         let options = pi_coding_agent::core::sdk::CreateAgentSessionOptions {
