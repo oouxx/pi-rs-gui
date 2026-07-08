@@ -1,6 +1,6 @@
 use crate::state::*;
 use crate::state::{
-    composer, extensions, git, model, notifications, persistence, providers, session, skills,
+    composer, extensions, git, model, persistence, providers, session, skills,
     theme, timeline, workspace,
 };
 use pi_agent_core::pi_ai_types::ContentBlock;
@@ -769,11 +769,7 @@ pub async fn set_notification_preferences(
     store: State<'_, Arc<Store>>,
     preferences: serde_json::Value,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            notifications::set_notification_preferences(s, preferences)
-        })
-        .await)
+    Ok(store.mutate(&app, |s| { s["notificationPreferences"] = preferences; }).await)
 }
 
 #[tauri::command]
@@ -782,11 +778,7 @@ pub async fn set_integrated_terminal_shell(
     store: State<'_, Arc<Store>>,
     shell: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            notifications::set_integrated_terminal_shell(s, &shell)
-        })
-        .await)
+    Ok(store.mutate(&app, |s| { s["integratedTerminalShell"] = json!(shell); }).await)
 }
 
 #[tauri::command]
@@ -795,9 +787,7 @@ pub async fn set_enable_transparency(
     store: State<'_, Arc<Store>>,
     enabled: bool,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| notifications::set_enable_transparency(s, enabled))
-        .await)
+    Ok(store.mutate(&app, |s| { s["enableTransparency"] = json!(enabled); }).await)
 }
 
 #[tauri::command]

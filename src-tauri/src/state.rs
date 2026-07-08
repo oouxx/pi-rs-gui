@@ -6,7 +6,6 @@ pub(crate) mod session;
 pub(crate) mod composer;
 pub(crate) mod model;
 pub(crate) mod theme;
-pub(crate) mod notifications;
 pub(crate) mod timeline;
 pub(crate) mod providers;
 pub(crate) mod persistence;
