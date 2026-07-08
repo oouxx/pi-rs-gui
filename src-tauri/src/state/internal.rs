@@ -95,37 +95,12 @@ pub fn default_state() -> DesktopState {
             "id": "ws-default", "name": "default", "path": "",
             "lastOpenedAt": now_iso(), "kind": "primary", "sessions": []
         }],
-        "worktreesByWorkspace": {},
         "selectedWorkspaceId": "ws-default",
         "selectedSessionId": "",
-        "activeView": "threads",
-        "composerDraft": "",
-        "composerDraftSyncSource": "state",
-        "composerDraftSyncNonce": 0,
-        "composerAttachments": [],
-        "queuedComposerMessages": [],
         "runtimeByWorkspace": {},
-        "sessionCommandsBySession": {},
-        "sessionExtensionUiBySession": {},
-        "extensionCommandCompatibilityByWorkspace": {},
-        "orchestrationChildren": [],
-        "notificationPreferences": {
-            "backgroundCompletion": true,
-            "backgroundFailure": true,
-            "attentionNeeded": true
-        },
-        "integratedTerminalShell": "",
-        "lastViewedAtBySession": {},
-        "pinnedAtBySession": {},
-        "pinnedSessionOrder": [],
-        "workspaceOrder": [],
-        "modelSettingsScopeMode": "app-global",
         "globalModelSettings": {"enabledModelPatterns": []},
         "themeMode": "system",
         "themePresetId": "default",
-        "sidebarCollapsed": false,
-        "enableTransparency": false,
-        "lastError": null
     })
 }
 
