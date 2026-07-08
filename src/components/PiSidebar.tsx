@@ -103,14 +103,14 @@ export default function PiSidebar() {
                     <span className="flex-1 truncate">{s.title}</span>
                   </SidebarMenuButton>
                   <button
-                    className="text-muted-foreground hover:text-destructive absolute top-1/2 right-1.5 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/item:opacity-100"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      deleteSession(s.id)
-                    }}
-                    title="Delete"
-                  >
-                    <Trash2 className="size-3" />
+                      className="text-muted-foreground hover:text-destructive absolute top-1/2 right-1.5 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/item:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deleteSession(s.id)
+                      }}
+                      title="Delete"
+                    >
+                      <Trash2 className="size-3" />
                   </button>
                 </SidebarMenuItem>
               ))
