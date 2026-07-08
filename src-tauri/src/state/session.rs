@@ -67,6 +67,20 @@ pub fn create_session(state: &mut DesktopState, workspace_id: &str, title: &str)
     }
 }
 
+pub fn rename_session(state: &mut DesktopState, target: &serde_json::Value, title: &str) {
+    let ws_id = target["workspaceId"].as_str().unwrap_or("");
+    let sess_id = target["sessionId"].as_str().unwrap_or("");
+    if let Some(ws) = state["workspaces"].as_array_mut()
+        .and_then(|ws| ws.iter_mut().find(|w| w["id"] == ws_id))
+    {
+        if let Some(sess) = ws["sessions"].as_array_mut()
+            .and_then(|ss| ss.iter_mut().find(|s| s["id"] == sess_id))
+        {
+            sess["title"] = json!(title);
+        }
+    }
+}
+
 /// Find and update a session's status, searching across **all** workspaces
 /// (not just the first one).
 pub fn set_session_status(state: &mut DesktopState, sid: &str, status: &str) {

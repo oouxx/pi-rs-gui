@@ -180,6 +180,11 @@ fn cwd_fallback(path: Option<String>) -> String {
     }
 
     #[tauri::command]
+    pub async fn rename_session(app: AppHandle, store: State<'_, Arc<Store>>, target: serde_json::Value, title: String) -> Result<DesktopState, String> {
+        Ok(store.mutate(&app, |s| session::rename_session(s, &target, &title)).await)
+    }
+
+    #[tauri::command]
     pub async fn cancel_current_run(app: AppHandle, store: State<'_, Arc<Store>>) -> Result<DesktopState, String> {
         store.abort().await;
         Ok(store.mutate(&app, |s| {

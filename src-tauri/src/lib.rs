@@ -37,6 +37,7 @@ pub fn run() {
             commands::unarchive_session,
             commands::set_session_pinned,
             commands::create_session,
+            commands::rename_session,
             commands::start_thread,
             commands::fork_thread,
             commands::send_child_thread_follow_up,

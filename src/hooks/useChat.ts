@@ -34,6 +34,8 @@ export function useChat() {
   // Sync refs (avoid stale closures)
   useEffect(() => { activeSessionIdRef.current = activeSessionId }, [activeSessionId])
 
+  const autoTitleRef = useRef<string | null>(null)
+
   const refreshState = useCallback(async () => {
     const api = window.piApp
     if (!api) return
@@ -81,6 +83,14 @@ export function useChat() {
 
     const unsub = api.onSelectedTranscriptChanged((t) => {
       if (t) setMessages(transcriptToDisplay(t.transcript))
+      // Auto-title from first user message when assistant responds
+      if (t && t.transcript.length > 1 && autoTitleRef.current) {
+        const title = autoTitleRef.current
+        autoTitleRef.current = null
+        const ws = activeWsIdRef.current
+        const sid = activeSessionIdRef.current
+        if (ws && sid) api.renameSession({ workspaceId: ws, sessionId: sid }, title).catch(() => {})
+      }
       // Streaming ends when we get a non-null transcript update with content
       if (t && t.transcript.length > 0) {
         setStreaming(false)
@@ -128,9 +138,11 @@ export function useChat() {
     }
     if (!wsId) return
 
-    // Don't pre-create session — submitComposer handles it.
-    // Just call submitComposer directly; if no session exists the
-    // backend creates one and sets selectedSessionId.
+    // Auto-title from first message: after submit, if session has a
+    // generic title, set it from the first ~60 chars of user's text.
+    const newSession = activeSessionIdRef.current === null
+    if (newSession) autoTitleRef.current = text.trim().slice(0, 60)
+
     setStreaming(true)
     streamingRef.current = true
     try {

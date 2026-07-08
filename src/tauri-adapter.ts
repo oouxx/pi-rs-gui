@@ -89,6 +89,7 @@ export async function createTauriPiApp(): Promise<PiDesktopApi> {
     unarchiveSession: (t) => tauriInvoke("unarchive_session", { target: t }),
     setSessionPinned: (t, p) => tauriInvoke("set_session_pinned", { target: t, pinned: p }),
     createSession: (i) => tauriInvoke("create_session", { input: i }),
+    renameSession: (t, title) => tauriInvoke("rename_session", { target: t, title }),
     startThread: (i) => tauriInvoke("start_thread", { input: i }),
     forkThread: (i) => tauriInvoke("fork_thread", { input: i }),
     sendChildThreadFollowUp: (i) => tauriInvoke("send_child_thread_follow_up", { input: i }),
