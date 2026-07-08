@@ -3,6 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { useAppMode } from "@/contexts/AppModeContext"
 import PiSidebar from "./PiSidebar"
 import ChatView from "./ChatView"
+import WorkspaceView from "./WorkspaceView"
 import SkillsView from "./SkillsView"
 import ExtensionsView from "./ExtensionsView"
 import SettingsView from "./SettingsView"
@@ -14,7 +15,9 @@ export default function AppShell() {
       <SidebarProvider defaultOpen>
         <PiSidebar />
         <SidebarInset className="overflow-hidden">
-          {mode === "chat" ? (
+          {mode === "workspace" ? (
+            <WorkspaceView />
+          ) : mode === "chat" ? (
             <ChatView />
           ) : mode === "skills" ? (
             <SkillsView />

@@ -1,7 +1,7 @@
 // src/contexts/AppModeContext.tsx
 import { createContext, useContext, useState, type ReactNode } from "react"
 
-export type AppMode = "chat" | "threads" | "skills" | "extensions" | "settings"
+export type AppMode = "workspace" | "chat" | "threads" | "skills" | "extensions" | "settings"
 
 interface AppModeContextType {
   mode: AppMode
