@@ -14,8 +14,15 @@ interface SessionItem {
   status: string
 }
 
+interface WorkspaceGroup {
+  id: string
+  name: string
+  path: string
+  sessions: SessionItem[]
+}
+
 export function useChat() {
-  const [sessions, setSessions] = useState<SessionItem[]>([])
+  const [workspaces, setWorkspaces] = useState<WorkspaceGroup[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<DisplayMessage[]>([])
   const [streaming, setStreaming] = useState(false)
@@ -32,14 +39,19 @@ export function useChat() {
     if (!api) return
     try {
       const state = await api.getState()
-      const ws = state.workspaces.find((w) => w.id === state.selectedWorkspaceId)
-      if (ws) activeWsIdRef.current = ws.id
-      setSessions(
-        (ws?.sessions ?? []).map((s) => ({
-          id: s.id,
-          title: s.title || "Untitled",
-          updatedAt: s.updatedAt,
-          status: s.status,
+      const currentWs = state.workspaces.find((w) => w.id === state.selectedWorkspaceId)
+      if (currentWs) activeWsIdRef.current = currentWs.id
+      setWorkspaces(
+        state.workspaces.filter((w) => w.sessions.length > 0).map((w) => ({
+          id: w.id,
+          name: w.name || w.path.split("/").pop() || w.id,
+          path: w.path,
+          sessions: w.sessions.map((s) => ({
+            id: s.id,
+            title: s.title || "Untitled",
+            updatedAt: s.updatedAt,
+            status: s.status,
+          })),
         })),
       )
       if (state.selectedSessionId && state.selectedSessionId !== activeSessionIdRef.current) {
@@ -172,7 +184,10 @@ export function useChat() {
     refreshState()
   }, [activeSessionId, refreshState])
 
+  const sessions = workspaces.flatMap((w) => w.sessions)
+
   return {
+    workspaces,
     sessions,
     activeSessionId,
     selectSession,
