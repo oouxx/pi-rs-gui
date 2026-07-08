@@ -21,8 +21,12 @@ export function useChat() {
   const [streaming, setStreaming] = useState(false)
   const [loading, setLoading] = useState(true)
   const activeWsIdRef = useRef<string>("")
+  const activeSessionIdRef = useRef<string | null>(null)
+  const streamingRef = useRef(false)
 
-  // Poll state to get sessions list + selected session
+  // Sync refs (avoid stale closures)
+  useEffect(() => { activeSessionIdRef.current = activeSessionId }, [activeSessionId])
+
   const refreshState = useCallback(async () => {
     const api = window.piApp
     if (!api) return
@@ -38,13 +42,12 @@ export function useChat() {
           status: s.status,
         })),
       )
-      // Sync active session
-      if (state.selectedSessionId && state.selectedSessionId !== activeSessionId) {
+      if (state.selectedSessionId && state.selectedSessionId !== activeSessionIdRef.current) {
         setActiveSessionId(state.selectedSessionId)
       }
       setLoading(false)
     } catch { /* ignore */ }
-  }, [activeSessionId])
+  }, []) // ponytail: stable callback via refs, no deps needed
 
   // Subscribe to state changes
   useEffect(() => {
@@ -55,7 +58,7 @@ export function useChat() {
     return unsub
   }, [refreshState])
 
-  // Fetch & subscribe to transcript
+  // Subscribe to transcript changes when active session changes
   useEffect(() => {
     const api = window.piApp
     if (!api || !activeSessionId) return
@@ -66,21 +69,44 @@ export function useChat() {
 
     const unsub = api.onSelectedTranscriptChanged((t) => {
       if (t) setMessages(transcriptToDisplay(t.transcript))
+      // Streaming ends when we get a non-null transcript update with content
+      if (t && t.transcript.length > 0) {
+        setStreaming(false)
+        streamingRef.current = false
+      }
     })
     return unsub
   }, [activeSessionId])
 
+  // Poll backend streaming flag while we think we're streaming
+  useEffect(() => {
+    if (!streaming) return
+    const interval = setInterval(async () => {
+      try {
+        const api = window.piApp
+        if (!api) return
+        // Try to call the backend streaming check via ping/state
+        const state = await api.getState()
+        const ws = state.workspaces.find((w) => w.id === state.selectedWorkspaceId)
+        const session = (ws?.sessions ?? []).find((s: any) => s.id === activeSessionId)
+        if (session?.status === "idle") {
+          setStreaming(false)
+          streamingRef.current = false
+        }
+      } catch { /* ignore */ }
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [streaming, activeSessionId])
+
   const sendMessage = useCallback(async (text: string) => {
     const api = window.piApp
-    if (!api || !text.trim() || streaming) return
+    if (!api || !text.trim() || streamingRef.current) return
 
-    // If no active session, create one
     let wsId = activeWsIdRef.current
     if (!wsId) {
       const state = await api.getState()
       const ws = state.workspaces.find((w) => w.id === state.selectedWorkspaceId)
       if (!ws) {
-        // Create a workspace if none exists (fallback)
         await api.addWorkspacePath("/tmp")
         const newState = await api.getState()
         wsId = newState.workspaces[0]?.id ?? ""
@@ -88,19 +114,28 @@ export function useChat() {
         wsId = ws.id
       }
     }
+    if (!wsId) return
 
-    if (!activeSessionId) {
-      const newState = await api.createSession({ workspaceId: wsId, title: text.slice(0, 50) })
-      const newSessionId = newState.selectedSessionId
-      if (!newSessionId) return
-      setActiveSessionId(newSessionId)
-    }
+    // Don't pre-create session — submitComposer handles it.
+    // Just call submitComposer directly; if no session exists the
+    // backend creates one and sets selectedSessionId.
     setStreaming(true)
+    streamingRef.current = true
     try {
       await api.submitComposer(text)
-    } catch { /* error handled in transcript */ }
-    setStreaming(false)
-  }, [activeSessionId, streaming])
+      // After submitComposer returns, wait for the transcript event
+      // to set streaming=false.  We set a safety timeout.
+      setTimeout(() => {
+        if (streamingRef.current) {
+          setStreaming(false)
+          streamingRef.current = false
+        }
+      }, 120_000) // 2 min safety valve
+    } catch {
+      setStreaming(false)
+      streamingRef.current = false
+    }
+  }, [])
 
   const selectSession = useCallback(async (sessionId: string) => {
     const api = window.piApp
@@ -137,21 +172,12 @@ export function useChat() {
     refreshState()
   }, [activeSessionId, refreshState])
 
-  const archiveSession = useCallback(async (sessionId: string) => {
-    const api = window.piApp
-    if (!api || !activeWsIdRef.current) return
-    await api.archiveSession({ workspaceId: activeWsIdRef.current, sessionId })
-    if (activeSessionId === sessionId) setActiveSessionId(null)
-    refreshState()
-  }, [activeSessionId, refreshState])
-
   return {
     sessions,
     activeSessionId,
     selectSession,
     createSession,
     deleteSession,
-    archiveSession,
     messages,
     sendMessage,
     streaming,
