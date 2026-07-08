@@ -1,0 +1,45 @@
+/* base.css — Reset、body、scrollbar、selection */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    transition:
+      background-color 0.3s,
+      color 0.3s,
+      border-color 0.3s,
+      box-shadow 0.3s;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    font-family: var(--font-sans, "Inter", system-ui, sans-serif);
+  }
+
+  body {
+    background: var(--color-background, oklch(0.97 0 0));
+    color: var(--color-foreground, oklch(0.2 0 0));
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-surface, oklch(1 0 0));
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-muted, oklch(0.53 0.005 88));
+    border-radius: 3px;
+  }
+
+  ::selection {
+    background: rgba(127, 119, 221, 0.2);
+    color: var(--color-foreground, oklch(0.2 0 0));
+  }
+}

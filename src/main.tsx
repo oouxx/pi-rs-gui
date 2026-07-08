@@ -1,15 +1,17 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import App from "./App";
-import { createTauriPiApp } from "./tauri-adapter";
-import "./styles.css";
+import React from "react"
+import ReactDOM from "react-dom/client"
+import { BrowserRouter } from "react-router-dom"
+import App from "./App"
+import { createTauriPiApp } from "./tauri-adapter"
+import "./style.css"
 
-// Provide pi-gui's expected window.piApp API backed by Tauri invoke
 createTauriPiApp().then((api) => {
-  window.piApp = api;
+  window.piApp = api
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
-      <App />
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
     </React.StrictMode>,
-  );
-});
+  )
+})

@@ -1,0 +1,187 @@
+/* theme.css — Design Token，唯一主题来源 + shadcn CSS 变量 */
+
+/* ── Light Mode ── */
+:root {
+  /* Raw RGB 三元组 — 给 Canvas / inline style 用，不做为 @theme 依赖 */
+  --color-bg-rgb: 250 250 245;
+  --color-surface-rgb: 255 255 255;
+  --color-surface-hover-rgb: 245 245 240;
+  --color-fg-rgb: 45 45 42;
+  --color-muted-rgb: 107 107 102;
+  --color-border-rgb: 0 0 0;
+  --color-accent-rgb: 191 101 52;
+  --color-accent-hover-rgb: 168 85 41;
+  --color-tag-bg: rgba(0, 0, 0, 0.04);
+  --color-header-bg: #ffffff;
+
+  /* shadcn CSS 变量（OKLCH 分空格格式），供 shadcn/tailwind.css preset 解析 */
+  --background: 0.97 0 0;
+  --foreground: 0.2 0 0;
+  --card: 1 0 0;
+  --card-foreground: 0.2 0 0;
+  --popover: 1 0 0;
+  --popover-foreground: 0.2 0 0;
+  --primary: 0.55 0.09 290;
+  --primary-foreground: 0.985 0 0;
+  --secondary: 0.97 0 0;
+  --secondary-foreground: 0.2 0 0;
+  --muted: 0.97 0 0;
+  --muted-foreground: 0.55 0 0;
+  --accent: 0.97 0 0;
+  --accent-foreground: 0.2 0 0;
+  --destructive: 0.577 0.245 27.325;
+  --border: 0.2 0 0 / 0.12;
+  --input: 0.2 0 0 / 0.15;
+  --ring: 0.55 0.09 290;
+  --radius: 0.625rem;
+  --sidebar: 0.97 0 0;
+  --sidebar-foreground: 0.2 0 0;
+  --sidebar-primary: 0.55 0.09 290;
+  --sidebar-primary-foreground: 0.985 0 0;
+  --sidebar-accent: 0.97 0 0;
+  --sidebar-accent-foreground: 0.2 0 0;
+  --sidebar-border: 0 0 0 / 0;
+  --sidebar-ring: 0.55 0.09 290;
+}
+
+@theme {
+  /* Background / Surface */
+  --color-background: oklch(0.97 0 0);
+  --color-foreground: oklch(0.2 0 0);
+  --color-surface: oklch(1 0 0);
+  --color-surface-hover: oklch(0.96 0 0);
+  --color-muted: oklch(0.55 0 0);
+
+  /* Border / Ring */
+  --color-border: oklch(0.2 0 0 / 0.12);
+  --color-input: oklch(0.2 0 0 / 0.15);
+  --color-ring: oklch(0.55 0.09 290);
+  --color-hairline: oklch(0.2 0 0 / 0.06);
+  --color-hairline-dark: oklch(0.2 0 0 / 0.04);
+
+  /* Accent / Primary (AI 紫色系) */
+  --color-accent: oklch(0.55 0.09 290);
+  --color-accent-hover: oklch(0.49 0.09 290);
+  --color-accent-foreground: oklch(0.985 0 0);
+  --color-primary: oklch(0.55 0.09 290);
+  --color-primary-hover: oklch(0.49 0.09 290);
+  --color-primary-foreground: oklch(0.985 0 0);
+
+  /* Legacy aliases（过渡，逐步迁移到新 token 名） */
+  --color-bg: oklch(0.97 0 0);
+  --color-bg-surface: oklch(1 0 0);
+  --color-bg-hover: oklch(0.96 0 0);
+  --color-white: oklch(0.2 0 0);
+  --color-black: oklch(0.97 0 0);
+  --color-canvas: oklch(0.97 0 0);
+  --color-canvas-parchment: oklch(1 0 0);
+  --color-surface-dark: oklch(1 0 0);
+  --color-surface-dark-2: oklch(0.96 0 0);
+  --color-surface-dark-3: oklch(0.97 0 0);
+  --color-ink: oklch(0.2 0 0);
+  --color-ink-muted: oklch(0.55 0 0);
+  --color-ink-dim: oklch(0.2 0 0 / 0.06);
+  --color-ai: oklch(0.55 0.09 290);
+  --color-ai-hover: oklch(0.49 0.09 290);
+  --color-ai-muted: oklch(0.55 0.09 290 / 0.15);
+  --color-ai-focus: oklch(0.49 0.09 290);
+
+  /* Typography */
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --font-size-display-lg: 40px;
+  --font-size-display-md: 28px;
+  --font-size-body: 17px;
+  --font-size-body-strong: 17px;
+  --font-size-caption: 14px;
+  --font-size-caption-strong: 14px;
+  --font-size-nav-link: 12px;
+
+  /* Border radius */
+  --radius-card: 18px;
+  --radius-button: 9999px;
+  --radius-input: 18px;
+  --radius-badge: 5px;
+
+  /* Shadows */
+  --shadow-terminal: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-terminal-lg: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Dark Mode ── */
+.dark,
+[data-theme="dark"] {
+  --color-bg-rgb: 13 13 26;
+  --color-surface-rgb: 17 17 36;
+  --color-surface-hover-rgb: 26 26 53;
+  --color-fg-rgb: 232 232 237;
+  --color-muted-rgb: 136 135 128;
+  --color-border-rgb: 255 255 255;
+  --color-accent-rgb: 127 119 221;
+  --color-accent-hover-rgb: 153 144 240;
+  --color-tag-bg: rgba(255, 255, 255, 0.05);
+  --color-header-bg: #000000;
+
+  /* shadcn dark */
+  --background: 0.072 0.011 288;
+  --foreground: 0.92 0.004 285;
+  --card: 0.072 0.011 288;
+  --card-foreground: 0.92 0.004 285;
+  --popover: 0.072 0.011 288;
+  --popover-foreground: 0.92 0.004 285;
+  --primary: 0.55 0.09 290;
+  --primary-foreground: 0.985 0 0;
+  --secondary: 0.107 0.016 288;
+  --secondary-foreground: 0.92 0.004 285;
+  --muted: 0.107 0.016 288;
+  --muted-foreground: 0.56 0.008 90;
+  --accent: 0.107 0.016 288;
+  --accent-foreground: 0.92 0.004 285;
+  --destructive: 0.58 0.22 25;
+  --border: 0.92 0 0 / 0.12;
+  --input: 0.92 0 0 / 0.15;
+  --ring: 0.55 0.09 290;
+  --sidebar: 0.072 0.011 288;
+  --sidebar-foreground: 0.92 0.004 285;
+  --sidebar-primary: 0.55 0.09 290;
+  --sidebar-primary-foreground: 0.985 0 0;
+  --sidebar-accent: 0.107 0.016 288;
+  --sidebar-accent-foreground: 0.92 0.004 285;
+  --sidebar-border: 0.92 0 0 / 0;
+  --sidebar-ring: 0.55 0.09 290;
+
+  /* @theme 颜色变量覆盖 — 深色模式下 Tailwind utility class 引用这些值 */
+  --color-background: oklch(0.072 0.011 288);
+  --color-foreground: oklch(0.92 0.004 285);
+  --color-surface: oklch(0.1 0.008 288);
+  --color-surface-hover: oklch(0.15 0.012 288);
+  --color-muted: oklch(0.56 0.008 90);
+
+  --color-border: oklch(0.92 0 0 / 0.12);
+  --color-input: oklch(0.92 0 0 / 0.15);
+  --color-hairline: oklch(0.92 0 0 / 0.06);
+  --color-hairline-dark: oklch(0.92 0 0 / 0.04);
+
+  --color-accent: oklch(0.55 0.09 290);
+  --color-accent-hover: oklch(0.59 0.09 290);
+  --color-primary: oklch(0.55 0.09 290);
+  --color-primary-hover: oklch(0.59 0.09 290);
+
+  --color-bg: oklch(0.072 0.011 288);
+  --color-bg-surface: oklch(0.1 0.008 288);
+  --color-bg-hover: oklch(0.15 0.012 288);
+  --color-white: oklch(0.92 0.004 285);
+  --color-black: oklch(0.072 0.011 288);
+  --color-canvas: oklch(0.072 0.011 288);
+  --color-canvas-parchment: oklch(0.1 0.008 288);
+  --color-surface-dark: oklch(0.1 0.008 288);
+  --color-surface-dark-2: oklch(0.15 0.012 288);
+  --color-surface-dark-3: oklch(0.072 0.011 288);
+  --color-ink: oklch(0.92 0.004 285);
+  --color-ink-muted: oklch(0.56 0.008 90);
+  --color-ink-dim: oklch(0.92 0.004 285 / 0.06);
+  --color-ai: oklch(0.55 0.09 290);
+  --color-ai-hover: oklch(0.59 0.09 290);
+  --color-ai-muted: oklch(0.55 0.09 290 / 0.15);
+  --color-ai-focus: oklch(0.59 0.09 290);
+}

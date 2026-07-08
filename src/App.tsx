@@ -1,32 +1,16 @@
-import { useEffect, useState } from "react";
-import type { DesktopAppState } from "./types";
-
-function useDesktopAppState() {
-  const [snapshot, setSnapshot] = useState<DesktopAppState | null>(null);
-
-  useEffect(() => {
-    const api = window.piApp;
-    if (!api) return;
-
-    let active = true;
-    void api.getState().then((state) => { if (active) setSnapshot(state); });
-
-    const unsub = api.onStateChanged((state) => { if (active) setSnapshot(state); });
-    return () => { active = false; unsub(); };
-  }, []);
-
-  return snapshot;
-}
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
+import { AppModeProvider } from "./contexts/AppModeContext"
+import AppShell from "./components/AppShell"
 
 export default function App() {
-  const snapshot = useDesktopAppState();
-
   return (
-    <div style={{ padding: 24 }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700, margin: 0 }}>pi-gui</h1>
-      <p style={{ color: "#747d93", marginTop: 8 }}>
-        {snapshot ? `${snapshot.workspaces.length} workspaces` : "Loading…"}
-      </p>
-    </div>
-  );
+    <AppModeProvider>
+      <div className="bg-background min-h-screen">
+        <Routes>
+          <Route path="/" element={<AppShell />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
+    </AppModeProvider>
+  )
 }
