@@ -3,6 +3,9 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { useAppMode } from "@/contexts/AppModeContext"
 import PiSidebar from "./PiSidebar"
 import ChatView from "./ChatView"
+import SkillsView from "./SkillsView"
+import ExtensionsView from "./ExtensionsView"
+import SettingsView from "./SettingsView"
 
 export default function AppShell() {
   const { mode } = useAppMode()
@@ -14,25 +17,11 @@ export default function AppShell() {
           {mode === "chat" ? (
             <ChatView />
           ) : mode === "skills" ? (
-            <div className="flex h-full max-h-screen min-w-0 flex-1 flex-col">
-              <div className="border-hairline flex items-center gap-2 border-b px-3 py-2">
-                <SidebarTrigger />
-                <div className="text-muted-foreground text-xs">pi-gui / Skills</div>
-              </div>
-              <div className="flex h-full items-center justify-center text-muted-foreground">
-                Skills view coming soon
-              </div>
-            </div>
+            <SkillsView />
           ) : mode === "extensions" ? (
-            <div className="flex h-full max-h-screen min-w-0 flex-1 flex-col">
-              <div className="border-hairline flex items-center gap-2 border-b px-3 py-2">
-                <SidebarTrigger />
-                <div className="text-muted-foreground text-xs">pi-gui / Extensions</div>
-              </div>
-              <div className="flex h-full items-center justify-center text-muted-foreground">
-                Extensions view coming soon
-              </div>
-            </div>
+            <ExtensionsView />
+          ) : mode === "settings" ? (
+            <SettingsView />
           ) : (
             <div className="flex h-full max-h-screen min-w-0 flex-1 flex-col">
               <div className="border-hairline flex items-center gap-2 border-b px-3 py-2">
