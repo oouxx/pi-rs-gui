@@ -90,14 +90,19 @@ export function useChat() {
     const api = window.piApp;
     if (!api || !activeSessionId) return;
 
+    // Clear stale messages immediately, then fetch fresh
+    setMessages([]);
     api.getSelectedTranscript().then((t) => {
-      if (t) setMessages(transcriptToDisplay(t.transcript));
+      setMessages(t ? transcriptToDisplay(t.transcript) : []);
     });
 
     const unsub = api.onSelectedTranscriptChanged((t) => {
-      if (t) setMessages(transcriptToDisplay(t.transcript));
+      setMessages(t ? transcriptToDisplay(t.transcript) : []);
       // Streaming ends when we get a non-null transcript update with content
       if (t && t.transcript.length > 0) {
+        setStreaming(false);
+        streamingRef.current = false;
+      } else if (t === null) {
         setStreaming(false);
         streamingRef.current = false;
       }
