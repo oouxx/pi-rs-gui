@@ -46,6 +46,53 @@ pub fn scan_existing_sessions() -> Vec<serde_json::Value> {
     sessions
 }
 
+/// Read transcript messages directly from a JSONL session file (append-only).
+/// Returns the messages as a JSON array of {id, kind, role, text, createdAt}.
+pub fn read_transcript_from_file(path: &str) -> Vec<serde_json::Value> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+    let mut messages = Vec::new();
+    for line in content.lines() {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
+            // Header entries have "id"/"cwd"/"timestamp" — skip
+            if val.get("cwd").is_some() { continue; }
+            // Extract entries array
+            let entries = match val.get("entries").and_then(|e| e.as_array()) {
+                Some(a) => a,
+                None => continue,
+            };
+            for entry in entries {
+                let msg = match entry.get("message") {
+                    Some(m) => m,
+                    None => continue,
+                };
+                let role = match msg.get("role").and_then(|r| r.as_str()) {
+                    Some("user") => "user",
+                    Some("assistant") => "assistant",
+                    _ => continue,
+                };
+                let text: String = msg.get("content")
+                    .and_then(|c| c.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let ts = entry.get("timestamp")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                messages.push(json!({
+                    "id": format!("msg-{}", messages.len()),
+                    "kind": "message",
+                    "role": role,
+                    "text": text,
+                    "createdAt": ts,
+                }));
+            }
+        }
+    }
+    messages
+}
+
 /// Try to extract a human-readable title from a JSONL session file.
 /// Reads the first few lines looking for a name/header entry.
 fn extract_session_title(path: &PathBuf) -> String {

@@ -844,58 +844,28 @@ pub async fn navigate_session_tree(
 
 #[tauri::command]
 pub async fn get_selected_transcript(
-    app: AppHandle,
     store: State<'_, Arc<Store>>,
 ) -> Result<Option<serde_json::Value>, String> {
-    // Auto-load session from JSONL if no active AgentSession
-    if store.session.lock().await.is_none() {
-        let (cwd, session_file) = {
-            let state = store.state.lock().await;
-            let sid = state["selectedSessionId"].as_str().unwrap_or("");
-            let ws_id = state["selectedWorkspaceId"].as_str().unwrap_or("ws-default");
-            let file = state["workspaces"].as_array()
-                .and_then(|ws| ws.iter().find(|w| w["id"] == ws_id))
+    let (ws_id, sess_id, session_file) = {
+        let state = store.state.lock().await;
+        let sid = state["selectedSessionId"].as_str().unwrap_or("").to_string();
+        (
+            state["selectedWorkspaceId"].as_str().unwrap_or("ws-default").to_string(),
+            sid.clone(),
+            state["workspaces"].as_array()
+                .and_then(|ws| ws.iter().find(|w| w["id"] == state["selectedWorkspaceId"].as_str().unwrap_or("")))
                 .and_then(|w| w["sessions"].as_array())
                 .and_then(|ss| ss.iter().find(|s| s["id"] == sid))
                 .and_then(|s| s["sessionFile"].as_str().filter(|f| !f.is_empty()))
-                .map(String::from);
-            let cwd = cwd_fallback(workspace::workspace_path(&state, ws_id).or_else(||
-                std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string())
-            ));
-            (cwd, file)
-        };
-        if let Some(sf) = session_file {
-            let _ = store.create_agent_session(&app, &cwd, Some(sf)).await;
-        }
-    }
-
-    let messages = store.get_messages().await;
-    if messages.is_empty() { return Ok(None); }
-
-    let (ws_id, sess_id) = {
-        let state = store.state.lock().await;
-        (
-            state["selectedWorkspaceId"].as_str().unwrap_or("ws-default").to_string(),
-            state["selectedSessionId"].as_str().unwrap_or("").to_string(),
+                .map(String::from),
         )
     };
+    if sess_id.is_empty() { return Ok(None); }
 
-    let transcript: Vec<serde_json::Value> = messages.iter().filter_map(|msg| {
-        let (role, content, ts) = match msg {
-            AgentMessage::User { content, timestamp } => ("user", content, *timestamp),
-            AgentMessage::Assistant { content, timestamp, .. } => ("assistant", content, *timestamp),
-            _ => return None,
-        };
-        let text: String = content.iter()
-            .filter_map(|b| if let ContentBlock::Text { text, .. } = b { Some(text.clone()) } else { None })
-            .collect();
-        let secs = (ts / 1000) as i64;
-        let created = chrono::DateTime::from_timestamp(secs, 0)
-            .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-            .unwrap_or_else(now_iso);
-        Some(json!({"id": format!("msg-{}", ts), "kind": "message", "role": role, "text": text, "createdAt": created}))
-    }).collect();
-
+    let transcript = match session_file {
+        Some(ref p) => session::read_transcript_from_file(p),
+        None => vec![],
+    };
     if transcript.is_empty() { return Ok(None); }
 
     Ok(Some(json!({"workspaceId": ws_id, "sessionId": sess_id, "transcript": transcript})))
