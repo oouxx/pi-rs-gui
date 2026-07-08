@@ -1,7 +1,7 @@
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useAppMode } from "@/contexts/AppModeContext"
-import ConversationSidebar from "./ConversationSidebar"
+import PiSidebar from "./PiSidebar"
 import ChatView from "./ChatView"
 
 export default function AppShell() {
@@ -9,7 +9,7 @@ export default function AppShell() {
   return (
     <TooltipProvider>
       <SidebarProvider defaultOpen>
-        <ConversationSidebar />
+        <PiSidebar />
         <SidebarInset className="overflow-hidden">
           {mode === "chat" ? (
             <ChatView />

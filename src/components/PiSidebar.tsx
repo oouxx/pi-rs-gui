@@ -8,7 +8,7 @@ import { Search, Plus, Settings, Puzzle, MessageSquare } from "lucide-react"
 import { useAppMode } from "@/contexts/AppModeContext"
 import { useChat } from "@/hooks/useChat"
 
-export default function ConversationSidebar() {
+export default function PiSidebar() {
   const { mode, setMode } = useAppMode()
   const { sessions, activeSessionId, selectSession, loading } = useChat()
   const [search, setSearch] = useState("")
