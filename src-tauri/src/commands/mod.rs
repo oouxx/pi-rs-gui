@@ -1,7 +1,7 @@
 use crate::state::*;
 use crate::state::{
     composer, extensions, git, model, persistence, providers, session, skills,
-    theme, timeline, workspace,
+    theme, workspace,
 };
 use pi_agent_core::pi_ai_types::ContentBlock;
 use pi_agent_core::types::AgentMessage;
@@ -819,8 +819,7 @@ pub async fn get_session_tree(
         .unwrap_or("")
         .to_string();
     drop(state);
-    let msgs = store.get_messages().await;
-    Ok(timeline::build_session_tree(&sid, &msgs))
+    Ok(json!({"id": sid, "label": "root", "roots": [], "leafId": ""}))
 }
 
 #[tauri::command]
