@@ -90,7 +90,8 @@ export function useChat() {
     const api = window.piApp;
     if (!api || !activeSessionId) return;
 
-    // Clear stale messages immediately, then fetch fresh
+    // Sync ref and clear stale messages immediately
+    activeSessionIdRef.current = activeSessionId;
     setMessages([]);
     api.getSelectedTranscript().then((t) => {
       setMessages(t ? transcriptToDisplay(t.transcript) : []);
@@ -176,7 +177,8 @@ export function useChat() {
     // Flag for auto-title: if current session has default title, rename
     // after assistant responds with the first ~60 chars of user's message.
     const sid = activeSessionIdRef.current
-    const needsTitle = sid && workspaces.flatMap((w) => w.sessions).find((s) => s.id === sid)?.title === "Untitled"
+    const sess = sid ? workspaces.flatMap((w) => w.sessions).find((s) => s.id === sid) : null
+    const needsTitle = sess && (sess.title === "New thread" || sess.title === "Untitled")
     if (needsTitle) autoTitlePendingRef.current = true
 
     setStreaming(true);
@@ -201,7 +203,10 @@ export function useChat() {
     const api = window.piApp;
     if (!api || !activeWsIdRef.current) return;
     await api.selectSession({ workspaceId: activeWsIdRef.current, sessionId });
+    activeSessionIdRef.current = sessionId;
     setActiveSessionId(sessionId);
+    // Clear messages immediately so old messages don't flash
+    setMessages([]);
   }, []);
 
   const createSession = useCallback(async (title?: string) => {
