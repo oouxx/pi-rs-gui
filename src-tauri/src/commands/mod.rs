@@ -281,50 +281,7 @@ use crate::state::{worktree, workspace, session, composer, model, theme, notific
         Ok(store.mutate(&app, |s| model::set_session_thinking_level(s, &workspace_id, &session_id, &thinking_level)).await)
     }
 
-    // ── Providers ──
 
-    #[tauri::command]
-    pub async fn login_provider(app: AppHandle, store: State<'_, Arc<Store>>, workspace_id: String, provider_id: String) -> Result<DesktopState, String> {
-        pi_ai::providers::register_builtins::register_built_in_api_providers();
-        Ok(store.mutate(&app, |s| {
-            s["runtimeByWorkspace"][&workspace_id]["providers"] = build_runtime_snapshot()["providers"].clone();
-        }).await)
-    }
-
-    #[tauri::command]
-    pub async fn logout_provider(app: AppHandle, store: State<'_, Arc<Store>>, workspace_id: String, provider_id: String) -> Result<DesktopState, String> {
-        Ok(store.mutate(&app, |s| {
-            s["runtimeByWorkspace"][&workspace_id]["providers"] = build_runtime_snapshot()["providers"].clone();
-        }).await)
-    }
-
-    #[tauri::command]
-    pub async fn set_provider_api_key(store: State<'_, Arc<Store>>, _workspace_id: String, provider_id: String, api_key: String) -> Result<DesktopState, String> {
-        if let Some(var_name) = pi_ai::env_api_keys::get_env_var_name(&provider_id) {
-            std::env::set_var(var_name, &api_key);
-        }
-        Ok(store.state.lock().await.clone())
-    }
-
-    #[tauri::command]
-    pub async fn set_custom_provider(app: AppHandle, store: State<'_, Arc<Store>>, workspace_id: String, config: serde_json::Value) -> Result<DesktopState, String> {
-        let path = pi_coding_agent::config::get_models_path();
-        if let Some(dir) = path.parent() { let _ = std::fs::create_dir_all(dir); }
-        let content = serde_json::to_string_pretty(&config).unwrap_or_default();
-        let _ = std::fs::write(&path, &content);
-        Ok(store.mutate(&app, |s| {
-            s["runtimeByWorkspace"][&workspace_id] = build_runtime_snapshot();
-        }).await)
-    }
-
-    #[tauri::command]
-    pub async fn delete_custom_provider(app: AppHandle, store: State<'_, Arc<Store>>, workspace_id: String, provider_id: String) -> Result<DesktopState, String> {
-        let path = pi_coding_agent::config::get_models_path();
-        let _ = std::fs::write(&path, "{}");
-        Ok(store.mutate(&app, |s| {
-            s["runtimeByWorkspace"][&workspace_id] = build_runtime_snapshot();
-        }).await)
-    }
     #[tauri::command]
     pub async fn set_enable_skill_commands(app: AppHandle, store: State<'_, Arc<Store>>, workspace_id: String, enabled: bool) -> Result<DesktopState, String> {
         Ok(store.mutate(&app, |s| {
@@ -355,16 +312,6 @@ use crate::state::{worktree, workspace, session, composer, model, theme, notific
         Ok(store.mutate(&app, |s| {
             s["pendingHostUiResponses"] = json!({"workspaceId": workspace_id, "sessionId": session_id, "response": response});
         }).await)
-    }
-
-    #[tauri::command]
-    pub async fn list_custom_providers() -> Result<Vec<serde_json::Value>, String> {
-        Ok(providers::list_custom_providers())
-    }
-
-    #[tauri::command]
-    pub async fn probe_custom_provider_models(_input: serde_json::Value) -> Result<serde_json::Value, String> {
-        Ok(providers::probe_custom_provider_models())
     }
 
     // ── Orchestration ──
@@ -676,6 +623,12 @@ use crate::state::{worktree, workspace, session, composer, model, theme, notific
     // ── Model CRUD ──
 
     #[tauri::command]
+    pub async fn get_default_model(store: State<'_, Arc<Store>>, workspace_id: String) -> Result<serde_json::Value, String> {
+        let state = store.state.lock().await;
+        Ok(model::get_default_model(&state, &workspace_id))
+    }
+
+    #[tauri::command]
     pub async fn get_models(store: State<'_, Arc<Store>>, workspace_id: String) -> Result<serde_json::Value, String> {
         let state = store.state.lock().await;
         let snapshot = state["runtimeByWorkspace"][&workspace_id].clone();
@@ -697,6 +650,65 @@ use crate::state::{worktree, workspace, session, composer, model, theme, notific
         let settings = state["runtimeByWorkspace"][&workspace_id]["settings"].clone();
         let global = state["globalModelSettings"].clone();
         Ok(json!({"settings": settings, "globalModelSettings": global}))
+    }
+
+    // ── Providers CRUD ──
+
+    #[tauri::command]
+    pub async fn login_provider(app: AppHandle, store: State<'_, Arc<Store>>, workspace_id: String, _provider_id: String) -> Result<DesktopState, String> {
+        pi_ai::providers::register_builtins::register_built_in_api_providers();
+        Ok(store.mutate(&app, |s| {
+            s["runtimeByWorkspace"][&workspace_id] = build_runtime_snapshot();
+        }).await)
+    }
+
+    #[tauri::command]
+    pub async fn logout_provider(app: AppHandle, store: State<'_, Arc<Store>>, workspace_id: String, _provider_id: String) -> Result<DesktopState, String> {
+        Ok(store.mutate(&app, |s| {
+            s["runtimeByWorkspace"][&workspace_id] = build_runtime_snapshot();
+        }).await)
+    }
+
+    #[tauri::command]
+    pub async fn set_provider_api_key(store: State<'_, Arc<Store>>, _workspace_id: String, provider_id: String, api_key: String) -> Result<DesktopState, String> {
+        providers::set_provider_api_key(&provider_id, &api_key).map_err(|e| format!("{e}"))?;
+        Ok(store.state.lock().await.clone())
+    }
+
+    #[tauri::command]
+    pub async fn list_custom_providers() -> Result<Vec<serde_json::Value>, String> {
+        Ok(providers::list_custom_providers())
+    }
+
+    #[tauri::command]
+    pub async fn get_custom_provider(provider_id: String) -> Result<serde_json::Value, String> {
+        providers::get_custom_provider(&provider_id).ok_or_else(|| format!("provider '{provider_id}' not found"))
+    }
+
+    #[tauri::command]
+    pub async fn set_custom_provider(app: AppHandle, store: State<'_, Arc<Store>>, workspace_id: String, config: serde_json::Value) -> Result<DesktopState, String> {
+        providers::set_custom_provider(&config)?;
+        Ok(store.mutate(&app, |s| {
+            s["runtimeByWorkspace"][&workspace_id] = build_runtime_snapshot();
+        }).await)
+    }
+
+    #[tauri::command]
+    pub async fn delete_custom_provider(app: AppHandle, store: State<'_, Arc<Store>>, workspace_id: String, provider_id: String) -> Result<DesktopState, String> {
+        providers::delete_custom_provider(&provider_id)?;
+        Ok(store.mutate(&app, |s| {
+            s["runtimeByWorkspace"][&workspace_id] = build_runtime_snapshot();
+        }).await)
+    }
+
+    #[tauri::command]
+    pub async fn probe_custom_provider_models(base_url: String, api_key: Option<String>) -> Result<serde_json::Value, String> {
+        Ok(providers::probe_custom_provider_models(&base_url, api_key.as_deref()))
+    }
+
+    #[tauri::command]
+    pub async fn has_provider_auth(provider_id: String) -> Result<bool, String> {
+        Ok(providers::has_provider_auth(&provider_id))
     }
 
     // ── Skill CRUD ──
