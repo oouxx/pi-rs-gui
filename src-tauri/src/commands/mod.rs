@@ -298,6 +298,8 @@ pub async fn get_selected_transcript(
 
     // Prefer in-memory session messages (more up-to-date than file),
     // but only if the active AgentSession matches the requested session.
+    // During streaming the session is moved into a tokio task, so
+    // get_messages() returns empty — fall through to file-based read.
     let active_sid = store.session_id.lock().await.clone().unwrap_or_default();
     if active_sid == sess_id {
         let in_memory = store.get_messages().await;

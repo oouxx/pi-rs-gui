@@ -495,16 +495,17 @@ impl Store {
             // Check abort before starting agent loop
             if !abort.load(Ordering::SeqCst) {
                 eprintln!("[LLM] <<< {}", &t);
+                // add_user_text persists the user message AND runs the agent loop.
+                // After it returns, the full transcript (user + assistant) is available.
                 session.add_user_text(&t).await;
             }
             eprintln!("[LLM] add_user_text done");
             // Put session back regardless of outcome
             *s.session.lock().await = Some(session);
             s.is_streaming.store(false, Ordering::SeqCst);
-            // Subscription already emits turn_end — no synthetic event needed
+            // Emit transcript with captured sid2 (not state.selected_session_id)
+            // so the frontend gets the right transcript even after a session switch.
             let msgs2 = s.get_messages().await;
-            // Use captured sid2 (not state.selected_session_id) to avoid
-            // emitting transcript for the wrong session after a switch.
             let transcript: Vec<serde_json::Value> = msgs2.iter().filter_map(|msg| {
                 let (role, content, ts) = match msg {
                     AgentMessage::User { content, timestamp } => ("user", content, *timestamp),

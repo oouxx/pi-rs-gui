@@ -126,10 +126,20 @@ export function useChat() {
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || streamingRef.current) return;
+    // Optimistically add user message
+    const userMsg: DisplayMessage = {
+      id: `msg-opt-${Date.now()}`,
+      role: "user",
+      content: text,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
     setStreaming(true);
     streamingRef.current = true;
     try {
       await submitComposer(text);
+      // After submitComposer returns, the transcript event will update messages.
+      // Safety timeout in case transcript event never arrives.
       setTimeout(() => {
         if (streamingRef.current) {
           setStreaming(false);
