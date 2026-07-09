@@ -7,6 +7,7 @@ import { Key, CheckCircle, XCircle } from "lucide-react"
 import {
   getProviders, getModels, getModelSettings, listCustomProviders,
   setProviderApiKey, setDefaultModel as apiSetDefaultModel,
+  setDefaultThinkingLevel as apiSetDefaultThinkingLevel,
 } from "../api/commands"
 
 interface Provider { id: string; name: string; hasAuth: boolean }
@@ -55,10 +56,11 @@ export default function ModelsSettings() {
   const setDefault = useCallback(async (provider: string, model: string) => {
     try {
       await apiSetDefaultModel(provider, model)
+      await apiSetDefaultThinkingLevel(thinkingLevel)
       setDefaultProvider(provider)
       setDefaultModel(model)
     } catch (e) { console.error("setDefault failed", e) }
-  }, [])
+  }, [thinkingLevel])
 
   const filteredModels = models.filter((m) => m.providerId === defaultProvider)
 
