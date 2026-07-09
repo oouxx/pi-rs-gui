@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::state::*;
-use crate::state::{composer, model, providers, session};
+use crate::state::{composer, extensions, model, providers, session, skills, workspace};
 use serde_json::json;
 use tauri::{AppHandle, State};
 
@@ -103,6 +103,112 @@ pub async fn set_sidebar_collapsed(
 }
 
 // ── Model ──
+
+#[tauri::command]
+pub async fn get_default_model(
+    store: State<'_, Arc<Store>>,
+) -> Result<serde_json::Value, String> {
+    let state = store.state.lock().await;
+    Ok(model::get_default_model(&state, "ws-default"))
+}
+
+#[tauri::command]
+pub async fn get_models(
+    store: State<'_, Arc<Store>>,
+) -> Result<serde_json::Value, String> {
+    let state = store.state.lock().await;
+    let snapshot = state["runtimeByWorkspace"]["ws-default"].clone();
+    let models = snapshot["models"].as_array().cloned().unwrap_or_default();
+    Ok(json!({"models": models}))
+}
+
+#[tauri::command]
+pub async fn get_providers(
+    store: State<'_, Arc<Store>>,
+) -> Result<serde_json::Value, String> {
+    let state = store.state.lock().await;
+    let snapshot = state["runtimeByWorkspace"]["ws-default"].clone();
+    let providers_list = snapshot["providers"].as_array().cloned().unwrap_or_default();
+    Ok(json!({"providers": providers_list}))
+}
+
+#[tauri::command]
+pub async fn get_model_settings(
+    store: State<'_, Arc<Store>>,
+) -> Result<serde_json::Value, String> {
+    let state = store.state.lock().await;
+    let settings = state["runtimeByWorkspace"]["ws-default"]["settings"].clone();
+    let global = state["globalModelSettings"].clone();
+    Ok(json!({"settings": settings, "globalModelSettings": global}))
+}
+
+#[tauri::command]
+pub async fn set_default_model(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    provider: String,
+    model_id: String,
+) -> Result<DesktopState, String> {
+    Ok(store.mutate(&app, |s| model::set_default_model(s, "ws-default", &provider, &model_id)).await)
+}
+
+#[tauri::command]
+pub async fn set_default_thinking_level(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    thinking_level: String,
+) -> Result<DesktopState, String> {
+    Ok(store.mutate(&app, |s| model::set_default_thinking_level(s, "ws-default", &thinking_level)).await)
+}
+
+#[tauri::command]
+pub async fn set_provider_api_key(
+    store: State<'_, Arc<Store>>,
+    provider_id: String,
+    api_key: String,
+) -> Result<DesktopState, String> {
+    providers::set_provider_api_key(&provider_id, &api_key).map_err(|e| format!("{e}"))?;
+    Ok(store.state.lock().await.clone())
+}
+
+#[tauri::command]
+pub async fn login_provider(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    _provider_id: String,
+) -> Result<DesktopState, String> {
+    pi_ai::providers::register_builtins::register_built_in_api_providers();
+    Ok(store.mutate(&app, |s| { s["runtimeByWorkspace"]["ws-default"] = build_runtime_snapshot(); }).await)
+}
+
+#[tauri::command]
+pub async fn logout_provider(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    _provider_id: String,
+) -> Result<DesktopState, String> {
+    Ok(store.mutate(&app, |s| { s["runtimeByWorkspace"]["ws-default"] = build_runtime_snapshot(); }).await)
+}
+
+#[tauri::command]
+pub async fn set_custom_provider(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    config: serde_json::Value,
+) -> Result<DesktopState, String> {
+    providers::set_custom_provider(&config)?;
+    Ok(store.mutate(&app, |s| { s["runtimeByWorkspace"]["ws-default"] = build_runtime_snapshot(); }).await)
+}
+
+#[tauri::command]
+pub async fn delete_custom_provider(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    provider_id: String,
+) -> Result<DesktopState, String> {
+    providers::delete_custom_provider(&provider_id)?;
+    Ok(store.mutate(&app, |s| { s["runtimeByWorkspace"]["ws-default"] = build_runtime_snapshot(); }).await)
+}
 
 #[tauri::command]
 pub async fn set_model_settings_scope_mode(
@@ -255,6 +361,76 @@ pub async fn probe_custom_provider_models(
 #[tauri::command]
 pub async fn has_provider_auth(provider_id: String) -> Result<bool, String> {
     Ok(providers::has_provider_auth(&provider_id))
+}
+
+// ── Skills ──
+
+#[tauri::command]
+pub async fn list_skills(
+    store: State<'_, Arc<Store>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let state = store.state.lock().await;
+    let ws_path = workspace::workspace_path(&state, "ws-default");
+    drop(state);
+    Ok(skills::list_skills(ws_path.as_deref(), "ws-default"))
+}
+
+#[tauri::command]
+pub async fn get_skill(
+    store: State<'_, Arc<Store>>,
+    name: String,
+) -> Result<serde_json::Value, String> {
+    let state = store.state.lock().await;
+    let ws_path = workspace::workspace_path(&state, "ws-default");
+    drop(state);
+    skills::get_skill(ws_path.as_deref(), "ws-default", &name)
+        .ok_or_else(|| format!("skill '{name}' not found"))
+}
+
+#[tauri::command]
+pub async fn delete_skill(
+    store: State<'_, Arc<Store>>,
+    name: String,
+) -> Result<(), String> {
+    let state = store.state.lock().await;
+    let ws_path = workspace::workspace_path(&state, "ws-default");
+    drop(state);
+    skills::delete_skill(ws_path.as_deref(), &name)
+}
+
+// ── Extensions ──
+
+#[tauri::command]
+pub async fn list_extensions(
+    store: State<'_, Arc<Store>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let state = store.state.lock().await;
+    let ws_path = workspace::workspace_path(&state, "ws-default");
+    drop(state);
+    Ok(extensions::list_extensions(ws_path.as_deref(), "ws-default"))
+}
+
+#[tauri::command]
+pub async fn get_extension(
+    store: State<'_, Arc<Store>>,
+    name: String,
+) -> Result<serde_json::Value, String> {
+    let state = store.state.lock().await;
+    let ws_path = workspace::workspace_path(&state, "ws-default");
+    drop(state);
+    extensions::get_extension(ws_path.as_deref(), "ws-default", &name)
+        .ok_or_else(|| format!("extension '{name}' not found"))
+}
+
+#[tauri::command]
+pub async fn delete_extension(
+    store: State<'_, Arc<Store>>,
+    name: String,
+) -> Result<(), String> {
+    let state = store.state.lock().await;
+    let ws_path = workspace::workspace_path(&state, "ws-default");
+    drop(state);
+    extensions::delete_extension(ws_path.as_deref(), &name)
 }
 
 // ── Composer ──
