@@ -6,14 +6,113 @@ use std::sync::Arc;
 use pi_agent_core::types::{AgentEvent, AgentMessage};
 use pi_coding_agent::core::agent_session::AgentSession;
 use pi_coding_agent::core::sdk::{create_agent_session, CreateAgentSessionOptions};
-use serde::Serialize;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 
 use super::persistence;
 
-pub type DesktopState = serde_json::Value;
+// ── DesktopState struct ─────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopState {
+    pub revision: u64,
+    pub sessions: Vec<SessionRecord>,
+    pub selected_session_id: String,
+    #[serde(rename = "runtimeByWorkspace")]
+    pub runtime: RuntimeSnapshot,
+    pub global_model_settings: GlobalModelSettings,
+    pub theme_mode: String,
+    pub theme_preset_id: String,
+    #[serde(default)]
+    pub active_view: String,
+    #[serde(default)]
+    pub sidebar_collapsed: bool,
+    // Composer fields
+    #[serde(default)]
+    pub composer_draft: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composer_draft_sync_source: Option<String>,
+    #[serde(default)]
+    pub composer_draft_sync_nonce: u64,
+    #[serde(default)]
+    pub composer_attachments: Vec<Value>,
+    #[serde(default)]
+    pub editing_queued_message_id: Option<String>,
+    #[serde(default)]
+    pub queued_composer_messages: Vec<Value>,
+    // Optional UI fields
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notification_preferences: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integrated_terminal_shell: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enable_transparency: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_settings_scope_mode: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionRecord {
+    pub id: String,
+    pub title: String,
+    pub updated_at: String,
+    #[serde(default)]
+    pub preview: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub has_unseen_update: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_level: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeSnapshot {
+    pub models: Vec<Value>,
+    pub providers: Vec<Value>,
+    #[serde(default)]
+    pub skills: Vec<Value>,
+    #[serde(default)]
+    pub commands: Vec<Value>,
+    pub settings: RuntimeSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeSettings {
+    #[serde(default)]
+    pub enabled_model_patterns: Vec<String>,
+    #[serde(default)]
+    pub default_provider: Option<String>,
+    #[serde(default)]
+    pub default_model_id: Option<String>,
+    #[serde(default)]
+    pub default_thinking_level: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GlobalModelSettings {
+    #[serde(default)]
+    pub enabled_model_patterns: Vec<String>,
+    #[serde(default)]
+    pub default_provider: Option<String>,
+    #[serde(default)]
+    pub default_model_id: Option<String>,
+    #[serde(default)]
+    pub default_thinking_level: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FrontendEvent {
@@ -27,15 +126,8 @@ pub fn now_iso() -> String {
 }
 
 pub fn set_sess_status(s: &mut DesktopState, sid: &str, status: &str) {
-    let sessions = match s["sessions"].as_array_mut() {
-        Some(a) => a,
-        None => return,
-    };
-    for sess in sessions.iter_mut() {
-        if sess["id"] == sid {
-            sess["status"] = json!(status);
-            return;
-        }
+    if let Some(sess) = s.sessions.iter_mut().find(|s| s.id == sid) {
+        sess.status = status.to_string();
     }
 }
 
@@ -45,12 +137,13 @@ pub fn set_sess_field(
     field: &str,
     value: serde_json::Value,
 ) {
-    let sessions = match s["sessions"].as_array_mut() {
-        Some(a) => a,
-        None => return,
-    };
-    if let Some(sess) = sessions.iter_mut().find(|s| s["id"] == sess_id) {
-        sess[field] = value;
+    if let Some(sess) = s.sessions.iter_mut().find(|s| s.id == sess_id) {
+        match field {
+            "archivedAt" => sess.archived_at = value.as_str().map(|s| s.to_string()),
+            "pinnedAt" => sess.archived_at = value.as_str().map(|s| s.to_string()),
+            "sessionFile" => sess.session_file = value.as_str().map(|s| s.to_string()),
+            _ => {}
+        }
     }
 }
 
@@ -87,15 +180,43 @@ pub fn serialize_event(event: &AgentEvent) -> (String, serde_json::Value) {
 // ── Default state ──────────────────────────────────────────
 
 pub fn default_state() -> DesktopState {
-    json!({
-        "revision": 1,
-        "sessions": [],
-        "selectedSessionId": "",
-        "runtimeByWorkspace": {},
-        "globalModelSettings": {"enabledModelPatterns": []},
-        "themeMode": "system",
-        "themePresetId": "default",
-    })
+    DesktopState {
+        revision: 1,
+        sessions: vec![],
+        selected_session_id: String::new(),
+        runtime: RuntimeSnapshot {
+            models: vec![],
+            providers: vec![],
+            skills: vec![],
+            commands: vec![],
+            settings: RuntimeSettings {
+                enabled_model_patterns: vec![],
+                default_provider: None,
+                default_model_id: None,
+                default_thinking_level: None,
+            },
+        },
+        global_model_settings: GlobalModelSettings {
+            enabled_model_patterns: vec![],
+            default_provider: None,
+            default_model_id: None,
+            default_thinking_level: None,
+        },
+        theme_mode: "system".to_string(),
+        theme_preset_id: "default".to_string(),
+        active_view: "threads".to_string(),
+        sidebar_collapsed: false,
+        composer_draft: String::new(),
+        composer_draft_sync_source: None,
+        composer_draft_sync_nonce: 0,
+        composer_attachments: vec![],
+        editing_queued_message_id: None,
+        queued_composer_messages: vec![],
+        notification_preferences: None,
+        integrated_terminal_shell: None,
+        enable_transparency: None,
+        model_settings_scope_mode: None,
+    }
 }
 
 // ── Store ───────────────────────────────────────────────────
@@ -123,17 +244,12 @@ impl Store {
         {
             let mut state = store.state.blocking_lock();
             let mut s = default_state();
-            if let Some(sess_id) = restored["selectedSessionId"]
-                .as_str()
-                .filter(|x| !x.is_empty())
-            {
-                s["selectedSessionId"] = json!(sess_id);
+            if !restored.selected_session_id.is_empty() {
+                s.selected_session_id = restored.selected_session_id.clone();
             }
-            let scanned = super::session::scan_existing_sessions();
-            s["sessions"] = json!(scanned);
-            s["runtimeByWorkspace"]["ws-default"] = super::runtime::build_runtime_snapshot();
-            let rev = s["revision"].as_u64().unwrap_or(0) + 1;
-            s["revision"] = json!(rev);
+            s.sessions = super::session::scan_existing_sessions();
+            s.runtime = super::runtime::build_runtime_snapshot();
+            s.revision += 1;
             *state = s;
         }
         store
@@ -145,8 +261,7 @@ impl Store {
     {
         let mut state = self.state.lock().await;
         f(&mut state);
-        let rev = state["revision"].as_u64().unwrap_or(0) + 1;
-        state["revision"] = json!(rev);
+        state.revision += 1;
         let result = state.clone();
         let _ = app.emit("pi-gui:state-changed", &result);
         persistence::persist_state(&result);
@@ -167,12 +282,9 @@ impl Store {
         let (provider, model_id, thinking_level) = {
             let state = self.state.lock().await;
             (
-                state["runtimeByWorkspace"]["ws-default"]["settings"]["defaultProvider"]
-                    .as_str().map(|s| s.to_string()),
-                state["runtimeByWorkspace"]["ws-default"]["settings"]["defaultModelId"]
-                    .as_str().map(|s| s.to_string()),
-                state["runtimeByWorkspace"]["ws-default"]["settings"]["defaultThinkingLevel"]
-                    .as_str().map(|s| s.to_string()),
+                state.runtime.settings.default_provider.clone(),
+                state.runtime.settings.default_model_id.clone(),
+                state.runtime.settings.default_thinking_level.clone(),
             )
         };
 
@@ -217,14 +329,12 @@ impl Store {
         let sid = current_sid.to_string();
         *self.session_id.lock().await = Some(sid.clone());
         self.mutate(app, |s| {
-            if let Some(sessions) = s["sessions"].as_array_mut() {
-                if let Some(sess) = sessions.iter_mut().find(|s| s["id"] == sid) {
-                    if let Some(fp) = &sess_file_path {
-                        sess["sessionFile"] = json!(fp);
-                    }
+            if let Some(sess) = s.sessions.iter_mut().find(|s| s.id == sid) {
+                if let Some(fp) = &sess_file_path {
+                    sess.session_file = Some(fp.clone());
                 }
             }
-            s["selectedSessionId"] = json!(&sid);
+            s.selected_session_id = sid.clone();
         }).await;
 
         let store = self.clone();
@@ -262,12 +372,9 @@ impl Store {
         let (provider, model_id, thinking_level) = {
             let state = self.state.lock().await;
             (
-                state["runtimeByWorkspace"]["ws-default"]["settings"]["defaultProvider"]
-                    .as_str().map(|s| s.to_string()),
-                state["runtimeByWorkspace"]["ws-default"]["settings"]["defaultModelId"]
-                    .as_str().map(|s| s.to_string()),
-                state["runtimeByWorkspace"]["ws-default"]["settings"]["defaultThinkingLevel"]
-                    .as_str().map(|s| s.to_string()),
+                state.runtime.settings.default_provider.clone(),
+                state.runtime.settings.default_model_id.clone(),
+                state.runtime.settings.default_thinking_level.clone(),
             )
         };
 
@@ -321,15 +428,19 @@ impl Store {
         let sid = format!("sess-{}", uuid::Uuid::new_v4());
         *self.session_id.lock().await = Some(sid.clone());
         self.mutate(app, |s| {
-            let sess = json!({
-                "id": sid, "title": "New thread", "updatedAt": now_iso(),
-                "preview": "", "status": "idle", "hasUnseenUpdate": false,
-                "sessionFile": sess_file_path,
+            s.sessions.push(SessionRecord {
+                id: sid.clone(),
+                title: "New thread".to_string(),
+                updated_at: now_iso(),
+                preview: String::new(),
+                status: "idle".to_string(),
+                has_unseen_update: false,
+                session_file: sess_file_path.clone(),
+                archived_at: None,
+                config: None,
+                thinking_level: None,
             });
-            if let Some(arr) = s["sessions"].as_array_mut() {
-                arr.push(sess);
-            }
-            s["selectedSessionId"] = json!(&sid);
+            s.selected_session_id = sid.clone();
         }).await;
 
         let store = self.clone();
@@ -370,10 +481,8 @@ impl Store {
         });
 
         let state_snapshot = self.state.lock().await.clone();
-        let diag_provider = state_snapshot["runtimeByWorkspace"]["ws-default"]["settings"]["defaultProvider"]
-            .as_str().map(|s| s.to_string());
-        let diag_model = state_snapshot["runtimeByWorkspace"]["ws-default"]["settings"]["defaultModelId"]
-            .as_str().map(|s| s.to_string());
+        let diag_provider = state_snapshot.runtime.settings.default_provider.clone();
+        let diag_model = state_snapshot.runtime.settings.default_model_id.clone();
         eprintln!("[LLM] send: provider={diag_provider:?} model={diag_model:?}");
         drop(state_snapshot);
 
@@ -405,7 +514,7 @@ impl Store {
             });
             let msgs2 = s.get_messages().await;
             let state = s.state.lock().await;
-            let sess_id = state["selectedSessionId"].as_str().unwrap_or("");
+            let sess_id = &state.selected_session_id;
             let transcript: Vec<serde_json::Value> = msgs2.iter().filter_map(|msg| {
                 let (role, content, ts) = match msg {
                     AgentMessage::User { content, timestamp } => ("user", content, *timestamp),
@@ -438,7 +547,7 @@ impl Store {
         }
         let (sid, cwd, session_file) = {
             let state = self.state.lock().await;
-            let sid = state["selectedSessionId"].as_str().unwrap_or("").to_string();
+            let sid = state.selected_session_id.clone();
             let cwd = std::env::current_dir()
                 .ok()
                 .map(|p| p.to_string_lossy().to_string())
@@ -447,11 +556,10 @@ impl Store {
                         .map(|h| format!("{}/.pi-rs", h))
                         .unwrap_or_else(|_| "/tmp".into())
                 });
-            let file = state["sessions"]
-                .as_array()
-                .and_then(|ss| ss.iter().find(|s| s["id"] == sid))
-                .and_then(|s| s["sessionFile"].as_str().filter(|f| !f.is_empty()))
-                .map(String::from);
+            let file = state.sessions.iter()
+                .find(|s| s.id == sid)
+                .and_then(|s| s.session_file.as_ref().filter(|f| !f.is_empty()))
+                .cloned();
             (sid, cwd, file)
         };
         if sid.is_empty() {

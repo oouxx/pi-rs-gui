@@ -23,9 +23,8 @@ mod tests {
     async fn test_initial_state() {
         let store = Store::new();
         let state = store.state.lock().await;
-        assert_eq!(state["revision"], 1);
-        assert_eq!(state["activeView"], "threads");
-        assert_eq!(state["globalModelSettings"]["enabledModelPatterns"].as_array().unwrap().len(), 0);
-        assert!(state["runtimeByWorkspace"].as_object().unwrap().is_empty());
+        assert_eq!(state.revision, 1);
+        assert_eq!(state.active_view, "threads");
+        assert!(state.global_model_settings.enabled_model_patterns.is_empty());
     }
 }

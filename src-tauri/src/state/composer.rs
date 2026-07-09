@@ -1,46 +1,41 @@
-//! Composer operations — mirrors original `app-store-composer.ts`.
+//! Composer operations.
 
-use serde_json::json;
+use serde_json::Value;
 use crate::state::internal::DesktopState;
 
 pub fn update_composer_draft(state: &mut DesktopState, draft: &str) {
-    state["composerDraft"] = json!(draft);
-    state["composerDraftSyncSource"] = json!("state");
-    let nonce = state["composerDraftSyncNonce"].as_u64().unwrap_or(0) + 1;
-    state["composerDraftSyncNonce"] = json!(nonce);
+    state.composer_draft = draft.to_string();
+    state.composer_draft_sync_source = Some("state".to_string());
+    state.composer_draft_sync_nonce += 1;
 }
 
-pub fn set_composer_attachments(state: &mut DesktopState, attachments: serde_json::Value) {
-    state["composerAttachments"] = attachments;
-}
-
-pub fn remove_composer_attachment(state: &mut DesktopState, attachment_id: &str) {
-    if let Some(arr) = state["composerAttachments"].as_array_mut() {
-        arr.retain(|a| a["id"] != attachment_id);
+pub fn set_composer_attachments(state: &mut DesktopState, attachments: Value) {
+    if let Value::Array(arr) = attachments {
+        state.composer_attachments = arr;
     }
 }
 
+pub fn remove_composer_attachment(state: &mut DesktopState, attachment_id: &str) {
+    state.composer_attachments.retain(|a| a["id"] != attachment_id);
+}
+
 pub fn edit_queued_message(state: &mut DesktopState, message_id: &str, current_draft: Option<&str>) {
-    state["editingQueuedMessageId"] = json!(message_id);
+    state.editing_queued_message_id = Some(message_id.to_string());
     if let Some(d) = current_draft {
-        state["composerDraft"] = json!(d);
+        state.composer_draft = d.to_string();
     }
 }
 
 pub fn cancel_queued_edit(state: &mut DesktopState) {
-    state["editingQueuedMessageId"] = serde_json::Value::Null;
+    state.editing_queued_message_id = None;
 }
 
 pub fn remove_queued_message(state: &mut DesktopState, message_id: &str) {
-    if let Some(arr) = state["queuedComposerMessages"].as_array_mut() {
-        arr.retain(|m| m["id"] != message_id);
-    }
+    state.queued_composer_messages.retain(|m| m["id"] != message_id);
 }
 
 pub fn steer_queued_message(state: &mut DesktopState, message_id: &str) {
-    if let Some(arr) = state["queuedComposerMessages"].as_array_mut() {
-        if let Some(m) = arr.iter_mut().find(|m| m["id"] == message_id) {
-            m["mode"] = json!("steer");
-        }
+    if let Some(m) = state.queued_composer_messages.iter_mut().find(|m| m["id"] == message_id) {
+        m["mode"] = Value::String("steer".to_string());
     }
 }

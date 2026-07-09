@@ -1,7 +1,7 @@
-//! Runtime snapshot builder — mirrors original
-//! `runtimeSupervisor.refreshRuntime()` in the electron app.
+//! Runtime snapshot builder.
 
 use serde_json::json;
+use crate::state::internal::{RuntimeSnapshot, RuntimeSettings};
 
 /// Read settings from the global pi-rs agent directory (~/.pi-rs/agent/).
 fn load_default_settings() -> pi_coding_agent::core::settings_manager::Settings {
@@ -37,7 +37,7 @@ fn provider_env_keys() -> Vec<(&'static str, &'static str)> {
 
 /// Reads pi-ai model registry + settings + env vars to build the
 /// runtime snapshot the frontend needs for model lists.
-pub fn build_runtime_snapshot() -> serde_json::Value {
+pub fn build_runtime_snapshot() -> RuntimeSnapshot {
     pi_ai::providers::register_builtins::register_built_in_api_providers();
     use pi_coding_agent::core::model_registry::ModelRegistry;
     use pi_coding_agent::core::provider_display_names::BUILT_IN_PROVIDER_DISPLAY_NAMES;
@@ -78,16 +78,16 @@ pub fn build_runtime_snapshot() -> serde_json::Value {
         }
     }
 
-    json!({
-        "models": models,
-        "providers": provider_list,
-        "skills": [],
-        "commands": [],
-        "settings": {
-            "enabledModelPatterns": [],
-            "defaultProvider": settings.default_provider,
-            "defaultModelId": settings.default_model,
-            "defaultThinkingLevel": settings.thinking_level,
-        }
-    })
+    RuntimeSnapshot {
+        models,
+        providers: provider_list,
+        skills: vec![],
+        commands: vec![],
+        settings: RuntimeSettings {
+            enabled_model_patterns: vec![],
+            default_provider: settings.default_provider,
+            default_model_id: settings.default_model,
+            default_thinking_level: settings.thinking_level,
+        },
+    }
 }

@@ -1,8 +1,8 @@
 //! State persistence — stores only the active session ID.
-//! Session lists are ephemeral (rebuilt from `.jsonl` files at runtime).
 
 use std::path::PathBuf;
 use serde_json::{json, Value};
+use crate::state::internal::DesktopState;
 
 fn agent_dir() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
@@ -16,10 +16,10 @@ fn get_state_path() -> Option<PathBuf> {
 }
 
 /// Persist only the active session ID.
-pub fn persist_state(state: &Value) {
+pub fn persist_state(state: &DesktopState) {
     if let Some(path) = get_state_path() {
         let slim = json!({
-            "selectedSessionId": state["selectedSessionId"],
+            "selectedSessionId": state.selected_session_id,
         });
         if let Ok(json) = serde_json::to_string_pretty(&slim) {
             let _ = std::fs::write(&path, &json);
@@ -28,14 +28,15 @@ pub fn persist_state(state: &Value) {
 }
 
 /// Return a minimal state skeleton with the last active session ID restored.
-pub fn restore_state() -> Value {
+pub fn restore_state() -> DesktopState {
     let persisted: Option<Value> = get_state_path()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok());
-    match persisted {
-        Some(p) => json!({
-            "selectedSessionId": p["selectedSessionId"],
-        }),
-        None => json!({}),
+    let mut state = crate::state::internal::default_state();
+    if let Some(p) = persisted {
+        if let Some(sid) = p["selectedSessionId"].as_str().filter(|x| !x.is_empty()) {
+            state.selected_session_id = sid.to_string();
+        }
     }
+    state
 }

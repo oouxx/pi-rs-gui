@@ -17,7 +17,7 @@ pub async fn get_state(store: State<'_, Arc<Store>>) -> Result<DesktopState, Str
     Ok(store.state.lock().await.clone())
 }
 
-// ── Session CRUD (backed by pi-rs) ──
+// ── Session CRUD ──
 
 #[tauri::command]
 pub async fn select_session(
@@ -25,9 +25,7 @@ pub async fn select_session(
     store: State<'_, Arc<Store>>,
     session_id: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| session::select_session_by_id(s, &session_id))
-        .await)
+    Ok(store.mutate(&app, |s| session::select_session_by_id(s, &session_id)).await)
 }
 
 #[tauri::command]
@@ -36,11 +34,7 @@ pub async fn create_session(
     store: State<'_, Arc<Store>>,
     title: Option<String>,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            session::create_session_simple(s, title.as_deref().unwrap_or("New thread"))
-        })
-        .await)
+    Ok(store.mutate(&app, |s| session::create_session_simple(s, title.as_deref().unwrap_or("New thread"))).await)
 }
 
 #[tauri::command]
@@ -49,9 +43,7 @@ pub async fn archive_session(
     store: State<'_, Arc<Store>>,
     session_id: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| session::archive_session_by_id(s, &session_id))
-        .await)
+    Ok(store.mutate(&app, |s| session::archive_session_by_id(s, &session_id)).await)
 }
 
 #[tauri::command]
@@ -61,11 +53,7 @@ pub async fn rename_session(
     session_id: String,
     title: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            session::rename_session_by_id(s, &session_id, &title)
-        })
-        .await)
+    Ok(store.mutate(&app, |s| session::rename_session_by_id(s, &session_id, &title)).await)
 }
 
 // ── Agent-session flow ──
@@ -78,10 +66,7 @@ pub async fn submit_composer(
     _options: Option<serde_json::Value>,
 ) -> Result<DesktopState, String> {
     store.ensure_session(&app).await?;
-    store
-        .send_message(&app, &text)
-        .await
-        .map_err(|e| e.to_string())?;
+    store.send_message(&app, &text).await.map_err(|e| e.to_string())?;
     Ok(store.state.lock().await.clone())
 }
 
@@ -91,12 +76,10 @@ pub async fn cancel_current_run(
     store: State<'_, Arc<Store>>,
 ) -> Result<DesktopState, String> {
     store.abort().await;
-    Ok(store
-        .mutate(&app, |s| {
-            let sid = s["selectedSessionId"].as_str().unwrap_or("").to_string();
-            crate::state::internal::set_sess_status(s, &sid, "idle");
-        })
-        .await)
+    Ok(store.mutate(&app, |s| {
+        let sid = s.selected_session_id.clone();
+        crate::state::internal::set_sess_status(s, &sid, "idle");
+    }).await)
 }
 
 // ── View ──
@@ -107,11 +90,7 @@ pub async fn set_active_view(
     store: State<'_, Arc<Store>>,
     view: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            s["activeView"] = json!(view);
-        })
-        .await)
+    Ok(store.mutate(&app, |s| { s.active_view = view; }).await)
 }
 
 #[tauri::command]
@@ -120,11 +99,7 @@ pub async fn set_sidebar_collapsed(
     store: State<'_, Arc<Store>>,
     collapsed: bool,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            s["sidebarCollapsed"] = json!(collapsed);
-        })
-        .await)
+    Ok(store.mutate(&app, |s| { s.sidebar_collapsed = collapsed; }).await)
 }
 
 // ── Model ──
@@ -132,34 +107,25 @@ pub async fn set_sidebar_collapsed(
 #[tauri::command]
 pub async fn get_default_model(store: State<'_, Arc<Store>>) -> Result<serde_json::Value, String> {
     let state = store.state.lock().await;
-    Ok(model::get_default_model(&state, "ws-default"))
+    Ok(model::get_default_model(&state))
 }
 
 #[tauri::command]
 pub async fn get_models(store: State<'_, Arc<Store>>) -> Result<serde_json::Value, String> {
     let state = store.state.lock().await;
-    let snapshot = state["runtimeByWorkspace"]["ws-default"].clone();
-    let models = snapshot["models"].as_array().cloned().unwrap_or_default();
-    Ok(json!({"models": models}))
+    Ok(json!({"models": state.runtime.models}))
 }
 
 #[tauri::command]
 pub async fn get_providers(store: State<'_, Arc<Store>>) -> Result<serde_json::Value, String> {
     let state = store.state.lock().await;
-    let snapshot = state["runtimeByWorkspace"]["ws-default"].clone();
-    let providers_list = snapshot["providers"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
-    Ok(json!({"providers": providers_list}))
+    Ok(json!({"providers": state.runtime.providers}))
 }
 
 #[tauri::command]
 pub async fn get_model_settings(store: State<'_, Arc<Store>>) -> Result<serde_json::Value, String> {
     let state = store.state.lock().await;
-    let settings = state["runtimeByWorkspace"]["ws-default"]["settings"].clone();
-    let global = state["globalModelSettings"].clone();
-    Ok(json!({"settings": settings, "globalModelSettings": global}))
+    Ok(json!({"settings": state.runtime.settings, "globalModelSettings": state.global_model_settings}))
 }
 
 #[tauri::command]
@@ -169,11 +135,7 @@ pub async fn set_default_model(
     provider: String,
     model_id: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            model::set_default_model(s, "ws-default", &provider, &model_id)
-        })
-        .await)
+    Ok(store.mutate(&app, |s| model::set_default_model(s, &provider, &model_id)).await)
 }
 
 #[tauri::command]
@@ -182,11 +144,7 @@ pub async fn set_default_thinking_level(
     store: State<'_, Arc<Store>>,
     thinking_level: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            model::set_default_thinking_level(s, "ws-default", &thinking_level)
-        })
-        .await)
+    Ok(store.mutate(&app, |s| model::set_default_thinking_level(s, &thinking_level)).await)
 }
 
 #[tauri::command]
@@ -206,11 +164,7 @@ pub async fn login_provider(
     _provider_id: String,
 ) -> Result<DesktopState, String> {
     pi_ai::providers::register_builtins::register_built_in_api_providers();
-    Ok(store
-        .mutate(&app, |s| {
-            s["runtimeByWorkspace"]["ws-default"] = build_runtime_snapshot();
-        })
-        .await)
+    Ok(store.mutate(&app, |s| { s.runtime = build_runtime_snapshot(); }).await)
 }
 
 #[tauri::command]
@@ -219,11 +173,7 @@ pub async fn logout_provider(
     store: State<'_, Arc<Store>>,
     _provider_id: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            s["runtimeByWorkspace"]["ws-default"] = build_runtime_snapshot();
-        })
-        .await)
+    Ok(store.mutate(&app, |s| { s.runtime = build_runtime_snapshot(); }).await)
 }
 
 #[tauri::command]
@@ -233,11 +183,7 @@ pub async fn set_custom_provider(
     config: serde_json::Value,
 ) -> Result<DesktopState, String> {
     providers::set_custom_provider(&config)?;
-    Ok(store
-        .mutate(&app, |s| {
-            s["runtimeByWorkspace"]["ws-default"] = build_runtime_snapshot();
-        })
-        .await)
+    Ok(store.mutate(&app, |s| { s.runtime = build_runtime_snapshot(); }).await)
 }
 
 #[tauri::command]
@@ -247,11 +193,7 @@ pub async fn delete_custom_provider(
     provider_id: String,
 ) -> Result<DesktopState, String> {
     providers::delete_custom_provider(&provider_id)?;
-    Ok(store
-        .mutate(&app, |s| {
-            s["runtimeByWorkspace"]["ws-default"] = build_runtime_snapshot();
-        })
-        .await)
+    Ok(store.mutate(&app, |s| { s.runtime = build_runtime_snapshot(); }).await)
 }
 
 #[tauri::command]
@@ -260,9 +202,7 @@ pub async fn set_model_settings_scope_mode(
     store: State<'_, Arc<Store>>,
     mode: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| model::set_model_settings_scope(s, &mode))
-        .await)
+    Ok(store.mutate(&app, |s| model::set_model_settings_scope(s, &mode)).await)
 }
 
 // ── Theme ──
@@ -273,11 +213,7 @@ pub async fn set_theme_mode(
     store: State<'_, Arc<Store>>,
     mode: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            s["themeMode"] = json!(mode);
-        })
-        .await)
+    Ok(store.mutate(&app, |s| { s.theme_mode = mode; }).await)
 }
 
 #[tauri::command]
@@ -286,11 +222,7 @@ pub async fn set_theme_preset_id(
     store: State<'_, Arc<Store>>,
     preset_id: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            s["themePresetId"] = json!(preset_id);
-        })
-        .await)
+    Ok(store.mutate(&app, |s| { s.theme_preset_id = preset_id; }).await)
 }
 
 #[tauri::command]
@@ -311,11 +243,7 @@ pub async fn set_notification_preferences(
     store: State<'_, Arc<Store>>,
     preferences: serde_json::Value,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            s["notificationPreferences"] = preferences;
-        })
-        .await)
+    Ok(store.mutate(&app, |s| { s.notification_preferences = Some(preferences); }).await)
 }
 
 #[tauri::command]
@@ -324,11 +252,7 @@ pub async fn set_integrated_terminal_shell(
     store: State<'_, Arc<Store>>,
     shell: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            s["integratedTerminalShell"] = json!(shell);
-        })
-        .await)
+    Ok(store.mutate(&app, |s| { s.integrated_terminal_shell = Some(shell); }).await)
 }
 
 #[tauri::command]
@@ -337,11 +261,7 @@ pub async fn set_enable_transparency(
     store: State<'_, Arc<Store>>,
     enabled: bool,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            s["enableTransparency"] = json!(enabled);
-        })
-        .await)
+    Ok(store.mutate(&app, |s| { s.enable_transparency = Some(enabled); }).await)
 }
 
 #[tauri::command]
@@ -367,28 +287,20 @@ pub async fn get_selected_transcript(
 ) -> Result<Option<serde_json::Value>, String> {
     let (sess_id, session_file) = {
         let state = store.state.lock().await;
-        let sid = state["selectedSessionId"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
-        let file = state["sessions"]
-            .as_array()
-            .and_then(|ss| ss.iter().find(|s| s["id"] == sid))
-            .and_then(|s| s["sessionFile"].as_str().filter(|f| !f.is_empty()))
-            .map(String::from);
+        let sid = state.selected_session_id.clone();
+        let file = state.sessions.iter()
+            .find(|s| s.id == sid)
+            .and_then(|s| s.session_file.as_ref().filter(|f| !f.is_empty()))
+            .cloned();
         (sid, file)
     };
-    if sess_id.is_empty() {
-        return Ok(None);
-    }
+    if sess_id.is_empty() { return Ok(None); }
 
     let transcript = match session_file {
         Some(ref p) => crate::state::session::read_transcript_from_file(p),
         None => vec![],
     };
-    if transcript.is_empty() {
-        return Ok(None);
-    }
+    if transcript.is_empty() { return Ok(None); }
 
     Ok(Some(json!({"sessionId": sess_id, "transcript": transcript})))
 }
@@ -424,10 +336,7 @@ pub async fn probe_custom_provider_models(
     base_url: String,
     api_key: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    Ok(providers::probe_custom_provider_models(
-        &base_url,
-        api_key.as_deref(),
-    ))
+    Ok(providers::probe_custom_provider_models(&base_url, api_key.as_deref()))
 }
 
 #[tauri::command]
@@ -448,10 +357,7 @@ pub async fn list_skills(store: State<'_, Arc<Store>>) -> Result<Vec<serde_json:
 }
 
 #[tauri::command]
-pub async fn get_skill(
-    store: State<'_, Arc<Store>>,
-    name: String,
-) -> Result<serde_json::Value, String> {
+pub async fn get_skill(store: State<'_, Arc<Store>>, name: String) -> Result<serde_json::Value, String> {
     let ws_path = cwd_path();
     skills::get_skill(ws_path.as_deref(), "ws-default", &name)
         .ok_or_else(|| format!("skill '{name}' not found"))
@@ -466,18 +372,13 @@ pub async fn delete_skill(store: State<'_, Arc<Store>>, name: String) -> Result<
 // ── Extensions ──
 
 #[tauri::command]
-pub async fn list_extensions(
-    store: State<'_, Arc<Store>>,
-) -> Result<Vec<serde_json::Value>, String> {
+pub async fn list_extensions(store: State<'_, Arc<Store>>) -> Result<Vec<serde_json::Value>, String> {
     let ws_path = cwd_path();
     Ok(extensions::list_extensions(ws_path.as_deref(), "ws-default"))
 }
 
 #[tauri::command]
-pub async fn get_extension(
-    store: State<'_, Arc<Store>>,
-    name: String,
-) -> Result<serde_json::Value, String> {
+pub async fn get_extension(store: State<'_, Arc<Store>>, name: String) -> Result<serde_json::Value, String> {
     let ws_path = cwd_path();
     extensions::get_extension(ws_path.as_deref(), "ws-default", &name)
         .ok_or_else(|| format!("extension '{name}' not found"))
@@ -497,11 +398,7 @@ pub async fn update_composer_draft(
     store: State<'_, Arc<Store>>,
     composer_draft: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            composer::update_composer_draft(s, &composer_draft)
-        })
-        .await)
+    Ok(store.mutate(&app, |s| composer::update_composer_draft(s, &composer_draft)).await)
 }
 
 #[tauri::command]
@@ -510,9 +407,7 @@ pub async fn add_composer_attachments(
     store: State<'_, Arc<Store>>,
     attachments: serde_json::Value,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| composer::set_composer_attachments(s, attachments))
-        .await)
+    Ok(store.mutate(&app, |s| composer::set_composer_attachments(s, attachments)).await)
 }
 
 #[tauri::command]
@@ -521,11 +416,7 @@ pub async fn remove_composer_attachment(
     store: State<'_, Arc<Store>>,
     attachment_id: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            composer::remove_composer_attachment(s, &attachment_id)
-        })
-        .await)
+    Ok(store.mutate(&app, |s| composer::remove_composer_attachment(s, &attachment_id)).await)
 }
 
 #[tauri::command]
@@ -535,11 +426,7 @@ pub async fn edit_queued_composer_message(
     message_id: String,
     current_draft: Option<String>,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| {
-            composer::edit_queued_message(s, &message_id, current_draft.as_deref())
-        })
-        .await)
+    Ok(store.mutate(&app, |s| composer::edit_queued_message(s, &message_id, current_draft.as_deref())).await)
 }
 
 #[tauri::command]
@@ -547,9 +434,7 @@ pub async fn cancel_queued_composer_edit(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| composer::cancel_queued_edit(s))
-        .await)
+    Ok(store.mutate(&app, |s| composer::cancel_queued_edit(s)).await)
 }
 
 #[tauri::command]
@@ -558,9 +443,7 @@ pub async fn remove_queued_composer_message(
     store: State<'_, Arc<Store>>,
     message_id: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| composer::remove_queued_message(s, &message_id))
-        .await)
+    Ok(store.mutate(&app, |s| composer::remove_queued_message(s, &message_id)).await)
 }
 
 #[tauri::command]
@@ -569,9 +452,7 @@ pub async fn steer_queued_composer_message(
     store: State<'_, Arc<Store>>,
     message_id: String,
 ) -> Result<DesktopState, String> {
-    Ok(store
-        .mutate(&app, |s| composer::steer_queued_message(s, &message_id))
-        .await)
+    Ok(store.mutate(&app, |s| composer::steer_queued_message(s, &message_id)).await)
 }
 
 #[tauri::command]

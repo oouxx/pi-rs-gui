@@ -2,17 +2,17 @@
 
 use std::path::PathBuf;
 use serde_json::json;
-use crate::state::internal::{DesktopState, set_sess_field, now_iso};
+use crate::state::internal::{DesktopState, SessionRecord, now_iso};
 
 /// Scan `~/.pi-rs/agent/sessions/` for `.jsonl` files and return session records.
-pub fn scan_existing_sessions() -> Vec<serde_json::Value> {
+pub fn scan_existing_sessions() -> Vec<SessionRecord> {
     let dir = match std::env::var("HOME") {
         Ok(h) => PathBuf::from(h).join(".pi-rs").join("agent").join("sessions"),
         Err(_) => return vec![],
     };
     if !dir.exists() { return vec![]; }
 
-    let mut sessions: Vec<serde_json::Value> = vec![];
+    let mut sessions: Vec<SessionRecord> = vec![];
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -24,22 +24,21 @@ pub fn scan_existing_sessions() -> Vec<serde_json::Value> {
                 .to_string();
             let title = extract_session_title(&path);
 
-            sessions.push(json!({
-                "id": id,
-                "title": title,
-                "updatedAt": now_iso(),
-                "preview": "",
-                "status": "idle",
-                "hasUnseenUpdate": false,
-                "sessionFile": path_str,
-            }));
+            sessions.push(SessionRecord {
+                id,
+                title,
+                updated_at: now_iso(),
+                preview: String::new(),
+                status: "idle".to_string(),
+                has_unseen_update: false,
+                session_file: Some(path_str),
+                archived_at: None,
+                config: None,
+                thinking_level: None,
+            });
         }
     }
-    sessions.sort_by(|a, b| {
-        let a = a["updatedAt"].as_str().unwrap_or("");
-        let b = b["updatedAt"].as_str().unwrap_or("");
-        b.cmp(a)
-    });
+    sessions.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
     sessions
 }
 
@@ -107,60 +106,48 @@ fn extract_session_title(path: &PathBuf) -> String {
 
 /// Select a session by ID.
 pub fn select_session_by_id(state: &mut DesktopState, session_id: &str) {
-    state["selectedSessionId"] = json!(session_id);
+    state.selected_session_id = session_id.to_string();
 }
 
 /// Archive a session by ID. After archiving, selects the next available session.
 pub fn archive_session_by_id(state: &mut DesktopState, session_id: &str) {
-    let sessions = match state["sessions"].as_array_mut() {
-        Some(a) => a,
-        None => return,
-    };
-    if let Some(sess) = sessions.iter_mut().find(|s| s["id"] == session_id) {
-        sess["archivedAt"] = json!(now_iso());
+    if let Some(sess) = state.sessions.iter_mut().find(|s| s.id == session_id) {
+        sess.archived_at = Some(now_iso());
     }
-    let next_id: Option<String> = sessions.iter()
-        .find(|s| s["id"] != session_id && s["archivedAt"].is_null())
-        .and_then(|s| s["id"].as_str().map(String::from));
-    match next_id {
-        Some(n) => state["selectedSessionId"] = json!(n),
-        None => state["selectedSessionId"] = json!(""),
-    }
+    let next_id = state.sessions.iter()
+        .find(|s| s.id != session_id && s.archived_at.is_none())
+        .map(|s| s.id.clone());
+    state.selected_session_id = next_id.unwrap_or_default();
 }
 
 /// Create a new session.
 pub fn create_session_simple(state: &mut DesktopState, title: &str) {
     let id = format!("sess-{}", chrono::Utc::now().timestamp_millis());
-    let sess = json!({
-        "id": id,
-        "title": if title.is_empty() { "New thread" } else { title },
-        "updatedAt": now_iso(), "preview": "", "status": "idle", "hasUnseenUpdate": false,
+    state.sessions.push(SessionRecord {
+        id: id.clone(),
+        title: if title.is_empty() { "New thread".to_string() } else { title.to_string() },
+        updated_at: now_iso(),
+        preview: String::new(),
+        status: "idle".to_string(),
+        has_unseen_update: false,
+        session_file: None,
+        archived_at: None,
+        config: None,
+        thinking_level: None,
     });
-    if let Some(arr) = state["sessions"].as_array_mut() {
-        arr.push(sess);
-    }
-    state["selectedSessionId"] = json!(id);
+    state.selected_session_id = id;
 }
 
 /// Rename a session by ID.
 pub fn rename_session_by_id(state: &mut DesktopState, session_id: &str, title: &str) {
-    if let Some(sess) = state["sessions"].as_array_mut()
-        .and_then(|ss| ss.iter_mut().find(|s| s["id"] == session_id))
-    {
-        sess["title"] = json!(title);
+    if let Some(sess) = state.sessions.iter_mut().find(|s| s.id == session_id) {
+        sess.title = title.to_string();
     }
 }
 
 /// Find and update a session's status.
 pub fn set_session_status(state: &mut DesktopState, sid: &str, status: &str) {
-    let sessions = match state["sessions"].as_array_mut() {
-        Some(a) => a,
-        None => return,
-    };
-    for sess in sessions.iter_mut() {
-        if sess["id"] == sid {
-            sess["status"] = json!(status);
-            return;
-        }
+    if let Some(sess) = state.sessions.iter_mut().find(|s| s.id == sid) {
+        sess.status = status.to_string();
     }
 }
