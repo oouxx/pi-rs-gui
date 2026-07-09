@@ -4,7 +4,7 @@ import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup,
   SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
 } from "@/components/ui/sidebar"
-import { Search, Settings, Puzzle, Code2, Trash2 } from "lucide-react"
+import { Search, Settings, Puzzle, Code2, Plus, Trash2 } from "lucide-react"
 import { useChat } from "@/hooks/useChat"
 import type { AppView } from "./AppShell"
 
@@ -14,7 +14,7 @@ interface PiSidebarProps {
 }
 
 export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
-  const { sessions, activeSessionId, loading } = useChat()
+  const { sessions, activeSessionId, selectSession, createSession, deleteSession, loading } = useChat()
   const [search, setSearch] = useState("")
 
   const matches = (s: { title: string }) =>
@@ -27,9 +27,9 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={() => onModeChange("chat")} tooltip="Chat">
-              <span className="font-bold text-sm">π</span>
-              <span>Chat</span>
+            <SidebarMenuButton onClick={async () => { await createSession(); onModeChange("chat"); }} tooltip="New thread">
+              <Plus />
+              <span>New thread</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -77,14 +77,22 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
               </div>
             ) : (
               filteredSessions.map((s) => (
-                <SidebarMenuItem key={s.id}>
+                <SidebarMenuItem key={s.id} className="group/item">
                   <SidebarMenuButton
                     isActive={activeSessionId === s.id}
+                    onClick={() => { onModeChange("chat"); selectSession(s.id); }}
                     tooltip={s.title}
                   >
                     <span className={`size-1.5 flex-shrink-0 rounded-full ${activeSessionId === s.id ? "bg-accent" : "bg-muted-foreground"}`} />
                     <span className="flex-1 truncate">{s.title}</span>
                   </SidebarMenuButton>
+                  <button
+                    className="text-muted-foreground hover:text-destructive absolute top-1/2 right-1.5 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/item:opacity-100"
+                    onClick={(e) => { e.stopPropagation(); deleteSession(s.id) }}
+                    title="Delete"
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
                 </SidebarMenuItem>
               ))
             )}

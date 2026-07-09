@@ -8,6 +8,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::ping,
             commands::get_state,
+            commands::select_session,
+            commands::create_session,
+            commands::archive_session,
+            commands::rename_session,
             commands::submit_composer,
             commands::cancel_current_run,
             commands::set_active_view,

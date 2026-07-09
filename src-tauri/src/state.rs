@@ -11,6 +11,7 @@ pub(crate) mod skills;
 pub(crate) mod extensions;
 
 pub use internal::*;
+#[allow(unused_imports)]
 pub use runtime::build_runtime_snapshot;
 
 // ── Tests ──────────────────────────────────────────────────

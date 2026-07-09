@@ -194,6 +194,73 @@ pub fn rename_session(state: &mut DesktopState, target: &serde_json::Value, titl
     }
 }
 
+/// Select a session by ID (uses first/ws-default workspace).
+pub fn select_session_by_id(state: &mut DesktopState, session_id: &str) {
+    state["selectedSessionId"] = json!(session_id);
+}
+
+/// Archive a session by ID (uses first/ws-default workspace).
+/// After archiving, selects the next available session.
+pub fn archive_session_by_id(state: &mut DesktopState, session_id: &str) {
+    let ws_list = match state["workspaces"].as_array_mut() {
+        Some(a) => a,
+        None => return,
+    };
+    for ws in ws_list.iter_mut() {
+        let sessions = match ws["sessions"].as_array_mut() {
+            Some(a) => a,
+            None => continue,
+        };
+        if let Some(sess) = sessions.iter_mut().find(|s| s["id"] == session_id) {
+            sess["archivedAt"] = json!(now_iso());
+        }
+    }
+    // Select next non-archived session
+    let all_sessions: Vec<&serde_json::Value> = ws_list.iter()
+        .flat_map(|ws| ws["sessions"].as_array().into_iter().flatten())
+        .collect();
+    let next_id: Option<String> = all_sessions.iter()
+        .find(|s| s["id"] != session_id && s["archivedAt"].is_null())
+        .and_then(|s| s["id"].as_str().map(String::from));
+    match next_id {
+        Some(n) => state["selectedSessionId"] = json!(n),
+        None => state["selectedSessionId"] = json!(""),
+    }
+}
+
+/// Create a new session in the first/ws-default workspace.
+pub fn create_session_simple(state: &mut DesktopState, title: &str) {
+    let id = format!("sess-{}", chrono::Utc::now().timestamp_millis());
+    let sess = json!({
+        "id": id,
+        "title": if title.is_empty() { "New thread" } else { title },
+        "updatedAt": now_iso(), "preview": "", "status": "idle", "hasUnseenUpdate": false,
+    });
+    let ws_list = match state["workspaces"].as_array_mut() {
+        Some(a) => a,
+        None => return,
+    };
+    // Push to first workspace
+    if let Some(ws) = ws_list.first_mut() {
+        if let Some(arr) = ws["sessions"].as_array_mut() {
+            arr.push(sess);
+        }
+    }
+    state["selectedSessionId"] = json!(id);
+}
+
+/// Rename a session by ID (uses first/ws-default workspace).
+pub fn rename_session_by_id(state: &mut DesktopState, session_id: &str, title: &str) {
+    for ws in state["workspaces"].as_array_mut().into_iter().flatten() {
+        if let Some(sess) = ws["sessions"].as_array_mut()
+            .and_then(|ss| ss.iter_mut().find(|s| s["id"] == session_id))
+        {
+            sess["title"] = json!(title);
+            return;
+        }
+    }
+}
+
 /// Find and update a session's status, searching across **all** workspaces
 /// (not just the first one).
 pub fn set_session_status(state: &mut DesktopState, sid: &str, status: &str) {

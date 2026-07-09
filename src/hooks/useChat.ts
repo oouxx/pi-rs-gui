@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getState, submitComposer, getSelectedTranscript } from "../api/commands";
+import {
+  getState, submitComposer, getSelectedTranscript,
+  selectSession as apiSelectSession,
+  createSession as apiCreateSession,
+  archiveSession as apiArchiveSession,
+  renameSession as apiRenameSession,
+} from "../api/commands";
 import { tauriListen } from "../api/events";
 
 interface DisplayMessage {
@@ -106,6 +112,36 @@ export function useChat() {
     return () => clearInterval(interval);
   }, [streaming, activeSessionId]);
 
+  const selectSession = useCallback(async (sessionId: string) => {
+    await apiSelectSession(sessionId);
+    activeSessionIdRef.current = sessionId;
+    setActiveSessionId(sessionId);
+    setMessages([]);
+    const gen = ++transcriptGenRef.current;
+    getSelectedTranscript().then((t: any) => {
+      if (gen === transcriptGenRef.current) {
+        setMessages(t ? transcriptToDisplay(t.transcript) : []);
+      }
+    });
+  }, []);
+
+  const createSession = useCallback(async (title?: string) => {
+    const newState = await apiCreateSession(title);
+    const newId = newState.selectedSessionId;
+    if (newId) {
+      setActiveSessionId(newId);
+      activeSessionIdRef.current = newId;
+    }
+    setMessages([]);
+    refreshState();
+    return newId;
+  }, [refreshState]);
+
+  const deleteSession = useCallback(async (sessionId: string) => {
+    await apiArchiveSession(sessionId);
+    refreshState();
+  }, [refreshState]);
+
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || streamingRef.current) return;
     setStreaming(true);
@@ -127,6 +163,9 @@ export function useChat() {
   return {
     sessions,
     activeSessionId,
+    selectSession,
+    createSession,
+    deleteSession,
     messages,
     sendMessage,
     streaming,

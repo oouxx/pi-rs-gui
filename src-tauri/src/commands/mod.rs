@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::state::*;
-use crate::state::{composer, model, persistence, providers};
+use crate::state::{composer, model, providers, session};
 use serde_json::json;
 use tauri::{AppHandle, State};
 
@@ -15,6 +15,45 @@ pub async fn ping() -> String {
 #[tauri::command]
 pub async fn get_state(store: State<'_, Arc<Store>>) -> Result<DesktopState, String> {
     Ok(store.state.lock().await.clone())
+}
+
+// ── Session CRUD (backed by pi-rs) ──
+
+#[tauri::command]
+pub async fn select_session(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    session_id: String,
+) -> Result<DesktopState, String> {
+    Ok(store.mutate(&app, |s| session::select_session_by_id(s, &session_id)).await)
+}
+
+#[tauri::command]
+pub async fn create_session(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    title: Option<String>,
+) -> Result<DesktopState, String> {
+    Ok(store.mutate(&app, |s| session::create_session_simple(s, title.as_deref().unwrap_or("New thread"))).await)
+}
+
+#[tauri::command]
+pub async fn archive_session(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    session_id: String,
+) -> Result<DesktopState, String> {
+    Ok(store.mutate(&app, |s| session::archive_session_by_id(s, &session_id)).await)
+}
+
+#[tauri::command]
+pub async fn rename_session(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    session_id: String,
+    title: String,
+) -> Result<DesktopState, String> {
+    Ok(store.mutate(&app, |s| session::rename_session_by_id(s, &session_id, &title)).await)
 }
 
 // ── Agent-session flow ──
