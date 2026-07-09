@@ -92,18 +92,10 @@ export default function ChatView() {
 
   useEffect(() => { scrollDown() }, [messages, scrollDown])
 
-  // Fetch workspace files for @ mention (stub — replace with piApp.listWorkspaceFiles when available)
+  // @ mention file search (stub — no workspace file listing)
   useEffect(() => {
     if (!showMention) return
-    const api = window.piApp
-    if (!api) return
-    api.getState().then((state) => {
-      const wsId = state.selectedWorkspaceId
-      if (!wsId) return
-      api.listWorkspaceFiles(wsId, { force: true }).then((files) => {
-        setMentionFiles(files.map((f) => ({ path: f })))
-      }).catch(() => {})
-    }).catch(() => {})
+    setMentionFiles([])
   }, [showMention])
 
   const insertAtCursor = useCallback((text: string, start?: number, end?: number) => {

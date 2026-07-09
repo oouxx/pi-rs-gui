@@ -210,10 +210,10 @@ impl Store {
         result
     }
 
-    /// Attach an AgentSession to an EXISTING session record (no duplicate push).
+    /// Create an AgentSession for an EXISTING session record (no duplicate push).
     /// Used by submit_composer after the frontend has already called createSession.
     /// If `session_file` is provided, loads existing JSONL; otherwise creates fresh.
-    pub async fn attach_agent_session(
+    async fn init_session(
         self: &Arc<Self>,
         app: &AppHandle,
         cwd: &str,
@@ -589,6 +589,42 @@ impl Store {
             drop(state);
         });
         Ok(())
+    }
+
+    /// Ensure an AgentSession exists. If none is attached, reads the current
+    /// UI state to find the selected session record and attaches to it.
+    pub async fn ensure_session(self: &Arc<Self>, app: &AppHandle) -> Result<(), String> {
+        if self.session.lock().await.is_some() {
+            return Ok(());
+        }
+        let (sid, cwd, session_file) = {
+            let state = self.state.lock().await;
+            let sid = state["selectedSessionId"].as_str().unwrap_or("").to_string();
+            let ws_id = state["selectedWorkspaceId"].as_str().unwrap_or("ws-default");
+            let cwd = super::workspace::workspace_path(&state, ws_id)
+                .or_else(|| {
+                    std::env::current_dir()
+                        .ok()
+                        .map(|p| p.to_string_lossy().to_string())
+                })
+                .unwrap_or_else(|| {
+                    std::env::var("HOME")
+                        .map(|h| format!("{}/.pi-rs", h))
+                        .unwrap_or_else(|_| "/tmp".into())
+                });
+            let file = state["workspaces"]
+                .as_array()
+                .and_then(|ws| ws.iter().find(|w| w["id"] == ws_id))
+                .and_then(|w| w["sessions"].as_array())
+                .and_then(|ss| ss.iter().find(|s| s["id"] == sid))
+                .and_then(|s| s["sessionFile"].as_str().filter(|f| !f.is_empty()))
+                .map(String::from);
+            (sid, cwd, file)
+        };
+        if sid.is_empty() {
+            return Err("No active session".into());
+        }
+        self.init_session(app, &cwd, &sid, session_file).await
     }
 
     pub async fn abort(&self) {

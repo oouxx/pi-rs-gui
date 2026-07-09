@@ -1,23 +1,23 @@
+import { useState } from "react"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { useAppMode } from "@/contexts/AppModeContext"
 import PiSidebar from "./PiSidebar"
 import ChatView from "./ChatView"
-import WorkspaceView from "./WorkspaceView"
 import SkillsView from "./SkillsView"
 import ExtensionsView from "./ExtensionsView"
 import SettingsView from "./SettingsView"
 
+export type AppView = "chat" | "skills" | "extensions" | "settings"
+
 export default function AppShell() {
-  const { mode } = useAppMode()
+  const [mode, setMode] = useState<AppView>("chat")
+
   return (
     <TooltipProvider>
       <SidebarProvider defaultOpen>
-        <PiSidebar />
+        <PiSidebar mode={mode} onModeChange={setMode} />
         <SidebarInset className="overflow-hidden">
-          {mode === "workspace" ? (
-            <WorkspaceView />
-          ) : mode === "chat" ? (
+          {mode === "chat" ? (
             <ChatView />
           ) : mode === "skills" ? (
             <SkillsView />
