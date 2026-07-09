@@ -22,6 +22,14 @@ interface SessionItem {
   status: string;
 }
 
+/** Extract text from an assistant message's content blocks. */
+function extractText(content: any[]): string {
+  return (content ?? [])
+    .filter((b: any) => b.type === "text" || b.text)
+    .map((b: any) => b.text ?? "")
+    .join("");
+}
+
 export function useChat() {
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -65,6 +73,61 @@ export function useChat() {
     return () => { unsub?.(); };
   }, [refreshState]);
 
+  // ── Streaming: listen for agent events ──────────────────────
+  useEffect(() => {
+    if (!activeSessionId) return;
+    let unsub: (() => void) | undefined;
+    (async () => {
+      unsub = await tauriListen<any>("agent-event", (evt: any) => {
+        // Only process events for the current session
+        if (evt.session_id !== activeSessionIdRef.current) return;
+        const et = evt.event_type;
+
+        if (et === "message_start") {
+          // Add a new empty assistant message
+          const partial = evt.data?.message;
+          const text = partial ? extractText(partial.content) : "";
+          const newMsg: DisplayMessage = {
+            id: `msg-str-${Date.now()}`,
+            role: "assistant",
+            content: text,
+            createdAt: new Date().toISOString(),
+          };
+          setMessages((prev) => [...prev, newMsg]);
+        } else if (et === "message_update") {
+          // Update the last assistant message with partial content
+          const data = evt.data;
+          const partial = data?.partial;
+          if (partial) {
+            const text = extractText(partial.content);
+            setMessages((prev) => {
+              if (prev.length === 0) return prev;
+              const last = prev[prev.length - 1];
+              if (last.role !== "assistant") return prev;
+              return [...prev.slice(0, -1), { ...last, content: text }];
+            });
+          }
+        } else if (et === "message_end") {
+          // Finalize the last assistant message
+          const partial = evt.data?.message;
+          if (partial) {
+            const text = extractText(partial.content);
+            setMessages((prev) => {
+              if (prev.length === 0) return prev;
+              const last = prev[prev.length - 1];
+              if (last.role !== "assistant") return prev;
+              return [...prev.slice(0, -1), { ...last, content: text }];
+            });
+          }
+        } else if (et === "turn_end") {
+          // Turn complete — transcript event will follow
+        }
+      });
+    })();
+    return () => { unsub?.(); };
+  }, [activeSessionId]);
+
+  // ── Transcript events (full transcript after turn completes) ──
   useEffect(() => {
     if (!activeSessionId) return;
     const gen = ++transcriptGenRef.current;
@@ -81,7 +144,6 @@ export function useChat() {
       unsub = await tauriListen<any>("pi-gui:selected-transcript-changed", (t: any) => {
         if (gen !== transcriptGenRef.current) return;
         setMessages(t ? transcriptToDisplay(t.transcript) : []);
-        // Streaming ends when we get a transcript with assistant messages
         if (t && t.transcript.some((m: any) => m.role === "assistant")) {
           setStreaming(false);
           streamingRef.current = false;
@@ -138,8 +200,6 @@ export function useChat() {
     streamingRef.current = true;
     try {
       await submitComposer(text);
-      // After submitComposer returns, the transcript event will update messages.
-      // Safety timeout in case transcript event never arrives.
       setTimeout(() => {
         if (streamingRef.current) {
           setStreaming(false);
