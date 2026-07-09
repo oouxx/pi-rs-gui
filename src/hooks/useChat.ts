@@ -81,7 +81,8 @@ export function useChat() {
       unsub = await tauriListen<any>("pi-gui:selected-transcript-changed", (t: any) => {
         if (gen !== transcriptGenRef.current) return;
         setMessages(t ? transcriptToDisplay(t.transcript) : []);
-        if (t && t.transcript.length > 0) {
+        // Streaming ends when we get a transcript with assistant messages
+        if (t && t.transcript.some((m: any) => m.role === "assistant")) {
           setStreaming(false);
           streamingRef.current = false;
         } else if (t === null) {
@@ -92,21 +93,6 @@ export function useChat() {
     })();
     return () => { unsub?.(); };
   }, [activeSessionId]);
-
-  useEffect(() => {
-    if (!streaming) return;
-    const interval = setInterval(async () => {
-      try {
-        const state = await getState();
-        const session = (state.sessions ?? []).find((s: any) => s.id === activeSessionId);
-        if (session?.status === "idle") {
-          setStreaming(false);
-          streamingRef.current = false;
-        }
-      } catch { /* ignore */ }
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [streaming, activeSessionId]);
 
   const selectSession = useCallback(async (sessionId: string) => {
     await apiSelectSession(sessionId);

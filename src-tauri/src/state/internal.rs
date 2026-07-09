@@ -226,6 +226,8 @@ pub struct Store {
     pub session: Mutex<Option<AgentSession>>,
     pub session_id: Mutex<Option<String>>,
     pub is_streaming: AtomicBool,
+    /// Abort signal that works even when the AgentSession is moved into a tokio task.
+    pub abort_flag: Arc<AtomicBool>,
 }
 
 impl Store {
@@ -235,6 +237,7 @@ impl Store {
             session: Mutex::new(None),
             session_id: Mutex::new(None),
             is_streaming: AtomicBool::new(false),
+            abort_flag: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -469,11 +472,13 @@ impl Store {
     pub async fn send_message(self: &Arc<Self>, app: &AppHandle, text: &str) -> Result<(), String> {
         let sid = self.session_id.lock().await.clone().ok_or("No session")?;
         let mut session = self.session.lock().await.take().ok_or("No session")?;
+        self.abort_flag.store(false, Ordering::SeqCst);
         self.is_streaming.store(true, Ordering::SeqCst);
         let s = self.clone();
         let a = app.clone();
         let t = text.to_string();
         let sid2 = sid.clone();
+        let abort = self.abort_flag.clone();
         let _ = app.emit("agent-event", FrontendEvent {
             event_type: "user_message".into(),
             session_id: sid,
@@ -487,31 +492,16 @@ impl Store {
         drop(state_snapshot);
 
         tokio::spawn(async move {
-            eprintln!("[LLM] <<< {}", &t);
-            session.add_user_text(&t).await;
-            eprintln!("[LLM] add_user_text done");
-            let msgs = session.get_messages().await;
-            for msg in &msgs {
-                if let pi_agent_core::types::AgentMessage::Assistant { content, error_message, api, provider, model, .. } = msg {
-                    if let Some(e) = error_message {
-                        eprintln!("[LLM] error: {e}");
-                        let err_debug = format!("{:#?}", e);
-                        if err_debug != e.to_string() { eprintln!("[LLM] error debug: {err_debug}"); }
-                    }
-                    eprintln!("[LLM] assistant msg: api={api} provider={provider} model={model}");
-                    let text: String = content.iter()
-                        .filter_map(|b| if let pi_agent_core::pi_ai_types::ContentBlock::Text { text, .. } = b { Some(text.clone()) } else { None })
-                        .collect();
-                    if !text.is_empty() { eprintln!("[LLM] >>> {text}"); }
-                }
+            // Check abort before starting agent loop
+            if !abort.load(Ordering::SeqCst) {
+                eprintln!("[LLM] <<< {}", &t);
+                session.add_user_text(&t).await;
             }
+            eprintln!("[LLM] add_user_text done");
+            // Put session back regardless of outcome
             *s.session.lock().await = Some(session);
             s.is_streaming.store(false, Ordering::SeqCst);
-            let _ = a.emit("agent-event", FrontendEvent {
-                event_type: "turn_end".into(),
-                session_id: sid2.clone(),
-                data: json!({"message": null, "tool_results": []}),
-            });
+            // Subscription already emits turn_end — no synthetic event needed
             let msgs2 = s.get_messages().await;
             // Use captured sid2 (not state.selected_session_id) to avoid
             // emitting transcript for the wrong session after a switch.
@@ -568,6 +558,9 @@ impl Store {
     }
 
     pub async fn abort(&self) {
+        // Set the abort flag first — works even when session is moved into a tokio task
+        self.abort_flag.store(true, Ordering::SeqCst);
+        // Also try to abort the AgentSession directly if it's available
         if let Some(s) = self.session.lock().await.as_ref() {
             s.abort().await;
         }
