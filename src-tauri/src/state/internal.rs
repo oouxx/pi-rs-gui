@@ -513,8 +513,8 @@ impl Store {
                 data: json!({"message": null, "tool_results": []}),
             });
             let msgs2 = s.get_messages().await;
-            let state = s.state.lock().await;
-            let sess_id = &state.selected_session_id;
+            // Use captured sid2 (not state.selected_session_id) to avoid
+            // emitting transcript for the wrong session after a switch.
             let transcript: Vec<serde_json::Value> = msgs2.iter().filter_map(|msg| {
                 let (role, content, ts) = match msg {
                     AgentMessage::User { content, timestamp } => ("user", content, *timestamp),
@@ -531,10 +531,9 @@ impl Store {
                 Some(json!({"id": format!("msg-{}", ts), "kind": "message", "role": role, "text": text, "createdAt": created}))
             }).collect();
             if !transcript.is_empty() {
-                let payload = json!({"sessionId": sess_id, "transcript": transcript});
+                let payload = json!({"sessionId": sid2, "transcript": transcript});
                 let _ = a.emit("pi-gui:selected-transcript-changed", &payload);
             }
-            drop(state);
         });
         Ok(())
     }
