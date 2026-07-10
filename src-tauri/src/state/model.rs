@@ -24,8 +24,8 @@ pub fn set_default_model(state: &mut DesktopState, provider: &str, model_id: &st
     state.global_model_settings.default_model_id = Some(model_id.to_string());
     // Persist via pi-rs SettingsManager
     with_settings_mgr(|mgr| {
-        mgr.set_global("default_provider", json!(provider));
-        mgr.set_global("default_model", json!(model_id));
+        mgr.set_global("defaultProvider", json!(provider));
+        mgr.set_global("defaultModel", json!(model_id));
     });
 }
 
@@ -35,7 +35,7 @@ pub fn set_default_thinking_level(state: &mut DesktopState, level: &str) {
     state.global_model_settings.default_thinking_level = Some(level.to_string());
     // Persist via pi-rs SettingsManager
     with_settings_mgr(|mgr| {
-        mgr.set_global("thinking_level", json!(level));
+        mgr.set_global("thinkingLevel", json!(level));
     });
 }
 

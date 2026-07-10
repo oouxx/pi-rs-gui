@@ -188,6 +188,15 @@ export function useChat() {
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || streamingRef.current) return;
+
+    // Auto-title: rename "New thread" sessions based on the first message
+    const currentSid = activeSessionIdRef.current;
+    const currentSession = currentSid ? sessions.find((s) => s.id === currentSid) : null;
+    if (currentSession && currentSession.title === "New thread" && text.trim()) {
+      const autoTitle = text.trim().slice(0, 60);
+      apiRenameSession(currentSession.id, autoTitle).catch(() => {});
+    }
+
     // Optimistically add user message
     const userMsg: DisplayMessage = {
       id: `msg-opt-${Date.now()}`,
@@ -210,7 +219,7 @@ export function useChat() {
       setStreaming(false);
       streamingRef.current = false;
     }
-  }, []);
+  }, [sessions]);
 
   return {
     sessions,
