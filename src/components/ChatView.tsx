@@ -16,7 +16,9 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { useChat } from "@/hooks/useChat"
+import { useChat, type ContentBlock } from "@/hooks/useChat"
+import ToolCallCard from "@/components/ToolCallCard"
+import ThinkingBlock from "@/components/ThinkingBlock"
 
 const mdComponents: Components = {
   code: ({ className, children, ...props }) => {
@@ -69,6 +71,46 @@ const SLASH_COMMANDS = [
   { id: "doc", label: "Document", description: "Generate documentation for code", icon: "📝" },
   { id: "ask", label: "Ask", description: "General question about the codebase", icon: "💬" },
 ]
+
+/** Render a single content block. */
+function BlockRenderer({ block, isStreaming }: { block: ContentBlock; isStreaming: boolean }) {
+  switch (block.type) {
+    case "text":
+      return block.text ? (
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+          {block.text}
+        </ReactMarkdown>
+      ) : null
+
+    case "thinking":
+      return <ThinkingBlock thinking={block.thinking} />
+
+    case "toolCall":
+      return (
+        <ToolCallCard
+          name={block.name ?? "tool"}
+          args={block.arguments}
+          status={block.status}
+          result={block.result}
+          isError={block.isError}
+        />
+      )
+
+    case "image":
+      return (
+        <div className="my-2">
+          <img
+            src={block.text ?? block.arguments?.data ?? ""}
+            alt=""
+            className="max-h-64 rounded-lg border"
+          />
+        </div>
+      )
+
+    default:
+      return null
+  }
+}
 
 export default function ChatView() {
   const { messages, sendMessage, streaming, loading } = useChat()
@@ -217,6 +259,9 @@ export default function ChatView() {
           ) : (
             messages.map((msg, idx) => {
               const isLastAi = msg.role === "assistant" && idx === messages.length - 1
+              const hasContent = msg.blocks.some((b) =>
+                b.type === "text" ? b.text : b.type === "toolCall"
+              )
               return (
                 <div
                   key={msg.id}
@@ -237,13 +282,14 @@ export default function ChatView() {
                     }`}
                   >
                     {msg.role === "assistant" ? (
-                      msg.content ? (
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={mdComponents}
-                        >
-                          {msg.content}
-                        </ReactMarkdown>
+                      msg.blocks.length > 0 ? (
+                        msg.blocks.map((block, bi) => (
+                          <BlockRenderer
+                            key={`${msg.id}-b${bi}`}
+                            block={block}
+                            isStreaming={streaming && isLastAi}
+                          />
+                        ))
                       ) : streaming && isLastAi ? (
                         <div className="flex gap-1 py-1">
                           <span className="bg-muted-foreground size-1.5 animate-pulse rounded-full" />

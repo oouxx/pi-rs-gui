@@ -9,10 +9,26 @@ import {
 } from "../api/commands";
 import { tauriListen } from "../api/events";
 
-interface DisplayMessage {
+// ── Content block types (mirrors pi-ai ContentBlock) ──────────
+
+export interface ContentBlock {
+  type: "text" | "thinking" | "toolCall" | "image";
+  text?: string;
+  thinking?: string;
+  id?: string;          // toolCall.id
+  name?: string;        // toolCall.name
+  arguments?: any;      // toolCall.arguments
+  // Frontend-only: execution state (set by tool_execution_* events)
+  status?: "running" | "success" | "error";
+  result?: string;
+  isError?: boolean;
+}
+
+export interface DisplayMessage {
   id: string;
   role: "user" | "assistant" | "system";
-  content: string;
+  content: string;       // flattened text (backward compat)
+  blocks: ContentBlock[]; // structured content blocks
   createdAt: string;
 }
 
@@ -28,6 +44,28 @@ function extractText(content: any[]): string {
   return (content ?? [])
     .filter((b: any) => b.type === "text" || b.text)
     .map((b: any) => b.text ?? "")
+    .join("");
+}
+
+/** Convert raw ContentBlock[] from the backend to our frontend ContentBlock[]. */
+function toBlocks(raw: any[] | undefined | null): ContentBlock[] {
+  if (!raw) return [];
+  return raw.map((b: any) => {
+    const block: ContentBlock = { type: b.type ?? "text" };
+    if (b.text !== undefined) block.text = b.text;
+    if (b.thinking !== undefined) block.thinking = b.thinking;
+    if (b.id !== undefined) block.id = b.id;
+    if (b.name !== undefined) block.name = b.name;
+    if (b.arguments !== undefined) block.arguments = b.arguments;
+    return block;
+  });
+}
+
+/** Flatten blocks to a single text string. */
+function blocksToText(blocks: ContentBlock[]): string {
+  return blocks
+    .filter((b) => b.type === "text" && b.text)
+    .map((b) => b.text!)
     .join("");
 }
 
@@ -80,46 +118,109 @@ export function useChat() {
     let unsub: (() => void) | undefined;
     (async () => {
       unsub = await tauriListen<any>("agent-event", (evt: any) => {
-        // Only process events for the current session
         if (evt.session_id !== activeSessionIdRef.current) return;
         const et = evt.event_type;
 
         if (et === "message_start") {
-          // Add a new empty assistant message
-          const partial = evt.data?.message;
-          const text = partial ? extractText(partial.content) : "";
+          // New assistant message with initial content blocks
+          const rawBlocks = evt.data?.message?.content;
+          const blocks = toBlocks(rawBlocks);
+          const text = extractText(rawBlocks);
           const newMsg: DisplayMessage = {
-            id: `msg-str-${Date.now()}`,
+            id: `msg-${Date.now()}`,
             role: "assistant",
             content: text,
+            blocks,
             createdAt: new Date().toISOString(),
           };
           setMessages((prev) => [...prev, newMsg]);
+
         } else if (et === "message_update") {
-          // Update the last assistant message with partial content
-          const data = evt.data;
-          const partial = data?.partial;
-          if (partial) {
-            const text = extractText(partial.content);
-            setMessages((prev) => {
-              if (prev.length === 0) return prev;
-              const last = prev[prev.length - 1];
-              if (last.role !== "assistant") return prev;
-              return [...prev.slice(0, -1), { ...last, content: text }];
-            });
-          }
+          // Raw AssistantMessageEvent — partial.content has the complete blocks
+          const rawBlocks = evt.data?.partial?.content;
+          if (!rawBlocks) return;
+          const blocks = toBlocks(rawBlocks);
+          setMessages((prev) => {
+            if (prev.length === 0) return prev;
+            const last = prev[prev.length - 1];
+            if (last.role !== "assistant") return prev;
+            return [
+              ...prev.slice(0, -1),
+              { ...last, blocks, content: blocksToText(blocks) },
+            ];
+          });
+
         } else if (et === "message_end") {
           // Finalize the last assistant message
-          const partial = evt.data?.message;
-          if (partial) {
-            const text = extractText(partial.content);
-            setMessages((prev) => {
-              if (prev.length === 0) return prev;
-              const last = prev[prev.length - 1];
-              if (last.role !== "assistant") return prev;
-              return [...prev.slice(0, -1), { ...last, content: text }];
+          const rawBlocks = evt.data?.message?.content;
+          if (!rawBlocks) return;
+          const blocks = toBlocks(rawBlocks);
+          setMessages((prev) => {
+            if (prev.length === 0) return prev;
+            const last = prev[prev.length - 1];
+            if (last.role !== "assistant") return prev;
+            return [
+              ...prev.slice(0, -1),
+              { ...last, blocks, content: blocksToText(blocks) },
+            ];
+          });
+
+        } else if (et === "tool_execution_start") {
+          // Mark a tool call block as running
+          const { tool_call_id, tool_name } = evt.data;
+          setMessages((prev) => {
+            if (prev.length === 0) return prev;
+            const last = prev[prev.length - 1];
+            if (last.role !== "assistant") return prev;
+            const blocks = last.blocks.map((b) => {
+              if (b.type === "toolCall" && (b.id === tool_call_id || b.name === tool_name)) {
+                return { ...b, status: "running" as const };
+              }
+              return b;
             });
-          }
+            return [...prev.slice(0, -1), { ...last, blocks }];
+          });
+
+        } else if (et === "tool_execution_update") {
+          // Update partial result for a running tool
+          const { tool_call_id } = evt.data;
+          const partial = evt.data.partial_result;
+          const partialStr = typeof partial === "string" ? partial : JSON.stringify(partial, null, 2);
+          setMessages((prev) => {
+            if (prev.length === 0) return prev;
+            const last = prev[prev.length - 1];
+            if (last.role !== "assistant") return prev;
+            const blocks = last.blocks.map((b) => {
+              if (b.type === "toolCall" && b.id === tool_call_id) {
+                return { ...b, result: (b.result ?? "") + partialStr };
+              }
+              return b;
+            });
+            return [...prev.slice(0, -1), { ...last, blocks }];
+          });
+
+        } else if (et === "tool_execution_end") {
+          // Finalize a tool call with result or error
+          const { tool_call_id, result, is_error } = evt.data;
+          const resultStr = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+          setMessages((prev) => {
+            if (prev.length === 0) return prev;
+            const last = prev[prev.length - 1];
+            if (last.role !== "assistant") return prev;
+            const blocks = last.blocks.map((b) => {
+              if (b.type === "toolCall" && b.id === tool_call_id) {
+                return {
+                  ...b,
+                  status: is_error ? ("error" as const) : ("success" as const),
+                  result: resultStr,
+                  isError: !!is_error,
+                };
+              }
+              return b;
+            });
+            return [...prev.slice(0, -1), { ...last, blocks }];
+          });
+
         } else if (et === "turn_end") {
           // Turn complete — transcript event will follow
         }
@@ -208,6 +309,7 @@ export function useChat() {
       id: `msg-opt-${Date.now()}`,
       role: "user",
       content: text,
+      blocks: [{ type: "text", text }],
       createdAt: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, userMsg]);
@@ -248,6 +350,7 @@ function transcriptToDisplay(transcript: readonly any[]): DisplayMessage[] {
       id: t.id ?? `msg-${Math.random().toString(36).slice(2, 8)}`,
       role: t.role === "user" ? ("user" as const) : ("assistant" as const),
       content: t.text ?? t.content ?? "",
+      blocks: [{ type: "text" as const, text: t.text ?? t.content ?? "" }],
       createdAt: t.createdAt ?? "",
     }));
 }
