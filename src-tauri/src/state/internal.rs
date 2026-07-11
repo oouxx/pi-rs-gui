@@ -410,6 +410,19 @@ impl Store {
         session_file: Option<String>,
         fork_from: Option<String>,
     ) -> Result<(), String> {
+        eprintln!(
+            "[CWD] init_session sid={} cwd={:?} exists={} session_file={:?} fork_from={:?}",
+            current_sid,
+            cwd,
+            std::path::Path::new(cwd).exists(),
+            session_file,
+            fork_from
+        );
+        if cwd.is_empty() {
+            eprintln!("[CWD] WARNING cwd is empty — bash tool will fail");
+        } else if !std::path::Path::new(cwd).exists() {
+            eprintln!("[CWD] WARNING cwd does not exist — bash tool will fail");
+        }
         pi_ai::providers::register_builtins::register_built_in_api_providers();
 
         let (provider, model_id, thinking_level) = {
@@ -484,6 +497,34 @@ impl Store {
                         store.mutate(&app, |s| { set_sess_status(s, &sid, "running"); }).await;
                     } else if et == "agent_end" || et == "turn_end" {
                         store.mutate(&app, |s| { set_sess_status(s, &sid, "idle"); }).await;
+                    }
+                    // Tool-execution diagnostics: log each tool start/end so the
+                    // terminal shows what ran and whether it failed. The bash tool
+                    // returns "Working directory does not exist" as its result text
+                    // when cwd is invalid, so surfacing results here pinpoints the
+                    // failure without digging through JSONL files.
+                    if et == "tool_execution_start" {
+                        eprintln!(
+                            "[TOOL] start sid={} id={} name={}",
+                            sid,
+                            data.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or(""),
+                            data.get("tool_name").and_then(|v| v.as_str()).unwrap_or("?"),
+                        );
+                    } else if et == "tool_execution_end" {
+                        let is_error = data.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let result_str = data
+                            .get("result")
+                            .and_then(|v| v.as_str().map(|s| s.to_string()))
+                            .unwrap_or_else(|| data.get("result").map(|v| v.to_string()).unwrap_or_default());
+                        let snippet: String = result_str.chars().take(160).collect();
+                        eprintln!(
+                            "[TOOL] end   sid={} id={} name={} is_error={} result={:?}",
+                            sid,
+                            data.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or(""),
+                            data.get("tool_name").and_then(|v| v.as_str()).unwrap_or("?"),
+                            is_error,
+                            snippet,
+                        );
                     }
                     let _ = app.emit("agent-event", FrontendEvent { event_type: et, session_id: sid, data });
                 })
@@ -592,6 +633,34 @@ impl Store {
                     } else if et == "agent_end" || et == "turn_end" {
                         store.mutate(&app, |s| { set_sess_status(s, &sid, "idle"); }).await;
                     }
+                    // Tool-execution diagnostics: log each tool start/end so the
+                    // terminal shows what ran and whether it failed. The bash tool
+                    // returns "Working directory does not exist" as its result text
+                    // when cwd is invalid, so surfacing results here pinpoints the
+                    // failure without digging through JSONL files.
+                    if et == "tool_execution_start" {
+                        eprintln!(
+                            "[TOOL] start sid={} id={} name={}",
+                            sid,
+                            data.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or(""),
+                            data.get("tool_name").and_then(|v| v.as_str()).unwrap_or("?"),
+                        );
+                    } else if et == "tool_execution_end" {
+                        let is_error = data.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let result_str = data
+                            .get("result")
+                            .and_then(|v| v.as_str().map(|s| s.to_string()))
+                            .unwrap_or_else(|| data.get("result").map(|v| v.to_string()).unwrap_or_default());
+                        let snippet: String = result_str.chars().take(160).collect();
+                        eprintln!(
+                            "[TOOL] end   sid={} id={} name={} is_error={} result={:?}",
+                            sid,
+                            data.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or(""),
+                            data.get("tool_name").and_then(|v| v.as_str()).unwrap_or("?"),
+                            is_error,
+                            snippet,
+                        );
+                    }
                     let _ = app.emit("agent-event", FrontendEvent { event_type: et, session_id: sid, data });
                 })
             }))
@@ -670,6 +739,14 @@ impl Store {
                 .find(|s| s.id == sid)
                 .and_then(|s| s.session_file.as_ref().filter(|f| !f.is_empty()))
                 .cloned();
+            let cwd_exists = std::path::Path::new(&cwd).exists();
+            eprintln!(
+                "[CWD] ensure_session sid={} session_record_cwd={:?} resolved_cwd={:?} exists={} session_file={:?}",
+                sid, sess_cwd, cwd, cwd_exists, file
+            );
+            if !cwd_exists {
+                eprintln!("[CWD] WARNING resolved cwd does not exist — bash tool will fail with \"Working directory does not exist\"");
+            }
             (sid, cwd, file)
         };
         if sid.is_empty() {
@@ -714,6 +791,10 @@ impl Store {
             current_file.as_deref(),
             &new_cwd,
             current_cwd.as_deref(),
+        );
+        eprintln!(
+            "[CWD] set_session_cwd sid={} new_cwd={:?} current_cwd={:?} session_file={:?} action={:?}",
+            session_id, new_cwd, current_cwd, current_file, action
         );
 
         match action {
