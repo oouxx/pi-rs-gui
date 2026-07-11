@@ -313,21 +313,7 @@ pub async fn get_selected_transcript(
     if active_sid == sess_id {
         let in_memory = store.get_messages().await;
         if !in_memory.is_empty() {
-            let transcript: Vec<serde_json::Value> = in_memory.iter().filter_map(|msg| {
-                let (role, content, ts) = match msg {
-                    pi_agent_core::types::AgentMessage::User { content, timestamp } => ("user", content, *timestamp),
-                    pi_agent_core::types::AgentMessage::Assistant { content, timestamp, .. } => ("assistant", content, *timestamp),
-                    _ => return None,
-                };
-                let text: String = content.iter()
-                    .filter_map(|b| if let pi_agent_core::pi_ai_types::ContentBlock::Text { text, .. } = b { Some(text.clone()) } else { None })
-                    .collect();
-                let ts_secs = ts as f64 / 1000.0;
-                let created = chrono::DateTime::from_timestamp(ts_secs as i64, 0)
-                    .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-                    .unwrap_or_else(|| "".into());
-                Some(json!({"id": format!("msg-{}", ts), "kind": "message", "role": role, "text": text, "createdAt": created}))
-            }).collect();
+            let transcript = crate::state::build_display_transcript(&in_memory);
             if !transcript.is_empty() {
                 return Ok(Some(json!({"sessionId": sess_id, "transcript": transcript})));
             }

@@ -91,13 +91,55 @@ pub fn read_transcript_from_file(path: &str) -> Vec<serde_json::Value> {
     };
     let mgr = SessionManager::new("", &session_dir, Some(path), false, None);
     let entries = mgr.get_entries();
+
+    // First pass: collect tool results keyed by tool_call_id so we can merge
+    // them onto their corresponding toolCall blocks in the next pass.
+    use pi_coding_agent::core::session_manager::SessionEntry;
+    let mut tool_results: std::collections::HashMap<String, (String, bool)> =
+        std::collections::HashMap::new();
+    for entry in &entries {
+        if let SessionEntry::Message { message, .. } = entry {
+            if message.get("role").and_then(|r| r.as_str()) == Some("toolResult") {
+                let id = message.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let is_error = message.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+                let text: String = message.get("content").and_then(|c| c.as_array())
+                    .map(|arr| arr.iter().filter_map(|b| b.get("text").and_then(|t| t.as_str())).collect())
+                    .unwrap_or_default();
+                if !id.is_empty() {
+                    tool_results.insert(id, (text, is_error));
+                }
+            }
+        }
+    }
+
+    // Second pass: emit user/assistant messages with structured content blocks.
     let mut messages = Vec::new();
     for entry in &entries {
-        use pi_coding_agent::core::session_manager::SessionEntry;
         if let SessionEntry::Message { message, .. } = entry {
             let role = message.get("role").and_then(|r| r.as_str()).unwrap_or("");
             if role != "user" && role != "assistant" { continue; }
-            let text: String = message.get("content").and_then(|c| c.as_array())
+
+            // Build structured content blocks (clone so we can inject tool state).
+            let mut blocks = message.get("content").cloned().unwrap_or(json!([]));
+            // Handle legacy plain-string content by wrapping it as a text block.
+            if blocks.is_string() {
+                blocks = json!([{ "type": "text", "text": blocks }]);
+            }
+            if let Some(arr) = blocks.as_array_mut() {
+                for b in arr.iter_mut() {
+                    if b.get("type").and_then(|t| t.as_str()) == Some("toolCall") {
+                        if let Some(id) = b.get("id").and_then(|i| i.as_str()) {
+                            if let Some((result, is_error)) = tool_results.get(id) {
+                                b["status"] = json!(if *is_error { "error" } else { "success" });
+                                b["result"] = json!(result);
+                                b["isError"] = json!(is_error);
+                            }
+                        }
+                    }
+                }
+            }
+
+            let text: String = blocks.as_array()
                 .map(|arr| arr.iter().filter_map(|b| b.get("text").and_then(|t| t.as_str())).collect())
                 .unwrap_or_default();
             let ts = message.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
@@ -110,6 +152,7 @@ pub fn read_transcript_from_file(path: &str) -> Vec<serde_json::Value> {
                 "kind": "message",
                 "role": role,
                 "text": text,
+                "content": blocks,
                 "createdAt": created,
             }));
         }
