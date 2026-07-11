@@ -679,6 +679,112 @@ impl Store {
         self.init_session(app, &cwd, &sid, session_file, None).await
     }
 
+    /// Set the working directory for a session. If the session is already
+    /// initialized (has a session file with history), fork a new session with
+    /// the new cwd (history is copied by pi-rs via `fork_from`). The original
+    /// session is left untouched.
+    pub async fn set_session_cwd(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        session_id: &str,
+        path: &str,
+    ) -> Result<DesktopState, String> {
+        // Validate the path exists and is a directory.
+        let p = std::path::PathBuf::from(path);
+        if !p.is_dir() {
+            return Err(format!("Working directory does not exist or is not a directory: {}", path));
+        }
+        let new_cwd = p.to_string_lossy().to_string();
+
+        // Read the current session record (without holding the lock across init).
+        let (current_file, current_cwd, title) = {
+            let state = self.state.lock().await;
+            let sess = state
+                .sessions
+                .iter()
+                .find(|s| s.id == session_id)
+                .ok_or_else(|| "Session not found".to_string())?;
+            (
+                sess.session_file.clone(),
+                sess.cwd.clone(),
+                sess.title.clone(),
+            )
+        };
+
+        let action = decide_cwd_action(
+            current_file.as_deref(),
+            &new_cwd,
+            current_cwd.as_deref(),
+        );
+
+        match action {
+            CwdAction::NoOp => Ok(self.state.lock().await.clone()),
+            CwdAction::SetInPlace => {
+                let sid = session_id.to_string();
+                let cwd = new_cwd.clone();
+                Ok(self
+                    .mutate(app, |s| {
+                        if let Some(sess) = s.sessions.iter_mut().find(|s| s.id == sid) {
+                            sess.cwd = Some(cwd.clone());
+                        }
+                    })
+                    .await)
+            }
+            CwdAction::Fork => {
+                let new_id = format!("sess-{}", chrono::Utc::now().timestamp_millis());
+                let cwd_for_record = new_cwd.clone();
+                let title2 = title.clone();
+                // Push the new session record and select it.
+                self.mutate(app, |s| {
+                    s.sessions.push(SessionRecord {
+                        id: new_id.clone(),
+                        title: if title2.is_empty() {
+                            "New thread".to_string()
+                        } else {
+                            title2.clone()
+                        },
+                        updated_at: now_iso(),
+                        preview: String::new(),
+                        status: "idle".to_string(),
+                        has_unseen_update: false,
+                        session_file: None,
+                        archived_at: None,
+                        config: None,
+                        thinking_level: None,
+                        cwd: Some(cwd_for_record.clone()),
+                    });
+                    s.selected_session_id = new_id.clone();
+                })
+                .await;
+                // Initialize the new session by forking from the old one.
+                // pi-rs copies the history into a new session file under the new cwd.
+                let old_file = current_file.clone().unwrap_or_default();
+                match self
+                    .init_session(
+                        app,
+                        &new_cwd,
+                        &new_id,
+                        None,
+                        if old_file.is_empty() { None } else { Some(old_file) },
+                    )
+                    .await
+                {
+                    Ok(()) => Ok(self.state.lock().await.clone()),
+                    Err(e) => {
+                        // Roll back: drop the new record and restore selection.
+                        let old_sid = session_id.to_string();
+                        self.mutate(app, |s| {
+                            s.sessions.retain(|s| s.id != new_id);
+                            s.selected_session_id = old_sid.clone();
+                        })
+                        .await;
+                        Err(e)
+                    }
+                }
+            }
+        }
+    }
+
     pub async fn abort(&self) {
         // Set the abort flag first — works even when session is moved into a tokio task
         self.abort_flag.store(true, Ordering::SeqCst);

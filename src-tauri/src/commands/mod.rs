@@ -65,6 +65,16 @@ pub async fn rename_session(
     Ok(store.mutate(&app, |s| session::rename_session_by_id(s, &session_id, &title)).await)
 }
 
+#[tauri::command]
+pub async fn set_session_cwd(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    session_id: String,
+    path: String,
+) -> Result<DesktopState, String> {
+    store.set_session_cwd(&app, &session_id, &path).await
+}
+
 // ── Agent-session flow ──
 
 #[tauri::command]

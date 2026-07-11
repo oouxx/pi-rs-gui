@@ -12,6 +12,7 @@ pub fn run() {
             commands::create_session,
             commands::archive_session,
             commands::rename_session,
+            commands::set_session_cwd,
             commands::submit_composer,
             commands::cancel_current_run,
             commands::set_active_view,
