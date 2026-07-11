@@ -382,6 +382,7 @@ impl Store {
         cwd: &str,
         current_sid: &str,
         session_file: Option<String>,
+        fork_from: Option<String>,
     ) -> Result<(), String> {
         pi_ai::providers::register_builtins::register_built_in_api_providers();
 
@@ -421,7 +422,7 @@ impl Store {
             cli_model: None,
             persist_session: true,
             session_file: session_file.clone(),
-            fork_from: None,
+            fork_from: fork_from.clone(),
             session_dir: None,
         };
         let (mut session, _result) = create_agent_session(opts)
@@ -633,14 +634,12 @@ impl Store {
         let (sid, cwd, session_file) = {
             let state = self.state.lock().await;
             let sid = state.selected_session_id.clone();
-            let cwd = std::env::current_dir()
-                .ok()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| {
-                    std::env::var("HOME")
-                        .map(|h| format!("{}/.pi-rs", h))
-                        .unwrap_or_else(|_| "/tmp".into())
-                });
+            let sess_cwd = state
+                .sessions
+                .iter()
+                .find(|s| s.id == sid)
+                .and_then(|s| s.cwd.as_deref());
+            let cwd = resolve_session_cwd(sess_cwd);
             let file = state.sessions.iter()
                 .find(|s| s.id == sid)
                 .and_then(|s| s.session_file.as_ref().filter(|f| !f.is_empty()))
@@ -650,7 +649,7 @@ impl Store {
         if sid.is_empty() {
             return Err("No active session".into());
         }
-        self.init_session(app, &cwd, &sid, session_file).await
+        self.init_session(app, &cwd, &sid, session_file, None).await
     }
 
     pub async fn abort(&self) {
