@@ -46,4 +46,33 @@ mod tests {
         let cwd = super::internal::resolve_session_cwd(Some(""));
         assert!(!cwd.is_empty());
     }
+
+    // ── CwdAction / decide_cwd_action ─────────────────────────
+
+    use super::internal::{CwdAction, decide_cwd_action};
+
+    #[test]
+    fn test_decide_cwd_noop_when_same_path() {
+        let a = decide_cwd_action(Some("/old/sess.jsonl"), "/work", Some("/work"));
+        assert!(matches!(a, CwdAction::NoOp));
+    }
+
+    #[test]
+    fn test_decide_cwd_set_in_place_when_no_session_file() {
+        let a = decide_cwd_action(None, "/work", Some("/elsewhere"));
+        assert!(matches!(a, CwdAction::SetInPlace));
+    }
+
+    #[test]
+    fn test_decide_cwd_fork_when_has_session_file_and_diff_cwd() {
+        let a = decide_cwd_action(Some("/old/sess.jsonl"), "/new/work", Some("/old/work"));
+        assert!(matches!(a, CwdAction::Fork));
+    }
+
+    #[test]
+    fn test_decide_cwd_set_in_place_when_has_file_but_no_current_cwd() {
+        // 已有 session_file 但从未记录过 cwd（旧会话）：视为需要 fork 以带上历史
+        let a = decide_cwd_action(Some("/old/sess.jsonl"), "/new/work", None);
+        assert!(matches!(a, CwdAction::Fork));
+    }
 }

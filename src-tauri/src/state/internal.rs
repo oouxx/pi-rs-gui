@@ -141,6 +141,33 @@ pub fn resolve_session_cwd(session_cwd: Option<&str>) -> String {
         })
 }
 
+/// Decision for `set_session_cwd`: what to do when the user picks a new folder.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CwdAction {
+    /// Same as current cwd — do nothing.
+    NoOp,
+    /// Session has no agent session yet — set cwd in place on the record.
+    SetInPlace,
+    /// Session already has history — fork a new session (new cwd, copied history).
+    Fork,
+}
+
+/// Decide the cwd action based on whether the session is already initialized
+/// (has a session_file) and whether the new path differs from the current cwd.
+pub fn decide_cwd_action(
+    session_file: Option<&str>,
+    new_path: &str,
+    current_cwd: Option<&str>,
+) -> CwdAction {
+    if current_cwd.map(|c| c == new_path).unwrap_or(false) {
+        return CwdAction::NoOp;
+    }
+    match session_file {
+        None => CwdAction::SetInPlace,
+        Some(_) => CwdAction::Fork,
+    }
+}
+
 pub fn now_iso() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
