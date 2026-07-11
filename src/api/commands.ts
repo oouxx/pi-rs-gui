@@ -115,3 +115,6 @@ export function renameSession(sessionId: string, title: string) {
 export function deleteSession(sessionId: string) {
   return tauriInvoke<DesktopAppState>("delete_session", { sessionId });
 }
+export function setSessionCwd(sessionId: string, path: string) {
+  return tauriInvoke<DesktopAppState>("set_session_cwd", { sessionId, path });
+}
