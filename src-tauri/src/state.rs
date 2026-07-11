@@ -1,13 +1,13 @@
+pub(crate) mod composer;
+pub(crate) mod extensions;
 pub(crate) mod git;
 pub(crate) mod internal;
+pub(crate) mod model;
+pub(crate) mod persistence;
+pub(crate) mod providers;
 pub(crate) mod runtime;
 pub(crate) mod session;
-pub(crate) mod composer;
-pub(crate) mod model;
-pub(crate) mod providers;
-pub(crate) mod persistence;
 pub(crate) mod skills;
-pub(crate) mod extensions;
 
 pub use internal::*;
 pub use runtime::build_runtime_snapshot;
@@ -17,7 +17,6 @@ pub use runtime::build_runtime_snapshot;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[tokio::test]
     async fn test_initial_state() {
@@ -25,7 +24,10 @@ mod tests {
         let state = store.state.lock().await;
         assert_eq!(state.revision, 1);
         assert_eq!(state.active_view, "threads");
-        assert!(state.global_model_settings.enabled_model_patterns.is_empty());
+        assert!(state
+            .global_model_settings
+            .enabled_model_patterns
+            .is_empty());
     }
 
     #[test]
@@ -49,7 +51,7 @@ mod tests {
 
     // ── CwdAction / decide_cwd_action ─────────────────────────
 
-    use super::internal::{CwdAction, decide_cwd_action};
+    use super::internal::{decide_cwd_action, CwdAction};
 
     #[test]
     fn test_decide_cwd_noop_when_same_path() {

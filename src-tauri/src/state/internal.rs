@@ -179,46 +179,52 @@ pub fn set_sess_status(s: &mut DesktopState, sid: &str, status: &str) {
     }
 }
 
-pub fn set_sess_field(
-    s: &mut DesktopState,
-    sess_id: &str,
-    field: &str,
-    value: serde_json::Value,
-) {
-    if let Some(sess) = s.sessions.iter_mut().find(|s| s.id == sess_id) {
-        match field {
-            "archivedAt" => sess.archived_at = value.as_str().map(|s| s.to_string()),
-            "pinnedAt" => sess.archived_at = value.as_str().map(|s| s.to_string()),
-            "sessionFile" => sess.session_file = value.as_str().map(|s| s.to_string()),
-            _ => {}
-        }
-    }
-}
-
 pub fn serialize_event(event: &AgentEvent) -> (String, serde_json::Value) {
     match event {
         AgentEvent::AgentStart => ("agent_start".into(), json!({})),
         AgentEvent::AgentEnd { messages } => ("agent_end".into(), json!({"messages": messages})),
         AgentEvent::TurnStart => ("turn_start".into(), json!({})),
-        AgentEvent::TurnEnd { message, tool_results } => (
+        AgentEvent::TurnEnd {
+            message,
+            tool_results,
+        } => (
             "turn_end".into(),
             json!({"message": message, "tool_results": tool_results}),
         ),
-        AgentEvent::MessageStart { message } => ("message_start".into(), json!({"message": message})),
-        AgentEvent::MessageUpdate { assistant_message_event, .. } => (
+        AgentEvent::MessageStart { message } => {
+            ("message_start".into(), json!({"message": message}))
+        }
+        AgentEvent::MessageUpdate {
+            assistant_message_event,
+            ..
+        } => (
             "message_update".into(),
             serde_json::to_value(assistant_message_event).unwrap_or_default(),
         ),
         AgentEvent::MessageEnd { message } => ("message_end".into(), json!({"message": message})),
-        AgentEvent::ToolExecutionStart { tool_call_id, tool_name, args } => (
+        AgentEvent::ToolExecutionStart {
+            tool_call_id,
+            tool_name,
+            args,
+        } => (
             "tool_execution_start".into(),
             json!({"tool_call_id": tool_call_id, "tool_name": tool_name, "args": args}),
         ),
-        AgentEvent::ToolExecutionUpdate { tool_call_id, tool_name, args, partial_result } => (
+        AgentEvent::ToolExecutionUpdate {
+            tool_call_id,
+            tool_name,
+            args,
+            partial_result,
+        } => (
             "tool_execution_update".into(),
             json!({"tool_call_id": tool_call_id, "tool_name": tool_name, "args": args, "partial_result": partial_result}),
         ),
-        AgentEvent::ToolExecutionEnd { tool_call_id, tool_name, result, is_error } => (
+        AgentEvent::ToolExecutionEnd {
+            tool_call_id,
+            tool_name,
+            result,
+            is_error,
+        } => (
             "tool_execution_end".into(),
             json!({"tool_call_id": tool_call_id, "tool_name": tool_name, "result": result, "is_error": is_error}),
         ),
@@ -235,7 +241,13 @@ pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value>
     let mut tool_results: std::collections::HashMap<String, (String, bool)> =
         std::collections::HashMap::new();
     for msg in msgs {
-        if let AgentMessage::ToolResult { tool_call_id, content, is_error, .. } = msg {
+        if let AgentMessage::ToolResult {
+            tool_call_id,
+            content,
+            is_error,
+            ..
+        } = msg
+        {
             let text: String = content
                 .iter()
                 .filter_map(|b| {
@@ -255,7 +267,9 @@ pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value>
     for msg in msgs {
         let (role, content, ts) = match msg {
             AgentMessage::User { content, timestamp } => ("user", content, *timestamp),
-            AgentMessage::Assistant { content, timestamp, .. } => ("assistant", content, *timestamp),
+            AgentMessage::Assistant {
+                content, timestamp, ..
+            } => ("assistant", content, *timestamp),
             _ => continue,
         };
 
@@ -481,7 +495,8 @@ impl Store {
                 }
             }
             s.selected_session_id = sid.clone();
-        }).await;
+        })
+        .await;
 
         let store = self.clone();
         let a = app.clone();
@@ -494,9 +509,17 @@ impl Store {
                 Box::pin(async move {
                     let (et, data) = serialize_event(&event);
                     if et == "agent_start" || et == "turn_start" {
-                        store.mutate(&app, |s| { set_sess_status(s, &sid, "running"); }).await;
+                        store
+                            .mutate(&app, |s| {
+                                set_sess_status(s, &sid, "running");
+                            })
+                            .await;
                     } else if et == "agent_end" || et == "turn_end" {
-                        store.mutate(&app, |s| { set_sess_status(s, &sid, "idle"); }).await;
+                        store
+                            .mutate(&app, |s| {
+                                set_sess_status(s, &sid, "idle");
+                            })
+                            .await;
                     }
                     // Tool-execution diagnostics: log each tool start/end so the
                     // terminal shows what ran and whether it failed. The bash tool
@@ -507,26 +530,48 @@ impl Store {
                         eprintln!(
                             "[TOOL] start sid={} id={} name={}",
                             sid,
-                            data.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or(""),
-                            data.get("tool_name").and_then(|v| v.as_str()).unwrap_or("?"),
+                            data.get("tool_call_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(""),
+                            data.get("tool_name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("?"),
                         );
                     } else if et == "tool_execution_end" {
-                        let is_error = data.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let is_error = data
+                            .get("is_error")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
                         let result_str = data
                             .get("result")
                             .and_then(|v| v.as_str().map(|s| s.to_string()))
-                            .unwrap_or_else(|| data.get("result").map(|v| v.to_string()).unwrap_or_default());
+                            .unwrap_or_else(|| {
+                                data.get("result")
+                                    .map(|v| v.to_string())
+                                    .unwrap_or_default()
+                            });
                         let snippet: String = result_str.chars().take(160).collect();
                         eprintln!(
                             "[TOOL] end   sid={} id={} name={} is_error={} result={:?}",
                             sid,
-                            data.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or(""),
-                            data.get("tool_name").and_then(|v| v.as_str()).unwrap_or("?"),
+                            data.get("tool_call_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(""),
+                            data.get("tool_name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("?"),
                             is_error,
                             snippet,
                         );
                     }
-                    let _ = app.emit("agent-event", FrontendEvent { event_type: et, session_id: sid, data });
+                    let _ = app.emit(
+                        "agent-event",
+                        FrontendEvent {
+                            event_type: et,
+                            session_id: sid,
+                            data,
+                        },
+                    );
                 })
             }))
             .await;
@@ -589,10 +634,20 @@ impl Store {
         let (mut session, result) = create_agent_session(opts())
             .await
             .map_err(|e| format!("{e}"))?;
-        eprintln!("[LLM] session created: model_fallback={:?}", result.model_fallback_message);
-        eprintln!("[LLM] session cwd={} id={} name={:?}",
-            session.get_cwd(), session.get_session_id(), session.get_session_name());
-        eprintln!("[LLM] session scoped_models count={}", session.get_scoped_models().len());
+        eprintln!(
+            "[LLM] session created: model_fallback={:?}",
+            result.model_fallback_message
+        );
+        eprintln!(
+            "[LLM] session cwd={} id={} name={:?}",
+            session.get_cwd(),
+            session.get_session_id(),
+            session.get_session_name()
+        );
+        eprintln!(
+            "[LLM] session scoped_models count={}",
+            session.get_scoped_models().len()
+        );
 
         let sess_file_path = session
             .get_session_manager()
@@ -616,7 +671,8 @@ impl Store {
                 cwd: None,
             });
             s.selected_session_id = sid.clone();
-        }).await;
+        })
+        .await;
 
         let store = self.clone();
         let a = app.clone();
@@ -629,9 +685,17 @@ impl Store {
                 Box::pin(async move {
                     let (et, data) = serialize_event(&event);
                     if et == "agent_start" || et == "turn_start" {
-                        store.mutate(&app, |s| { set_sess_status(s, &sid, "running"); }).await;
+                        store
+                            .mutate(&app, |s| {
+                                set_sess_status(s, &sid, "running");
+                            })
+                            .await;
                     } else if et == "agent_end" || et == "turn_end" {
-                        store.mutate(&app, |s| { set_sess_status(s, &sid, "idle"); }).await;
+                        store
+                            .mutate(&app, |s| {
+                                set_sess_status(s, &sid, "idle");
+                            })
+                            .await;
                     }
                     // Tool-execution diagnostics: log each tool start/end so the
                     // terminal shows what ran and whether it failed. The bash tool
@@ -642,26 +706,48 @@ impl Store {
                         eprintln!(
                             "[TOOL] start sid={} id={} name={}",
                             sid,
-                            data.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or(""),
-                            data.get("tool_name").and_then(|v| v.as_str()).unwrap_or("?"),
+                            data.get("tool_call_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(""),
+                            data.get("tool_name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("?"),
                         );
                     } else if et == "tool_execution_end" {
-                        let is_error = data.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let is_error = data
+                            .get("is_error")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
                         let result_str = data
                             .get("result")
                             .and_then(|v| v.as_str().map(|s| s.to_string()))
-                            .unwrap_or_else(|| data.get("result").map(|v| v.to_string()).unwrap_or_default());
+                            .unwrap_or_else(|| {
+                                data.get("result")
+                                    .map(|v| v.to_string())
+                                    .unwrap_or_default()
+                            });
                         let snippet: String = result_str.chars().take(160).collect();
                         eprintln!(
                             "[TOOL] end   sid={} id={} name={} is_error={} result={:?}",
                             sid,
-                            data.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or(""),
-                            data.get("tool_name").and_then(|v| v.as_str()).unwrap_or("?"),
+                            data.get("tool_call_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(""),
+                            data.get("tool_name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("?"),
                             is_error,
                             snippet,
                         );
                     }
-                    let _ = app.emit("agent-event", FrontendEvent { event_type: et, session_id: sid, data });
+                    let _ = app.emit(
+                        "agent-event",
+                        FrontendEvent {
+                            event_type: et,
+                            session_id: sid,
+                            data,
+                        },
+                    );
                 })
             }))
             .await;
@@ -679,11 +765,14 @@ impl Store {
         let t = text.to_string();
         let sid2 = sid.clone();
         let abort = self.abort_flag.clone();
-        let _ = app.emit("agent-event", FrontendEvent {
-            event_type: "user_message".into(),
-            session_id: sid,
-            data: json!({"text": text, "timestamp": chrono::Utc::now().timestamp_millis()}),
-        });
+        let _ = app.emit(
+            "agent-event",
+            FrontendEvent {
+                event_type: "user_message".into(),
+                session_id: sid,
+                data: json!({"text": text, "timestamp": chrono::Utc::now().timestamp_millis()}),
+            },
+        );
 
         let state_snapshot = self.state.lock().await.clone();
         let diag_provider = state_snapshot.runtime.settings.default_provider.clone();
@@ -699,7 +788,10 @@ impl Store {
                 // Wrap with a 5-minute timeout to prevent hanging when the LLM
                 // API has no timeout configured or no API key is set.
                 let agent_fut = session.add_user_text(&t);
-                if tokio::time::timeout(std::time::Duration::from_secs(300), agent_fut).await.is_err() {
+                if tokio::time::timeout(std::time::Duration::from_secs(300), agent_fut)
+                    .await
+                    .is_err()
+                {
                     eprintln!("[LLM] add_user_text timed out after 300s, aborting");
                     session.abort().await;
                 }
@@ -735,7 +827,9 @@ impl Store {
                 .find(|s| s.id == sid)
                 .and_then(|s| s.cwd.as_deref());
             let cwd = resolve_session_cwd(sess_cwd);
-            let file = state.sessions.iter()
+            let file = state
+                .sessions
+                .iter()
                 .find(|s| s.id == sid)
                 .and_then(|s| s.session_file.as_ref().filter(|f| !f.is_empty()))
                 .cloned();
@@ -768,7 +862,10 @@ impl Store {
         // Validate the path exists and is a directory.
         let p = std::path::PathBuf::from(path);
         if !p.is_dir() {
-            return Err(format!("Working directory does not exist or is not a directory: {}", path));
+            return Err(format!(
+                "Working directory does not exist or is not a directory: {}",
+                path
+            ));
         }
         let new_cwd = p.to_string_lossy().to_string();
 
@@ -787,11 +884,7 @@ impl Store {
             )
         };
 
-        let action = decide_cwd_action(
-            current_file.as_deref(),
-            &new_cwd,
-            current_cwd.as_deref(),
-        );
+        let action = decide_cwd_action(current_file.as_deref(), &new_cwd, current_cwd.as_deref());
         eprintln!(
             "[CWD] set_session_cwd sid={} new_cwd={:?} current_cwd={:?} session_file={:?} action={:?}",
             session_id, new_cwd, current_cwd, current_file, action
@@ -845,7 +938,11 @@ impl Store {
                         &new_cwd,
                         &new_id,
                         None,
-                        if old_file.is_empty() { None } else { Some(old_file) },
+                        if old_file.is_empty() {
+                            None
+                        } else {
+                            Some(old_file)
+                        },
                     )
                     .await
                 {

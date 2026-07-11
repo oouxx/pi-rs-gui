@@ -1,5 +1,5 @@
-mod state;
 mod commands;
+mod state;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -31,12 +31,6 @@ pub fn run() {
             commands::set_custom_provider,
             commands::delete_custom_provider,
             commands::set_model_settings_scope_mode,
-            commands::list_skills,
-            commands::get_skill,
-            commands::delete_skill,
-            commands::list_extensions,
-            commands::get_extension,
-            commands::delete_extension,
             commands::set_theme_mode,
             commands::set_theme_preset_id,
             commands::get_theme_mode,
