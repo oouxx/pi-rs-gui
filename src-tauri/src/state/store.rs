@@ -131,6 +131,13 @@ impl Store {
                     })
                     .await;
 
+                // Populate model registry with built-in models so model resolution works.
+                // create_agent_session_services creates an empty registry.
+                services.model_registry =
+                    pi_coding_agent::core::model_registry::ModelRegistry::new(
+                        pi_coding_agent::core::model_registry::ModelRegistry::builtin_models_list(),
+                    );
+
                 let (provider, model_id, thinking_level) = {
                     let settings = services.settings_manager.get_settings();
                     (

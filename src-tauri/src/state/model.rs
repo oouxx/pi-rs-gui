@@ -1,7 +1,7 @@
 //! Model/provider settings — delegates to pi-rs SettingsManager for persistence.
 
-use serde_json::json;
 use crate::state::DesktopState;
+use serde_json::json;
 
 /// Persist global settings to disk via pi-coding-agent's SettingsManager.
 fn with_settings_mgr<F>(f: F)
