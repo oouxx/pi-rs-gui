@@ -126,15 +126,21 @@ export default function ChatView() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const prevInputRef = useRef("")
 
-  const scrollDown = useCallback(() => {
-    requestAnimationFrame(() => {
-      if (msgContainerRef.current) {
-        msgContainerRef.current.scrollTop = msgContainerRef.current.scrollHeight
-      }
-    })
-  }, [])
-
-  useEffect(() => { scrollDown() }, [messages, scrollDown])
+  // Auto-scroll to bottom when switching sessions or when messages change.
+  // A ResizeObserver catches async content (markdown/images) that settles after
+  // the initial commit, which a plain useEffect would miss.
+  useEffect(() => {
+    const el = msgContainerRef.current
+    if (!el) return
+    const scrollToBottom = () => {
+      el.scrollTop = el.scrollHeight
+    }
+    scrollToBottom()
+    const ro = new ResizeObserver(scrollToBottom)
+    ro.observe(el)
+    for (const child of el.children) ro.observe(child)
+    return () => ro.disconnect()
+  }, [activeSessionId, messages])
 
   // @ mention file search (stub — no workspace file listing)
   useEffect(() => {
