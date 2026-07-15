@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 use serde_json::{json, Value};
-use crate::state::internal::DesktopState;
+use crate::state::DesktopState;
 
 fn agent_dir() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
@@ -32,7 +32,7 @@ pub fn restore_state() -> DesktopState {
     let persisted: Option<Value> = get_state_path()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok());
-    let mut state = crate::state::internal::default_state();
+    let mut state = crate::state::default_state();
     if let Some(p) = persisted {
         if let Some(sid) = p["selectedSessionId"].as_str().filter(|x| !x.is_empty()) {
             state.selected_session_id = sid.to_string();

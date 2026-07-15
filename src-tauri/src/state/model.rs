@@ -1,7 +1,7 @@
 //! Model/provider settings — delegates to pi-rs SettingsManager for persistence.
 
 use serde_json::json;
-use crate::state::internal::DesktopState;
+use crate::state::DesktopState;
 
 /// Persist global settings to disk via pi-coding-agent's SettingsManager.
 fn with_settings_mgr<F>(f: F)
@@ -18,8 +18,6 @@ where
 
 pub fn set_default_model(state: &mut DesktopState, provider: &str, model_id: &str) {
     // Update in-memory state
-    state.runtime.settings.default_provider = Some(provider.to_string());
-    state.runtime.settings.default_model_id = Some(model_id.to_string());
     state.global_model_settings.default_provider = Some(provider.to_string());
     state.global_model_settings.default_model_id = Some(model_id.to_string());
     // Persist via pi-rs SettingsManager
@@ -31,7 +29,6 @@ pub fn set_default_model(state: &mut DesktopState, provider: &str, model_id: &st
 
 pub fn set_default_thinking_level(state: &mut DesktopState, level: &str) {
     // Update in-memory state
-    state.runtime.settings.default_thinking_level = Some(level.to_string());
     state.global_model_settings.default_thinking_level = Some(level.to_string());
     // Persist via pi-rs SettingsManager
     with_settings_mgr(|mgr| {
@@ -39,14 +36,10 @@ pub fn set_default_thinking_level(state: &mut DesktopState, level: &str) {
     });
 }
 
-pub fn set_model_settings_scope(state: &mut DesktopState, mode: &str) {
-    state.model_settings_scope_mode = Some(mode.to_string());
-}
-
 pub fn get_default_model(state: &DesktopState) -> serde_json::Value {
     json!({
-        "defaultProvider": state.runtime.settings.default_provider.as_deref().unwrap_or(""),
-        "defaultModelId": state.runtime.settings.default_model_id.as_deref().unwrap_or(""),
-        "defaultThinkingLevel": state.runtime.settings.default_thinking_level.as_deref().unwrap_or("normal"),
+        "defaultProvider": state.global_model_settings.default_provider.as_deref().unwrap_or(""),
+        "defaultModelId": state.global_model_settings.default_model_id.as_deref().unwrap_or(""),
+        "defaultThinkingLevel": state.global_model_settings.default_thinking_level.as_deref().unwrap_or("normal"),
     })
 }

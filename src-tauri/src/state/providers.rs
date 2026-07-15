@@ -1,8 +1,8 @@
 //! Custom provider CRUD — manages ~/.pi-rs/agent/models.json for custom
 //! (user-added) AI providers, and reads built-in provider key status.
 
-use serde_json::{json, Map, Value};
 use pi_coding_agent::config;
+use serde_json::{json, Map, Value};
 
 /// Read the raw custom models.json as a map of provider arrays.
 fn read_models_map() -> Map<String, Value> {
@@ -17,7 +17,9 @@ fn read_models_map() -> Map<String, Value> {
 /// Write the map back to models.json.
 fn write_models_map(map: &Map<String, Value>) {
     let path = config::get_models_path();
-    if let Some(dir) = path.parent() { let _ = std::fs::create_dir_all(dir); }
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
     let content = serde_json::to_string_pretty(map).unwrap_or_default();
     let _ = std::fs::write(&path, &content);
 }
@@ -44,14 +46,17 @@ pub fn list_custom_providers() -> Vec<Value> {
 
 /// Get a single custom provider by ID.
 pub fn get_custom_provider(provider_id: &str) -> Option<Value> {
-    list_custom_providers().into_iter()
+    list_custom_providers()
+        .into_iter()
         .find(|p| p["id"].as_str() == Some(provider_id))
 }
 
 /// Create or update a custom provider. Merges the entry into models.json
 /// under the provider key (kebab-case provider ID). Returns the updated provider.
 pub fn set_custom_provider(config: &Value) -> Result<Value, String> {
-    let provider_id = config["id"].as_str().ok_or("missing provider id")?
+    let provider_id = config["id"]
+        .as_str()
+        .ok_or("missing provider id")?
         .to_string();
     let provider = config["provider"].as_str().ok_or("missing provider")?;
     let entry = json!({
@@ -64,7 +69,8 @@ pub fn set_custom_provider(config: &Value) -> Result<Value, String> {
     });
 
     let mut map = read_models_map();
-    let arr = map.entry(provider.to_string())
+    let arr = map
+        .entry(provider.to_string())
         .or_insert_with(|| json!([]))
         .as_array_mut()
         .ok_or("invalid models.json format")?;
@@ -86,10 +92,14 @@ pub fn delete_custom_provider(provider_id: &str) -> Result<(), String> {
     for (_key, arr_val) in map.iter_mut() {
         if let Some(arr) = arr_val.as_array_mut() {
             arr.retain(|e| e["id"].as_str() != Some(provider_id));
-            if arr.len() != arr.capacity() { found = true; }
+            if arr.len() != arr.capacity() {
+                found = true;
+            }
         }
     }
-    if !found { return Err(format!("provider '{provider_id}' not found")); }
+    if !found {
+        return Err(format!("provider '{provider_id}' not found"));
+    }
     write_models_map(&map);
     Ok(())
 }
@@ -108,12 +118,4 @@ pub fn set_provider_api_key(provider_id: &str, api_key: &str) -> Result<String, 
         .ok_or_else(|| format!("unknown provider '{provider_id}'"))?;
     std::env::set_var(&var_name, api_key);
     Ok(var_name.to_string())
-}
-
-/// Probe a custom provider by trying to list models from its API endpoint.
-/// Returns minimal stub — real probe requires an HTTP call.
-pub fn probe_custom_provider_models(base_url: &str, _api_key: Option<&str>) -> Value {
-    // ponytail: real probe would call the provider's model list endpoint.
-    // Stub is OK until per-provider API formats are implemented.
-    json!({"ok": true, "models": []})
 }

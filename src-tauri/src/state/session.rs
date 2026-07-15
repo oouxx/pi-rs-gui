@@ -2,9 +2,9 @@
 //!
 //! Session file I/O delegated to pi-rs `SessionManager`.
 
-use serde_json::json;
+use crate::state::{now_iso, DesktopState, SessionRecord};
 use pi_coding_agent::core::session_manager::SessionManager;
-use crate::state::internal::{DesktopState, SessionRecord, now_iso};
+use serde_json::json;
 
 /// Extract the first user message text from a JSONL session file.
 ///
@@ -53,35 +53,40 @@ fn first_user_text_from_file(path: &std::path::Path) -> Option<String> {
 /// Delegates to pi-rs `SessionManager::list_all()`.
 pub fn scan_existing_sessions() -> Vec<SessionRecord> {
     let sessions = futures::executor::block_on(SessionManager::list_all(None));
-    sessions.into_iter().map(|info| {
-        let title = info.name.unwrap_or_else(|| {
-            let first = &info.first_message;
-            if !first.is_empty() && first != "(no messages)" {
-                first.chars().take(60).collect()
-            } else if let Some(text) = first_user_text_from_file(&info.path) {
-                text.chars().take(60).collect()
-            } else {
-                info.path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("Untitled")
-                    .to_string()
+    sessions
+        .into_iter()
+        .map(|info| {
+            let title = info.name.unwrap_or_else(|| {
+                let first = &info.first_message;
+                if !first.is_empty() && first != "(no messages)" {
+                    first.chars().take(60).collect()
+                } else if let Some(text) = first_user_text_from_file(&info.path) {
+                    text.chars().take(60).collect()
+                } else {
+                    info.path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("Untitled")
+                        .to_string()
+                }
+            });
+            SessionRecord {
+                id: info.id.clone(),
+                title,
+                updated_at: info
+                    .modified
+                    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                preview: String::new(),
+                status: "idle".to_string(),
+                has_unseen_update: false,
+                session_file: Some(info.path.to_string_lossy().to_string()),
+                archived_at: None,
+                config: None,
+                thinking_level: None,
+                cwd: None,
             }
-        });
-        SessionRecord {
-            id: info.id.clone(),
-            title,
-            updated_at: info.modified.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-            preview: String::new(),
-            status: "idle".to_string(),
-            has_unseen_update: false,
-            session_file: Some(info.path.to_string_lossy().to_string()),
-            archived_at: None,
-            config: None,
-            thinking_level: None,
-            cwd: None,
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 /// Read transcript messages from a JSONL session file using pi-rs `SessionManager`.
@@ -101,10 +106,23 @@ pub fn read_transcript_from_file(path: &str) -> Vec<serde_json::Value> {
     for entry in &entries {
         if let SessionEntry::Message { message, .. } = entry {
             if message.get("role").and_then(|r| r.as_str()) == Some("toolResult") {
-                let id = message.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let is_error = message.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
-                let text: String = message.get("content").and_then(|c| c.as_array())
-                    .map(|arr| arr.iter().filter_map(|b| b.get("text").and_then(|t| t.as_str())).collect())
+                let id = message
+                    .get("tool_call_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let is_error = message
+                    .get("is_error")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let text: String = message
+                    .get("content")
+                    .and_then(|c| c.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                            .collect()
+                    })
                     .unwrap_or_default();
                 if !id.is_empty() {
                     tool_results.insert(id, (text, is_error));
@@ -118,7 +136,9 @@ pub fn read_transcript_from_file(path: &str) -> Vec<serde_json::Value> {
     for entry in &entries {
         if let SessionEntry::Message { message, .. } = entry {
             let role = message.get("role").and_then(|r| r.as_str()).unwrap_or("");
-            if role != "user" && role != "assistant" { continue; }
+            if role != "user" && role != "assistant" {
+                continue;
+            }
 
             // Build structured content blocks (clone so we can inject tool state).
             let mut blocks = message.get("content").cloned().unwrap_or(json!([]));
@@ -140,10 +160,18 @@ pub fn read_transcript_from_file(path: &str) -> Vec<serde_json::Value> {
                 }
             }
 
-            let text: String = blocks.as_array()
-                .map(|arr| arr.iter().filter_map(|b| b.get("text").and_then(|t| t.as_str())).collect())
+            let text: String = blocks
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                        .collect()
+                })
                 .unwrap_or_default();
-            let ts = message.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
+            let ts = message
+                .get("timestamp")
+                .and_then(|t| t.as_i64())
+                .unwrap_or(0);
             let ts_secs = ts as f64 / 1000.0;
             let created = chrono::DateTime::from_timestamp(ts_secs as i64, 0)
                 .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
@@ -185,7 +213,9 @@ pub fn archive_session_by_id(state: &mut DesktopState, session_id: &str) {
     // Remove the session from the in-memory list.
     state.sessions.retain(|s| s.id != session_id);
     // Select the next available session.
-    let next_id = state.sessions.iter()
+    let next_id = state
+        .sessions
+        .iter()
         .find(|s| s.archived_at.is_none())
         .map(|s| s.id.clone());
     state.selected_session_id = next_id.unwrap_or_default();
@@ -209,7 +239,9 @@ pub fn delete_session_by_id(state: &mut DesktopState, session_id: &str) {
         if let Some(ref fp) = sess.session_file {
             let path = std::path::Path::new(fp);
             if let Some(parent) = path.parent() {
-                let archived_path = parent.join("archived").join(path.file_name().unwrap_or_default());
+                let archived_path = parent
+                    .join("archived")
+                    .join(path.file_name().unwrap_or_default());
                 if archived_path.exists() {
                     let _ = std::fs::remove_file(&archived_path);
                 }
@@ -219,7 +251,9 @@ pub fn delete_session_by_id(state: &mut DesktopState, session_id: &str) {
     // Remove the session from the in-memory list.
     state.sessions.retain(|s| s.id != session_id);
     // Select the next available session.
-    let next_id = state.sessions.iter()
+    let next_id = state
+        .sessions
+        .iter()
         .find(|s| s.archived_at.is_none())
         .map(|s| s.id.clone());
     state.selected_session_id = next_id.unwrap_or_default();
@@ -230,7 +264,11 @@ pub fn create_session_simple(state: &mut DesktopState, title: &str) {
     let id = format!("sess-{}", chrono::Utc::now().timestamp_millis());
     state.sessions.push(SessionRecord {
         id: id.clone(),
-        title: if title.is_empty() { "New thread".to_string() } else { title.to_string() },
+        title: if title.is_empty() {
+            "New thread".to_string()
+        } else {
+            title.to_string()
+        },
         updated_at: now_iso(),
         preview: String::new(),
         status: "idle".to_string(),
@@ -239,7 +277,9 @@ pub fn create_session_simple(state: &mut DesktopState, title: &str) {
         archived_at: None,
         config: None,
         thinking_level: None,
-        cwd: None,
+        cwd: std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned()),
     });
     state.selected_session_id = id;
 }
@@ -248,12 +288,5 @@ pub fn create_session_simple(state: &mut DesktopState, title: &str) {
 pub fn rename_session_by_id(state: &mut DesktopState, session_id: &str, title: &str) {
     if let Some(sess) = state.sessions.iter_mut().find(|s| s.id == session_id) {
         sess.title = title.to_string();
-    }
-}
-
-/// Find and update a session's status.
-pub fn set_session_status(state: &mut DesktopState, sid: &str, status: &str) {
-    if let Some(sess) = state.sessions.iter_mut().find(|s| s.id == sid) {
-        sess.status = status.to_string();
     }
 }
