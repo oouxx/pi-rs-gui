@@ -14,9 +14,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-pi-coding-agent = { git = "https://github.com/oouxx/pi-rs", tag = "v1.79.8"}
-pi-agent-core = { git = "https://github.com/oouxx/pi-rs", tag = "v1.79.8"}
-pi-ai = { git = "https://github.com/oouxx/pi-rs", tag = "v1.79.8"}
+pi-coding-agent = { git = "https://github.com/oouxx/pi-rs", tag = "v1.79.16"}
+pi-agent-core = { git = "https://github.com/oouxx/pi-rs", tag = "v1.79.16"}
+pi-ai = { git = "https://github.com/oouxx/pi-rs", tag = "v1.79.16"}
+pi-extensions = { git = "https://github.com/oouxx/pi-rs", tag = "v1.79.16" }
 tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }

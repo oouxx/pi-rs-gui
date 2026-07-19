@@ -9,14 +9,10 @@ use pi_coding_agent::core::agent_session_runtime::{
     CreateAgentSessionRuntimeParams, CreateAgentSessionRuntimeResult,
 };
 use pi_coding_agent::core::agent_session_services::{
-    create_agent_session_services, CreateAgentSessionServicesOptions,
+    create_agent_session_from_services, create_agent_session_services,
+    CreateAgentSessionFromServicesOptions, CreateAgentSessionServicesOptions,
 };
-use pi_coding_agent::core::event_bus::EventBusController;
 use pi_coding_agent::core::extensions::ExtensionRegistry;
-use pi_coding_agent::core::sdk::{
-    create_agent_session_inner, create_default_stream_fn, CreateAgentSessionInnerParams,
-    CreateAgentSessionOptions,
-};
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
@@ -139,10 +135,9 @@ impl Store {
 
                 // Populate model registry with built-in models so model resolution works.
                 // create_agent_session_services creates an empty registry.
-                services.model_registry =
-                    pi_coding_agent::core::model_registry::ModelRegistry::new(
-                        pi_coding_agent::core::model_registry::ModelRegistry::builtin_models_list(),
-                    );
+                services.model_registry = pi_coding_agent::core::model_registry::ModelRegistry::new(
+                    pi_coding_agent::core::model_registry::ModelRegistry::builtin_models_list(),
+                );
 
                 let (provider, model_id, thinking_level) = {
                     let settings = services.settings_manager.get_settings();
@@ -158,60 +153,46 @@ impl Store {
                     .as_ref()
                     .and_then(|p| model_id.as_ref().and_then(|m| registry.find(p, m)));
 
-                let event_bus = EventBusController::new();
-                let extension_registry = Arc::new(ExtensionRegistry::new());
-                let stream_fn = create_default_stream_fn();
+                let mut extension_registry = ExtensionRegistry::new();
 
-                let sdk_options = CreateAgentSessionOptions {
-                    cwd: params.cwd.clone(),
-                    agent_dir: Some(params.agent_dir.clone()),
-                    model: initial_model.clone(),
-                    thinking_level: thinking_level.clone(),
-                    scoped_models: None,
-                    no_tools: None,
-                    tools: None,
-                    exclude_tools: None,
-                    custom_prompt: None,
-                    append_system_prompt: None,
-                    session_name: None,
-                    stream_fn: Some(stream_fn),
-                    convert_to_llm: None,
-                    extension_paths: vec![],
-                    enable_extensions: true,
-                    cli_provider: None,
-                    cli_model: None,
-                    persist_session: true,
-                    session_file: None,
-                    fork_from: None,
-                    session_dir: None,
-                    extension_registry: None,
-                };
+                extension_registry.register(Box::new(pi_extensions::goal::GoalExtension::new()));
 
                 let model = initial_model.unwrap_or_else(|| {
                     let available = registry.get_available();
                     available.into_iter().next().expect("No models available")
                 });
 
-                // Move model_registry out of services (it doesn't implement Clone)
-                // and replace with a fresh empty one for the result.
-                let model_registry = std::mem::replace(
-                    &mut services.model_registry,
-                    pi_coding_agent::core::model_registry::ModelRegistry::new(vec![]),
-                );
+                // Capture cwd/agent_dir before `services` is moved into
+                // `create_agent_session_from_services`, which consumes it
+                // without returning it. The runtime result still needs a
+                // `services` value (used for `cwd()`/`agent_dir()`), so we
+                // rebuild a fresh one for the result.
+                let result_cwd = services.cwd.clone();
+                let result_agent_dir = services.agent_dir.clone();
 
                 let (mut session, result) =
-                    create_agent_session_inner(CreateAgentSessionInnerParams {
-                        cwd: params.cwd,
-                        agent_dir: params.agent_dir,
-                        model,
-                        thinking_level: thinking_level.unwrap_or_else(|| "medium".to_string()),
-                        model_registry,
+                    create_agent_session_from_services(CreateAgentSessionFromServicesOptions {
+                        services,
                         session_manager: params.session_manager,
-                        event_bus,
-                        extension_registry,
-                        options: sdk_options,
+                        model: Some(model),
+                        thinking_level: thinking_level,
+                        scoped_models: None,
+                        tools: None,
+                        no_tools: None,
+                        extension_registry: Some(extension_registry),
                         fallback_message: None,
-                        prompt_guidelines: None,
+                    })
+                    .await
+                    .expect("Failed to create agent session");
+
+                let result_services =
+                    create_agent_session_services(CreateAgentSessionServicesOptions {
+                        cwd: result_cwd,
+                        agent_dir: Some(result_agent_dir),
+                        auth_storage: None,
+                        settings_manager: None,
+                        model_registry: None,
+                        resource_loader_options: None,
                     })
                     .await;
 
@@ -292,7 +273,7 @@ impl Store {
 
                 CreateAgentSessionRuntimeResult {
                     session,
-                    services,
+                    services: result_services,
                     diagnostics: vec![],
                     model_fallback_message: result.model_fallback_message,
                 }
