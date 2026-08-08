@@ -288,6 +288,43 @@ impl Store {
         })
     }
 
+    /// Compute the default session directory for a given cwd.
+    fn session_dir_for(cwd: &str) -> String {
+        let agent_dir = pi_coding_agent::config::get_agent_dir()
+            .to_string_lossy()
+            .to_string();
+        pi_coding_agent::core::session_manager::SessionManager::default_session_dir(cwd, &agent_dir)
+    }
+
+    /// Single point that assembles an `AgentSessionRuntime` via the factory and
+    /// installs it as the active runtime. All session/runtime swaps (init,
+    /// select, fork) go through here.
+    async fn spawn_runtime(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        cwd: &str,
+        session_manager: pi_coding_agent::core::session_manager::SessionManager,
+    ) -> Result<(), String> {
+        let agent_dir = pi_coding_agent::config::get_agent_dir()
+            .to_string_lossy()
+            .to_string();
+        let factory = self.build_runtime_factory(app);
+        let runtime = create_agent_session_runtime(
+            factory,
+            CreateAgentSessionRuntimeParams {
+                cwd: cwd.to_string(),
+                agent_dir,
+                session_manager,
+                session_start_event: None,
+            },
+        )
+        .await;
+        let sid = runtime.session().get_session_id();
+        *self.session_id.lock().await = Some(sid.clone());
+        *self.runtime.lock().await = Some(runtime);
+        Ok(())
+    }
+
     /// Create the initial AgentSessionRuntime for a given cwd.
     async fn init_runtime(self: &Arc<Self>, app: &AppHandle, cwd: &str) -> Result<(), String> {
         eprintln!(
@@ -301,13 +338,7 @@ impl Store {
             eprintln!("[CWD] WARNING cwd does not exist — bash tool will fail");
         }
 
-        let agent_dir = pi_coding_agent::config::get_agent_dir()
-            .to_string_lossy()
-            .to_string();
-        let session_dir =
-            pi_coding_agent::core::session_manager::SessionManager::default_session_dir(
-                cwd, &agent_dir,
-            );
+        let session_dir = Self::session_dir_for(cwd);
         let session_manager = pi_coding_agent::core::session_manager::SessionManager::new(
             cwd,
             &session_dir,
@@ -315,23 +346,7 @@ impl Store {
             true,
             None,
         );
-
-        let factory = self.build_runtime_factory(app);
-        let runtime = create_agent_session_runtime(
-            factory,
-            CreateAgentSessionRuntimeParams {
-                cwd: cwd.to_string(),
-                agent_dir,
-                session_manager,
-                session_start_event: None,
-            },
-        )
-        .await;
-
-        let sid = runtime.session().get_session_id();
-        *self.session_id.lock().await = Some(sid.clone());
-        *self.runtime.lock().await = Some(runtime);
-        Ok(())
+        self.spawn_runtime(app, cwd, session_manager).await
     }
 
     /// Select a session: abort current streaming, discard old runtime, and
@@ -373,13 +388,7 @@ impl Store {
         };
 
         // 6. Initialize a new runtime for the selected session
-        let agent_dir = pi_coding_agent::config::get_agent_dir()
-            .to_string_lossy()
-            .to_string();
-        let session_dir =
-            pi_coding_agent::core::session_manager::SessionManager::default_session_dir(
-                &cwd, &agent_dir,
-            );
+        let session_dir = Self::session_dir_for(&cwd);
         let session_manager = pi_coding_agent::core::session_manager::SessionManager::new(
             &cwd,
             &session_dir,
@@ -387,22 +396,7 @@ impl Store {
             true,
             None,
         );
-
-        let factory = self.build_runtime_factory(app);
-        let runtime = create_agent_session_runtime(
-            factory,
-            CreateAgentSessionRuntimeParams {
-                cwd: cwd.clone(),
-                agent_dir,
-                session_manager,
-                session_start_event: None,
-            },
-        )
-        .await;
-
-        let sid = runtime.session().get_session_id();
-        *self.session_id.lock().await = Some(sid.clone());
-        *self.runtime.lock().await = Some(runtime);
+        self.spawn_runtime(app, &cwd, session_manager).await?;
 
         Ok(self.state.lock().await.clone())
     }
@@ -581,13 +575,7 @@ impl Store {
                 } else {
                     // Discard old runtime and create a new one forked from the old file
                     *self.runtime.lock().await = None;
-                    let agent_dir = pi_coding_agent::config::get_agent_dir()
-                        .to_string_lossy()
-                        .to_string();
-                    let session_dir =
-                        pi_coding_agent::core::session_manager::SessionManager::default_session_dir(
-                            &new_cwd, &agent_dir,
-                        );
+                    let session_dir = Self::session_dir_for(&new_cwd);
                     let session_manager =
                         pi_coding_agent::core::session_manager::SessionManager::fork_from(
                             &old_file,
@@ -596,21 +584,7 @@ impl Store {
                             None,
                         )
                         .map_err(|e| format!("Failed to fork session: {e}"))?;
-                    let factory = self.build_runtime_factory(app);
-                    let runtime = create_agent_session_runtime(
-                        factory,
-                        CreateAgentSessionRuntimeParams {
-                            cwd: new_cwd.clone(),
-                            agent_dir,
-                            session_manager,
-                            session_start_event: None,
-                        },
-                    )
-                    .await;
-                    let sid = runtime.session().get_session_id();
-                    *self.session_id.lock().await = Some(sid.clone());
-                    *self.runtime.lock().await = Some(runtime);
-                    Ok(())
+                    self.spawn_runtime(app, &new_cwd, session_manager).await
                 };
                 match result {
                     Ok(()) => {
