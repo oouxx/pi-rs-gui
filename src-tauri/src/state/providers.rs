@@ -129,7 +129,8 @@ pub fn set_provider_api_key(provider_id: &str, api_key: &str) -> Result<String, 
         .ok_or_else(|| format!("unknown provider '{provider_id}'"))?;
     let mut storage = auth_storage();
     storage.set(provider_id, AuthCredential::ApiKey {
-        key: api_key.to_string(),
+        key: Some(api_key.to_string()),
+        env: None,
     });
     Ok(var_name.to_string())
 }
