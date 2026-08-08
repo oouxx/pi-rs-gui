@@ -37,11 +37,13 @@
 ### Task 1: `SessionRecord.cwd` 字段 + `resolve_session_cwd` helper + 测试
 
 **Files:**
+
 - Modify: `src-tauri/src/state/internal.rs:59-77`（`SessionRecord`）
 - Modify: `src-tauri/src/state/session.rs`（`create_session_simple`）
 - Test: `src-tauri/src/state.rs:17-30`（测试模块）
 
 **Interfaces:**
+
 - Produces: `SessionRecord.cwd: Option<String>`；`pub fn resolve_session_cwd(session_cwd: Option<&str>) -> String`
 
 - [ ] **Step 1: 在 `SessionRecord` 加 `cwd` 字段**
@@ -132,10 +134,12 @@ git commit -m "feat: add SessionRecord.cwd + resolve_session_cwd helper"
 ### Task 2: `init_session` 增 `fork_from` 参数 + `ensure_session` 用 `SessionRecord.cwd`
 
 **Files:**
+
 - Modify: `src-tauri/src/state/internal.rs:359-406`（`init_session` 签名 + `opts`）
 - Modify: `src-tauri/src/state/internal.rs:608-633`（`ensure_session`）
 
 **Interfaces:**
+
 - Consumes: `resolve_session_cwd`（Task 1）、`SessionRecord.cwd`
 - Produces: `init_session(..., fork_from: Option<String>)` 新签名
 
@@ -215,10 +219,12 @@ git commit -m "feat: thread fork_from through init_session, resolve cwd from Ses
 ### Task 3: `CwdAction` + `decide_cwd_action` 纯决策 + 测试
 
 **Files:**
+
 - Modify: `src-tauri/src/state/internal.rs`（新增 enum + fn）
 - Test: `src-tauri/src/state.rs`
 
 **Interfaces:**
+
 - Produces: `pub enum CwdAction { NoOp, SetInPlace, Fork }`；`pub fn decide_cwd_action(session_file: Option<&str>, new_path: &str, current_cwd: Option<&str>) -> CwdAction`
 
 - [ ] **Step 1: 写失败测试**
@@ -309,10 +315,12 @@ git commit -m "feat: add CwdAction decision logic for set_session_cwd"
 ### Task 4: `set_session_cwd` Tauri 命令
 
 **Files:**
+
 - Modify: `src-tauri/src/commands/mod.rs`（新增命令）
 - Modify: `src-tauri/src/lib.rs:8-62`（注册命令）
 
 **Interfaces:**
+
 - Consumes: `init_session`（带 `fork_from`）、`decide_cwd_action`、`resolve_session_cwd`、`SessionRecord.cwd`
 - Produces: Tauri 命令 `set_session_cwd(session_id, path) -> DesktopState`
 
@@ -474,6 +482,7 @@ git commit -m "feat: add set_session_cwd command (in-place + fork via pi-rs fork
 ### Task 5: 接入 `tauri-plugin-dialog`（Rust）+ capabilities
 
 **Files:**
+
 - Modify: `src-tauri/Cargo.toml`
 - Modify: `src-tauri/src/lib.rs:5-7`
 - Modify: `src-tauri/capabilities/default.json`
@@ -532,6 +541,7 @@ git commit -m "feat: wire tauri-plugin-dialog for native folder picker"
 ### Task 6: 前端 `@tauri-apps/plugin-dialog` + `setSessionCwd` 封装
 
 **Files:**
+
 - Modify: `package.json`
 - Modify: `src/api/commands.ts`
 
@@ -567,10 +577,12 @@ git commit -m "feat: add setSessionCwd wrapper + @tauri-apps/plugin-dialog"
 ### Task 7: ChatView composer cwd chip + 文件夹选择
 
 **Files:**
+
 - Modify: `src/components/ChatView.tsx`（imports、composer 区）
 - Modify: `src/hooks/useChat.ts`（暴露当前 session cwd）
 
 **Interfaces:**
+
 - Consumes: `setSessionCwd`、`@tauri-apps/plugin-dialog` `open`、`useChat` 的 `activeSessionId`/sessions
 
 - [ ] **Step 1: `useChat` 暴露当前 session 的 cwd**
@@ -578,8 +590,8 @@ git commit -m "feat: add setSessionCwd wrapper + @tauri-apps/plugin-dialog"
 `src/hooks/useChat.ts`，在 `return { ... }` 里加 `activeSessionCwd`：先在文件顶部 `sessions` state 已有；在 return 前计算：
 
 ```ts
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
-  const activeSessionCwd = activeSession?.cwd ?? null;
+const activeSession = sessions.find((s) => s.id === activeSessionId);
+const activeSessionCwd = activeSession?.cwd ?? null;
 ```
 
 并把 `sessions: SessionItem[]` 的 `SessionItem` interface 加 `cwd?: string | null`：
@@ -603,15 +615,22 @@ return 对象加 `activeSessionCwd,`。
 `src/components/ChatView.tsx` 顶部加：
 
 ```ts
-import { open as openDialog } from "@tauri-apps/plugin-dialog"
-import { setSessionCwd } from "@/api/commands"
-import { Folder } from "lucide-react"
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { setSessionCwd } from "@/api/commands";
+import { Folder } from "lucide-react";
 ```
 
 并在 `useChat` 解构里取 `activeSessionId` 与 `activeSessionCwd`：
 
 ```ts
-  const { messages, sendMessage, streaming, loading, activeSessionId, activeSessionCwd } = useChat()
+const {
+  messages,
+  sendMessage,
+  streaming,
+  loading,
+  activeSessionId,
+  activeSessionCwd,
+} = useChat();
 ```
 
 - [ ] **Step 3: 加 pickFolder 回调**
@@ -619,40 +638,43 @@ import { Folder } from "lucide-react"
 `ChatView` 组件内（`handleSend` 附近）加：
 
 ```ts
-  const handlePickFolder = useCallback(async () => {
-    if (!activeSessionId) return
-    const selected = await openDialog({ directory: true, multiple: false })
-    if (typeof selected !== "string" || !selected) return
-    try {
-      await setSessionCwd(activeSessionId, selected)
-    } catch (e) {
-      console.error("[setSessionCwd]", e)
-    }
-  }, [activeSessionId])
+const handlePickFolder = useCallback(async () => {
+  if (!activeSessionId) return;
+  const selected = await openDialog({ directory: true, multiple: false });
+  if (typeof selected !== "string" || !selected) return;
+  try {
+    await setSessionCwd(activeSessionId, selected);
+  } catch (e) {
+    console.error("[setSessionCwd]", e);
+  }
+}, [activeSessionId]);
 ```
 
 - [ ] **Step 4: 在 composer 上方渲染 cwd chip**
 
-`ChatView.tsx`，在 composer 区 `<div className="border-hairline bg-bg-surface flex-shrink-0 border-t px-4 py-2">` 之前插入：
+`ChatView.tsx`，在 composer 区 `<div className="border-hairline bg-bg-surface shrink-0 border-t px-4 py-2">` 之前插入：
 
 ```tsx
-        {/* Working directory picker */}
-        <div className="border-hairline bg-bg-surface flex-shrink-0 border-t px-4 pt-2">
-          <button
-            type="button"
-            onClick={handlePickFolder}
-            disabled={!activeSessionId}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-50"
-            title={activeSessionCwd ?? "选择工作目录"}
-          >
-            <Folder className="size-3.5" />
-            <span className="max-w-[260px] truncate">
-              {activeSessionCwd
-                ? activeSessionCwd.split("/").filter(Boolean).pop() ?? activeSessionCwd
-                : "选择工作目录"}
-            </span>
-          </button>
-        </div>
+{
+  /* Working directory picker */
+}
+<div className="border-hairline bg-bg-surface shrink-0 border-t px-4 pt-2">
+  <button
+    type="button"
+    onClick={handlePickFolder}
+    disabled={!activeSessionId}
+    className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-50"
+    title={activeSessionCwd ?? "选择工作目录"}
+  >
+    <Folder className="size-3.5" />
+    <span className="max-w-[260px] truncate">
+      {activeSessionCwd
+        ? (activeSessionCwd.split("/").filter(Boolean).pop() ??
+          activeSessionCwd)
+        : "选择工作目录"}
+    </span>
+  </button>
+</div>;
 ```
 
 - [ ] **Step 5: 类型检查 + 构建**
@@ -663,6 +685,7 @@ Expected: 0 errors，构建成功。
 - [ ] **Step 6: 手动验证**
 
 Run: `bun run tauri:dev`
+
 1. 新建空会话 → 点 chip → 选一个真实目录 → chip 显示目录名 → 发"列出当前目录文件"之类消息 → bash 在所选目录执行，不再报 "Working directory does not exist"。
 2. 在有历史的会话点 chip → 选另一个目录 → 侧栏出现新会话并切过去 → 新会话显示原对话历史 → 发消息触发 bash → 在新目录执行。
 3. 重启应用 → 选中会话 chip 仍显示所选目录。
@@ -679,6 +702,7 @@ git commit -m "feat: composer folder picker chip to set session working director
 ## Self-Review
 
 **Spec coverage:**
+
 - SessionRecord.cwd → Task 1 ✓
 - init_session fork_from + ensure_session cwd → Task 2 ✓
 - set_session_cwd（空会话原地 / 有历史 fork）→ Task 3+4 ✓

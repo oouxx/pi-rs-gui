@@ -1,32 +1,32 @@
-import { useState } from "react"
-import { SidebarTrigger } from "@/components/ui/sidebar"
-import { Search, Plus } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
+import { useState } from "react";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Search, Plus } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 const skillCategories = [
   { id: "all", label: "All Skills", count: 0 },
   { id: "enabled", label: "Enabled", count: 0 },
   { id: "workspace", label: "Workspace", count: 0 },
   { id: "global", label: "Global", count: 0 },
-]
+];
 
 export default function SkillsView() {
-  const [activeCat, setActiveCat] = useState("all")
-  const [search, setSearch] = useState("")
+  const [activeCat, setActiveCat] = useState("all");
+  const [search, setSearch] = useState("");
 
   return (
     <div className="flex h-full max-h-screen min-w-0 flex-1 flex-col">
       {/* Top bar */}
       <div className="border-hairline flex items-center gap-3 border-b px-4 py-1.5">
-        <SidebarTrigger className="flex-shrink-0" />
+        <SidebarTrigger className="shrink-0" />
         <div className="text-foreground text-sm font-medium">Skills</div>
       </div>
 
       {/* Two-panel body */}
       <div className="flex min-h-0 flex-1">
         {/* Left — categories */}
-        <div className="border-hairline w-48 flex-shrink-0 border-r p-3">
+        <div className="border-hairline w-48 shrink-0 border-r p-3">
           <nav className="flex flex-col gap-1">
             {skillCategories.map((cat) => (
               <button
@@ -39,7 +39,9 @@ export default function SkillsView() {
                 }`}
               >
                 <span>{cat.label}</span>
-                <span className="text-muted-foreground text-xs">{cat.count}</span>
+                <span className="text-muted-foreground text-xs">
+                  {cat.count}
+                </span>
               </button>
             ))}
           </nav>
@@ -68,18 +70,29 @@ export default function SkillsView() {
           <div className="flex flex-1 items-center justify-center">
             <div className="max-w-sm text-center">
               <div className="bg-muted/30 mx-auto mb-4 flex size-16 items-center justify-center rounded-full">
-                <svg className="text-muted-foreground size-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  className="text-muted-foreground size-8"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M12 2a7 7 0 0 1 7 7c0 1.5-.5 2.9-1.3 4 .8.6 1.3 1.5 1.3 2.5a3 3 0 0 1-3 3c-.6 0-1.2-.2-1.7-.5A7 7 0 0 1 12 22a7 7 0 0 1-7-7c0-1.5.5-2.9 1.3-4-.8-.6-1.3-1.5-1.3-2.5a3 3 0 0 1 3-3c.6 0 1.2.2 1.7.5A7 7 0 0 1 12 2z" />
                 </svg>
               </div>
-              <h3 className="mb-1 text-sm font-medium text-foreground">No skills found</h3>
+              <h3 className="mb-1 text-sm font-medium text-foreground">
+                No skills found
+              </h3>
               <p className="text-muted-foreground text-xs leading-relaxed">
-                Skills extend pi-gui's capabilities with custom prompts and tools. Create or install a skill to get started.
+                Skills extend pi-gui's capabilities with custom prompts and
+                tools. Create or install a skill to get started.
               </p>
             </div>
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }

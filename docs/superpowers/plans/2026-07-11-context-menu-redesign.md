@@ -34,88 +34,137 @@
 ### Task 1: 重写 PiSidebar 右键菜单（Rename + Copy ID + inline 编辑 + 样式）
 
 **Files:**
+
 - Modify: `src/components/PiSidebar.tsx`（整体替换为下方完整内容）
 
 **Interfaces:**
+
 - Consumes: `renameSession(sessionId: string, title: string)` from `@/api/commands`（已存在）；`useChat()` 返回的 `sessions/activeSessionId/selectSession/createSession/deleteSession/loading`。
 - Produces: 无新导出（PiSidebar 默认导出不变）。
 
 - [ ] **Step 1: 用以下完整内容替换 `src/components/PiSidebar.tsx`**
 
 ```tsx
-import { useCallback, useEffect, useRef, useState } from "react"
-import { Input } from "@/components/ui/input"
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Input } from "@/components/ui/input";
 import {
-  Sidebar, SidebarContent, SidebarFooter, SidebarGroup,
-  SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
-} from "@/components/ui/sidebar"
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from "@/components/ui/sidebar";
 import {
-  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,
-} from "@/components/ui/context-menu"
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-  DialogFooter, DialogClose,
-} from "@/components/ui/dialog"
-import { Search, Settings, Puzzle, Code2, Plus, Trash2, Pencil, Copy, Check } from "lucide-react"
-import { useChat } from "@/hooks/useChat"
-import { renameSession } from "@/api/commands"
-import type { AppView } from "./AppShell"
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+import {
+  Search,
+  Settings,
+  Puzzle,
+  Code2,
+  Plus,
+  Trash2,
+  Pencil,
+  Copy,
+  Check,
+} from "lucide-react";
+import { useChat } from "@/hooks/useChat";
+import { renameSession } from "@/api/commands";
+import type { AppView } from "./AppShell";
 
 interface PiSidebarProps {
-  mode: AppView
-  onModeChange: (mode: AppView) => void
+  mode: AppView;
+  onModeChange: (mode: AppView) => void;
 }
 
 export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
-  const { sessions, activeSessionId, selectSession, createSession, deleteSession, loading } = useChat()
-  const [search, setSearch] = useState("")
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
-  const [renamingId, setRenamingId] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState("")
-  const [copiedId, setCopiedId] = useState<string | null>(null)
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const {
+    sessions,
+    activeSessionId,
+    selectSession,
+    createSession,
+    deleteSession,
+    loading,
+  } = useChat();
+  const [search, setSearch] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear any pending copy-feedback timer on unmount.
-  useEffect(() => () => {
-    if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
-  }, [])
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    },
+    [],
+  );
 
   const matches = (s: { title: string }) =>
-    !search.trim() || s.title.toLowerCase().includes(search.trim().toLowerCase())
+    !search.trim() ||
+    s.title.toLowerCase().includes(search.trim().toLowerCase());
 
-  const filteredSessions = sessions.filter(matches)
+  const filteredSessions = sessions.filter(matches);
 
-  const handleDelete = useCallback(async (sessionId: string) => {
-    await deleteSession(sessionId)
-    setConfirmDeleteId(null)
-  }, [deleteSession])
+  const handleDelete = useCallback(
+    async (sessionId: string) => {
+      await deleteSession(sessionId);
+      setConfirmDeleteId(null);
+    },
+    [deleteSession],
+  );
 
-  const commitRename = useCallback((id: string, value: string, original: string) => {
-    setRenamingId(null)
-    const trimmed = value.trim()
-    if (trimmed && trimmed !== original) {
-      renameSession(id, trimmed).catch(() => {})
-    }
-  }, [])
+  const commitRename = useCallback(
+    (id: string, value: string, original: string) => {
+      setRenamingId(null);
+      const trimmed = value.trim();
+      if (trimmed && trimmed !== original) {
+        renameSession(id, trimmed).catch(() => {});
+      }
+    },
+    [],
+  );
 
   const handleStartRename = useCallback((id: string, title: string) => {
-    setRenamingId(id)
-    setRenameValue(title)
-  }, [])
+    setRenamingId(id);
+    setRenameValue(title);
+  }, []);
 
   const handleCopyId = useCallback((id: string) => {
-    navigator.clipboard?.writeText(id).catch(() => {})
-    setCopiedId(id)
-    if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
-    copyTimerRef.current = setTimeout(() => setCopiedId(null), 1200)
-  }, [])
+    navigator.clipboard?.writeText(id).catch(() => {});
+    setCopiedId(id);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopiedId(null), 1200);
+  }, []);
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={async () => { await createSession(); onModeChange("chat"); }} tooltip="New thread">
+            <SidebarMenuButton
+              onClick={async () => {
+                await createSession();
+                onModeChange("chat");
+              }}
+              tooltip="New thread"
+            >
               <Plus />
               <span>New thread</span>
             </SidebarMenuButton>
@@ -127,7 +176,9 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton
-                onClick={() => onModeChange(mode === "skills" ? "chat" : "skills")}
+                onClick={() =>
+                  onModeChange(mode === "skills" ? "chat" : "skills")
+                }
                 isActive={mode === "skills"}
                 tooltip="Skills"
               >
@@ -137,7 +188,9 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton
-                onClick={() => onModeChange(mode === "extensions" ? "chat" : "extensions")}
+                onClick={() =>
+                  onModeChange(mode === "extensions" ? "chat" : "extensions")
+                }
                 isActive={mode === "extensions"}
                 tooltip="Extensions"
               >
@@ -151,14 +204,21 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           <div className="px-3 py-2 group-data-[collapsible=icon]:hidden">
             <div className="relative">
               <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
-              <Input placeholder="Search sessions..." value={search} onChange={e => setSearch(e.target.value)} className="h-8 pl-8 text-xs" />
+              <Input
+                placeholder="Search sessions..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-8 pl-8 text-xs"
+              />
             </div>
           </div>
         </SidebarGroup>
         <SidebarGroup className="min-h-0 flex-1 overflow-y-auto">
           <SidebarMenu>
             {loading ? (
-              <div className="text-muted-foreground py-8 text-center text-xs">Loading...</div>
+              <div className="text-muted-foreground py-8 text-center text-xs">
+                Loading...
+              </div>
             ) : filteredSessions.length === 0 ? (
               <div className="text-muted-foreground py-8 text-center text-xs">
                 {search.trim() ? "No matching sessions" : "No sessions yet"}
@@ -176,26 +236,42 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                             onFocus={(e) => e.currentTarget.select()}
                             onChange={(e) => setRenameValue(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") { e.preventDefault(); commitRename(s.id, renameValue, s.title) }
-                              if (e.key === "Escape") { e.preventDefault(); setRenamingId(null) }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                commitRename(s.id, renameValue, s.title);
+                              }
+                              if (e.key === "Escape") {
+                                e.preventDefault();
+                                setRenamingId(null);
+                              }
                             }}
-                            onBlur={() => commitRename(s.id, renameValue, s.title)}
+                            onBlur={() =>
+                              commitRename(s.id, renameValue, s.title)
+                            }
                             onClick={(e) => e.stopPropagation()}
                             className="h-7 flex-1 rounded-sm bg-background px-1 text-sm outline-none ring-1 ring-accent"
                           />
                         ) : (
                           <SidebarMenuButton
                             isActive={activeSessionId === s.id}
-                            onClick={() => { onModeChange("chat"); selectSession(s.id); }}
+                            onClick={() => {
+                              onModeChange("chat");
+                              selectSession(s.id);
+                            }}
                             tooltip={s.title}
                           >
-                            <span className={`size-1.5 flex-shrink-0 rounded-full ${activeSessionId === s.id ? "bg-accent" : "bg-muted-foreground"}`} />
+                            <span
+                              className={`size-1.5 shrink-0 rounded-full ${activeSessionId === s.id ? "bg-accent" : "bg-muted-foreground"}`}
+                            />
                             <span className="flex-1 truncate">{s.title}</span>
                           </SidebarMenuButton>
                         )}
                         <button
                           className="text-muted-foreground hover:text-destructive absolute top-1/2 right-1.5 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/item:opacity-100"
-                          onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(s.id) }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDeleteId(s.id);
+                          }}
                           title="Delete permanently"
                         >
                           <Trash2 className="size-3" />
@@ -203,12 +279,18 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                       </div>
                     </ContextMenuTrigger>
                     <ContextMenuContent>
-                      <ContextMenuItem onSelect={() => handleStartRename(s.id, s.title)}>
+                      <ContextMenuItem
+                        onSelect={() => handleStartRename(s.id, s.title)}
+                      >
                         <Pencil className="size-3.5" />
                         Rename
                       </ContextMenuItem>
                       <ContextMenuItem onSelect={() => handleCopyId(s.id)}>
-                        {copiedId === s.id ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+                        {copiedId === s.id ? (
+                          <Check className="size-3.5 text-emerald-500" />
+                        ) : (
+                          <Copy className="size-3.5" />
+                        )}
                         {copiedId === s.id ? "Copied!" : "Copy session ID"}
                       </ContextMenuItem>
                     </ContextMenuContent>
@@ -223,7 +305,9 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              onClick={() => onModeChange(mode === "settings" ? "chat" : "settings")}
+              onClick={() =>
+                onModeChange(mode === "settings" ? "chat" : "settings")
+              }
               isActive={mode === "settings"}
               tooltip="Settings"
             >
@@ -234,12 +318,18 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
         </SidebarMenu>
       </SidebarFooter>
 
-      <Dialog open={!!confirmDeleteId} onOpenChange={(open) => { if (!open) setConfirmDeleteId(null) }}>
+      <Dialog
+        open={!!confirmDeleteId}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDeleteId(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete session permanently?</DialogTitle>
             <DialogDescription>
-              This action cannot be undone. The session file will be permanently removed from disk.
+              This action cannot be undone. The session file will be permanently
+              removed from disk.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -248,7 +338,9 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             </DialogClose>
             <button
               className="inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => { if (confirmDeleteId) handleDelete(confirmDeleteId) }}
+              onClick={() => {
+                if (confirmDeleteId) handleDelete(confirmDeleteId);
+              }}
             >
               Delete
             </button>
@@ -256,7 +348,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
         </DialogContent>
       </Dialog>
     </Sidebar>
-  )
+  );
 }
 ```
 
@@ -285,6 +377,7 @@ git commit -m "feat: redesign session context menu (Rename + Copy ID, remove Arc
 ## Self-Review
 
 **Spec coverage:**
+
 - 移除 Archive/Delete + Separator → Task 1 代码中 `ContextMenuContent` 只剩 Rename/Copy ID，无 Separator ✓
 - Rename inline 编辑（Enter/Esc/blur/空值不提交）→ `commitRename` + input handlers ✓
 - Copy session ID + 1200ms 反馈 + timer 清理 → `handleCopyId` + `copyTimerRef` + unmount cleanup ✓

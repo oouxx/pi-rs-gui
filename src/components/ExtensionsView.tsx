@@ -1,32 +1,32 @@
-import { useState } from "react"
-import { SidebarTrigger } from "@/components/ui/sidebar"
-import { Search, Plus } from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
+import { useState } from "react";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import { Search, Plus } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 const extCategories = [
   { id: "all", label: "All Extensions", count: 0 },
   { id: "enabled", label: "Enabled", count: 0 },
   { id: "workspace", label: "Workspace", count: 0 },
   { id: "global", label: "Global", count: 0 },
-]
+];
 
 export default function ExtensionsView() {
-  const [activeCat, setActiveCat] = useState("all")
-  const [search, setSearch] = useState("")
+  const [activeCat, setActiveCat] = useState("all");
+  const [search, setSearch] = useState("");
 
   return (
     <div className="flex h-full max-h-screen min-w-0 flex-1 flex-col">
       {/* Top bar */}
       <div className="border-hairline flex items-center gap-3 border-b px-4 py-1.5">
-        <SidebarTrigger className="flex-shrink-0" />
+        <SidebarTrigger className="shrink-0" />
         <div className="text-foreground text-sm font-medium">Extensions</div>
       </div>
 
       {/* Two-panel body */}
       <div className="flex min-h-0 flex-1">
         {/* Left — categories */}
-        <div className="border-hairline w-48 flex-shrink-0 border-r p-3">
+        <div className="border-hairline w-48 shrink-0 border-r p-3">
           <nav className="flex flex-col gap-1">
             {extCategories.map((cat) => (
               <button
@@ -39,7 +39,9 @@ export default function ExtensionsView() {
                 }`}
               >
                 <span>{cat.label}</span>
-                <span className="text-muted-foreground text-xs">{cat.count}</span>
+                <span className="text-muted-foreground text-xs">
+                  {cat.count}
+                </span>
               </button>
             ))}
           </nav>
@@ -68,19 +70,30 @@ export default function ExtensionsView() {
           <div className="flex flex-1 items-center justify-center">
             <div className="max-w-sm text-center">
               <div className="bg-muted/30 mx-auto mb-4 flex size-16 items-center justify-center rounded-full">
-                <svg className="text-muted-foreground size-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  className="text-muted-foreground size-8"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                   <line x1="9" y1="3" x2="9" y2="21" />
                 </svg>
               </div>
-              <h3 className="mb-1 text-sm font-medium text-foreground">No extensions found</h3>
+              <h3 className="mb-1 text-sm font-medium text-foreground">
+                No extensions found
+              </h3>
               <p className="text-muted-foreground text-xs leading-relaxed">
-                Extensions add new commands and integrations to pi-gui. Browse the marketplace or add one from a directory.
+                Extensions add new commands and integrations to pi-gui. Browse
+                the marketplace or add one from a directory.
               </p>
             </div>
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }

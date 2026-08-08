@@ -1,31 +1,35 @@
-import { useState, type ReactNode } from "react"
-import { SidebarTrigger } from "@/components/ui/sidebar"
-import ModelsSettings from "./ModelsSettings"
+import { useState, type ReactNode } from "react";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import ModelsSettings from "./ModelsSettings";
 
 const settingsTabs = [
   { id: "general", label: "General", desc: "Appearance, language, theme" },
-  { id: "models", label: "Models", desc: "AI providers, default model, thinking level" },
+  {
+    id: "models",
+    label: "Models",
+    desc: "AI providers, default model, thinking level",
+  },
   { id: "skills", label: "Skills", desc: "Skill discovery and permissions" },
   { id: "extensions", label: "Extensions", desc: "Extension management" },
   { id: "keybindings", label: "Keybindings", desc: "Keyboard shortcuts" },
   { id: "about", label: "About", desc: "Version, licenses, updates" },
-]
+];
 
 export default function SettingsView() {
-  const [activeTab, setActiveTab] = useState("general")
+  const [activeTab, setActiveTab] = useState("general");
 
   return (
     <div className="flex h-full max-h-screen min-w-0 flex-1 flex-col">
       {/* Top bar */}
       <div className="border-hairline flex items-center gap-3 border-b px-4 py-1.5">
-        <SidebarTrigger className="flex-shrink-0" />
+        <SidebarTrigger className="shrink-0" />
         <div className="text-foreground text-sm font-medium">Settings</div>
       </div>
 
       {/* Two-panel body */}
       <div className="flex min-h-0 flex-1">
         {/* Left — tabs list */}
-        <div className="border-hairline w-56 flex-shrink-0 border-r p-3">
+        <div className="border-hairline w-56 shrink-0 border-r p-3">
           <nav className="flex flex-col gap-1">
             {settingsTabs.map((tab) => (
               <button
@@ -67,5 +71,5 @@ export default function SettingsView() {
         </div>
       </div>
     </div>
-  )
+  );
 }
