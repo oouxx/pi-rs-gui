@@ -1,34 +1,42 @@
 //! Agent event serialization and display transcript building.
 
 use pi_agent_core::pi_ai_types::ContentBlock;
-use pi_agent_core::types::{AgentEvent, AgentMessage};
+use pi_agent_core::types::AgentMessage;
+use pi_coding_agent::core::agent_session::AgentSessionEvent;
 use serde_json::json;
 
-/// Serialize an AgentEvent into a (type, data) pair for the frontend.
-pub fn serialize_event(event: &AgentEvent) -> (String, serde_json::Value) {
+/// Serialize an AgentSessionEvent into a (type, data) pair for the frontend.
+/// Maps the core passthrough variants to their legacy frontend event types
+/// and forwards session-specific events under their own type.
+pub fn serialize_session_event(event: &AgentSessionEvent) -> (String, serde_json::Value) {
     match event {
-        AgentEvent::AgentStart => ("agent_start".into(), json!({})),
-        AgentEvent::AgentEnd { messages } => ("agent_end".into(), json!({"messages": messages})),
-        AgentEvent::TurnStart => ("turn_start".into(), json!({})),
-        AgentEvent::TurnEnd {
+        AgentSessionEvent::AgentStart => ("agent_start".into(), json!({})),
+        AgentSessionEvent::AgentEnd { messages, will_retry } => (
+            "agent_end".into(),
+            json!({"messages": messages, "will_retry": will_retry}),
+        ),
+        AgentSessionEvent::TurnStart => ("turn_start".into(), json!({})),
+        AgentSessionEvent::TurnEnd {
             message,
             tool_results,
         } => (
             "turn_end".into(),
             json!({"message": message, "tool_results": tool_results}),
         ),
-        AgentEvent::MessageStart { message } => {
+        AgentSessionEvent::MessageStart { message } => {
             ("message_start".into(), json!({"message": message}))
         }
-        AgentEvent::MessageUpdate {
+        AgentSessionEvent::MessageUpdate {
             assistant_message_event,
             ..
         } => (
             "message_update".into(),
             serde_json::to_value(assistant_message_event).unwrap_or_default(),
         ),
-        AgentEvent::MessageEnd { message } => ("message_end".into(), json!({"message": message})),
-        AgentEvent::ToolExecutionStart {
+        AgentSessionEvent::MessageEnd { message } => {
+            ("message_end".into(), json!({"message": message}))
+        }
+        AgentSessionEvent::ToolExecutionStart {
             tool_call_id,
             tool_name,
             args,
@@ -36,7 +44,7 @@ pub fn serialize_event(event: &AgentEvent) -> (String, serde_json::Value) {
             "tool_execution_start".into(),
             json!({"tool_call_id": tool_call_id, "tool_name": tool_name, "args": args}),
         ),
-        AgentEvent::ToolExecutionUpdate {
+        AgentSessionEvent::ToolExecutionUpdate {
             tool_call_id,
             tool_name,
             args,
@@ -45,7 +53,7 @@ pub fn serialize_event(event: &AgentEvent) -> (String, serde_json::Value) {
             "tool_execution_update".into(),
             json!({"tool_call_id": tool_call_id, "tool_name": tool_name, "args": args, "partial_result": partial_result}),
         ),
-        AgentEvent::ToolExecutionEnd {
+        AgentSessionEvent::ToolExecutionEnd {
             tool_call_id,
             tool_name,
             result,
@@ -53,6 +61,59 @@ pub fn serialize_event(event: &AgentEvent) -> (String, serde_json::Value) {
         } => (
             "tool_execution_end".into(),
             json!({"tool_call_id": tool_call_id, "tool_name": tool_name, "result": result, "is_error": is_error}),
+        ),
+        // ── Session-specific events ──
+        AgentSessionEvent::AgentSettled => ("agent_settled".into(), json!({})),
+        AgentSessionEvent::QueueUpdate { steering, follow_up } => (
+            "queue_update".into(),
+            json!({"steering": steering, "follow_up": follow_up}),
+        ),
+        AgentSessionEvent::CompactionStart { reason } => {
+            ("compaction_start".into(), json!({"reason": reason}))
+        }
+        AgentSessionEvent::EntryAppended { entry } => {
+            ("entry_appended".into(), json!({"entry": entry}))
+        }
+        AgentSessionEvent::SessionInfoChanged { name } => {
+            ("session_info_changed".into(), json!({"name": name}))
+        }
+        AgentSessionEvent::ModelSelect {
+            model,
+            previous_model,
+            source,
+        } => (
+            "model_select".into(),
+            json!({"model": model, "previous_model": previous_model, "source": source}),
+        ),
+        AgentSessionEvent::ThinkingLevelChanged { level } => {
+            ("thinking_level_changed".into(), json!({"level": level}))
+        }
+        AgentSessionEvent::CompactionEnd {
+            reason,
+            result,
+            aborted,
+            will_retry,
+            error_message,
+        } => (
+            "compaction_end".into(),
+            json!({"reason": reason, "result": result, "aborted": aborted, "will_retry": will_retry, "error_message": error_message}),
+        ),
+        AgentSessionEvent::AutoRetryStart {
+            attempt,
+            max_attempts,
+            delay_ms,
+            error_message,
+        } => (
+            "auto_retry_start".into(),
+            json!({"attempt": attempt, "max_attempts": max_attempts, "delay_ms": delay_ms, "error_message": error_message}),
+        ),
+        AgentSessionEvent::AutoRetryEnd {
+            success,
+            attempt,
+            final_error,
+        } => (
+            "auto_retry_end".into(),
+            json!({"success": success, "attempt": attempt, "final_error": final_error}),
         ),
     }
 }

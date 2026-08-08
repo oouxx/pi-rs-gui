@@ -615,7 +615,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -783,7 +783,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1939,7 +1939,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.18",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2396,8 +2396,8 @@ dependencies = [
 
 [[package]]
 name = "pi-agent-core"
-version = "1.79.16"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.79.16#4915cc3e0babb69f59b6d798e44845a21180076b"
+version = "1.80.2"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.80.3#8fe365dae7285a13944b2f2af3a0eedbec3b3be3"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2419,8 +2419,8 @@ dependencies = [
 
 [[package]]
 name = "pi-ai"
-version = "1.79.16"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.79.16#4915cc3e0babb69f59b6d798e44845a21180076b"
+version = "1.80.2"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.80.3#8fe365dae7285a13944b2f2af3a0eedbec3b3be3"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2436,8 +2436,8 @@ dependencies = [
 
 [[package]]
 name = "pi-coding-agent"
-version = "1.79.16"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.79.16#4915cc3e0babb69f59b6d798e44845a21180076b"
+version = "1.80.2"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.80.3#8fe365dae7285a13944b2f2af3a0eedbec3b3be3"
 dependencies = [
  "async-trait",
  "chrono",
@@ -2463,10 +2463,11 @@ dependencies = [
 
 [[package]]
 name = "pi-extension-api"
-version = "1.79.16"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.79.16#4915cc3e0babb69f59b6d798e44845a21180076b"
+version = "1.80.2"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.80.3#8fe365dae7285a13944b2f2af3a0eedbec3b3be3"
 dependencies = [
  "async-trait",
+ "futures",
  "serde",
  "serde_json",
  "tokio",
@@ -2474,8 +2475,8 @@ dependencies = [
 
 [[package]]
 name = "pi-extensions"
-version = "1.79.16"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.79.16#4915cc3e0babb69f59b6d798e44845a21180076b"
+version = "1.80.2"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.80.3#8fe365dae7285a13944b2f2af3a0eedbec3b3be3"
 dependencies = [
  "async-trait",
  "pi-extension-api",
@@ -2702,7 +2703,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2836,7 +2837,6 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "encoding_rs",
- "futures-channel",
  "futures-core",
  "futures-util",
  "h2",
@@ -2972,7 +2972,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3396,7 +3396,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52d1cfed4120b4d927bf7c0f86d2087a4a7d6027c906d9f9d525a80573b9be51"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3910,10 +3910,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4295,7 +4295,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.18",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4729,7 +4729,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

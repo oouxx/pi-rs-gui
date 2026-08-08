@@ -3,7 +3,8 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use pi_agent_core::types::{AgentEvent, AgentMessage};
+use pi_agent_core::types::AgentMessage;
+use pi_coding_agent::core::agent_session::AgentSessionEvent;
 use pi_coding_agent::core::agent_session_runtime::{
     create_agent_session_runtime, AgentSessionRuntime, CreateAgentSessionRuntimeFactory,
     CreateAgentSessionRuntimeParams, CreateAgentSessionRuntimeResult,
@@ -12,14 +13,16 @@ use pi_coding_agent::core::agent_session_services::{
     create_agent_session_from_services, create_agent_session_services,
     CreateAgentSessionFromServicesOptions, CreateAgentSessionServicesOptions,
 };
-use pi_coding_agent::core::extensions::ExtensionRegistry;
+use pi_coding_agent::core::extensions::{
+    create_builtin_source_info, ExtensionRegistry,
+};
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
 
 use super::cwd::{decide_cwd_action, resolve_session_cwd, CwdAction};
 use super::session;
-use super::transcript::{build_display_transcript, serialize_event};
+use super::transcript::{build_display_transcript, serialize_session_event};
 use super::types::{DesktopState, FrontendEvent, GlobalModelSettings, SessionRecord};
 use super::ui;
 
@@ -116,7 +119,7 @@ impl Store {
     ) -> CreateAgentSessionRuntimeFactory {
         let store = self.clone();
         let a = app.clone();
-        Box::new(move |params: CreateAgentSessionRuntimeParams| {
+        Arc::new(move |params: CreateAgentSessionRuntimeParams| {
             let store = store.clone();
             let a = a.clone();
             Box::pin(async move {
@@ -144,7 +147,7 @@ impl Store {
                     (
                         settings.default_provider.clone(),
                         settings.default_model.clone(),
-                        settings.thinking_level.clone(),
+                        settings.default_thinking_level.clone(),
                     )
                 };
 
@@ -155,7 +158,10 @@ impl Store {
 
                 let mut extension_registry = ExtensionRegistry::new();
 
-                extension_registry.register(Box::new(pi_extensions::goal::GoalExtension::new()));
+                extension_registry.register(
+                    Box::new(pi_extensions::goal::GoalExtension::new()),
+                    create_builtin_source_info("goal"),
+                );
 
                 let model = initial_model.unwrap_or_else(|| {
                     let available = registry.get_available();
@@ -170,7 +176,7 @@ impl Store {
                 let result_cwd = services.cwd.clone();
                 let result_agent_dir = services.agent_dir.clone();
 
-                let (mut session, result) =
+                let (session, _services, result) =
                     create_agent_session_from_services(CreateAgentSessionFromServicesOptions {
                         services,
                         session_manager: params.session_manager,
@@ -179,8 +185,11 @@ impl Store {
                         scoped_models: None,
                         tools: None,
                         no_tools: None,
+                        exclude_tools: None,
+                        custom_tools: None,
                         extension_registry: Some(extension_registry),
                         fallback_message: None,
+                        session_start_event: params.session_start_event,
                     })
                     .await
                     .expect("Failed to create agent session");
@@ -201,75 +210,72 @@ impl Store {
                 let store2 = store.clone();
                 let a2 = a.clone();
                 let sid2 = sid.clone();
-                session
-                    .subscribe(Arc::new(move |event: AgentEvent, _signal| {
+                session.subscribe(Arc::new(move |event: AgentSessionEvent| {
+                    let (et, data) = serialize_session_event(&event);
+                    if et == "agent_start" || et == "turn_start" {
                         let store = store2.clone();
                         let app = a2.clone();
                         let sid = sid2.clone();
-                        Box::pin(async move {
-                            let (et, data) = serialize_event(&event);
-                            if et == "agent_start" || et == "turn_start" {
-                                store
-                                    .mutate(&app, |s| {
-                                        set_sess_status(s, &sid, "running");
-                                    })
-                                    .await;
-                            } else if et == "agent_end" || et == "turn_end" {
-                                store
-                                    .mutate(&app, |s| {
-                                        set_sess_status(s, &sid, "idle");
-                                    })
-                                    .await;
-                            }
-                            if et == "tool_execution_start" {
-                                eprintln!(
-                                    "[TOOL] start sid={} id={} name={}",
-                                    sid,
-                                    data.get("tool_call_id")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or(""),
-                                    data.get("tool_name")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("?"),
-                                );
-                            } else if et == "tool_execution_end" {
-                                let is_error = data
-                                    .get("is_error")
-                                    .and_then(|v| v.as_bool())
-                                    .unwrap_or(false);
-                                let result_str = data
-                                    .get("result")
-                                    .and_then(|v| v.as_str().map(|s| s.to_string()))
-                                    .unwrap_or_else(|| {
-                                        data.get("result")
-                                            .map(|v| v.to_string())
-                                            .unwrap_or_default()
-                                    });
-                                let snippet: String = result_str.chars().take(160).collect();
-                                eprintln!(
-                                    "[TOOL] end   sid={} id={} name={} is_error={} result={:?}",
-                                    sid,
-                                    data.get("tool_call_id")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or(""),
-                                    data.get("tool_name")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("?"),
-                                    is_error,
-                                    snippet,
-                                );
-                            }
-                            let _ = app.emit(
-                                "agent-event",
-                                FrontendEvent {
-                                    event_type: et,
-                                    session_id: sid,
-                                    data,
-                                },
-                            );
-                        })
-                    }))
-                    .await;
+                        tokio::spawn(async move {
+                            store
+                                .mutate(&app, |s| {
+                                    set_sess_status(s, &sid, "running");
+                                })
+                                .await;
+                        });
+                    } else if et == "agent_end" || et == "turn_end" {
+                        let store = store2.clone();
+                        let app = a2.clone();
+                        let sid = sid2.clone();
+                        tokio::spawn(async move {
+                            store
+                                .mutate(&app, |s| {
+                                    set_sess_status(s, &sid, "idle");
+                                })
+                                .await;
+                        });
+                    }
+                    if et == "tool_execution_start" {
+                        eprintln!(
+                            "[TOOL] start sid={} id={} name={}",
+                            sid2,
+                            data.get("tool_call_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(""),
+                            data.get("tool_name").and_then(|v| v.as_str()).unwrap_or("?"),
+                        );
+                    } else if et == "tool_execution_end" {
+                        let is_error = data
+                            .get("is_error")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        let result_str = data
+                            .get("result")
+                            .and_then(|v| v.as_str().map(|s| s.to_string()))
+                            .unwrap_or_else(|| {
+                                data.get("result").map(|v| v.to_string()).unwrap_or_default()
+                            });
+                        let snippet: String = result_str.chars().take(160).collect();
+                        eprintln!(
+                            "[TOOL] end   sid={} id={} name={} is_error={} result={:?}",
+                            sid2,
+                            data.get("tool_call_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(""),
+                            data.get("tool_name").and_then(|v| v.as_str()).unwrap_or("?"),
+                            is_error,
+                            snippet,
+                        );
+                    }
+                    let _ = a2.emit(
+                        "agent-event",
+                        FrontendEvent {
+                            event_type: et,
+                            session_id: sid2.clone(),
+                            data,
+                        },
+                    );
+                }));
 
                 CreateAgentSessionRuntimeResult {
                     session,
@@ -316,6 +322,7 @@ impl Store {
                 cwd: cwd.to_string(),
                 agent_dir,
                 session_manager,
+                session_start_event: None,
             },
         )
         .await;
@@ -387,6 +394,7 @@ impl Store {
                 cwd: cwd.clone(),
                 agent_dir,
                 session_manager,
+                session_start_event: None,
             },
         )
         .await;
@@ -594,6 +602,7 @@ impl Store {
                             cwd: new_cwd.clone(),
                             agent_dir,
                             session_manager,
+                            session_start_event: None,
                         },
                     )
                     .await;
