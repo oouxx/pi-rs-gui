@@ -6,62 +6,17 @@ use crate::state::{now_iso, DesktopState, SessionRecord};
 use pi_coding_agent::core::session_manager::SessionManager;
 use serde_json::json;
 
-/// Extract the first user message text from a JSONL session file.
-///
-/// Handles the modern content-block array format:
-/// `{"role":"user","content":[{"type":"text","text":"hello"}]}`
-/// as well as the legacy plain-string format:
-/// `{"role":"user","content":"hello"}`.
-fn first_user_text_from_file(path: &std::path::Path) -> Option<String> {
-    let content = std::fs::read_to_string(path).ok()?;
-    for line in content.lines() {
-        let value: serde_json::Value = serde_json::from_str(line).ok()?;
-        // Skip the session header
-        if value.get("type").and_then(|t| t.as_str()) == Some("session") {
-            continue;
-        }
-        // Only process message entries
-        if value.get("type").and_then(|t| t.as_str()) != Some("message") {
-            continue;
-        }
-        let msg = value.get("message")?;
-        if msg.get("role").and_then(|r| r.as_str())? != "user" {
-            continue;
-        }
-        // Try content as a plain string (legacy format) …
-        if let Some(text) = msg.get("content").and_then(|c| c.as_str()) {
-            if !text.is_empty() {
-                return Some(text.to_string());
-            }
-        // … then as an array of content blocks (modern format).
-        } else if let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) {
-            let text: String = blocks
-                .iter()
-                .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
-                .collect();
-            if !text.is_empty() {
-                return Some(text);
-            }
-        }
-        // First user message found but no text – stop looking.
-        return None;
-    }
-    None
-}
-
 /// Scan `~/.pi-rs/agent/sessions/` for `.jsonl` files and return session records.
-/// Delegates to pi-rs `SessionManager::list_all()`.
+/// Delegates to pi-rs `SessionManager::list_all()` (which provides the title,
+/// first-message text, and timestamps — no manual JSONL parsing here).
 pub fn scan_existing_sessions() -> Vec<SessionRecord> {
     let sessions = futures::executor::block_on(SessionManager::list_all(None));
     sessions
         .into_iter()
         .map(|info| {
             let title = info.name.unwrap_or_else(|| {
-                let first = &info.first_message;
-                if !first.is_empty() && first != "(no messages)" {
-                    first.chars().take(60).collect()
-                } else if let Some(text) = first_user_text_from_file(&info.path) {
-                    text.chars().take(60).collect()
+                if !info.first_message.is_empty() && info.first_message != "(no messages)" {
+                    info.first_message.chars().take(60).collect()
                 } else {
                     info.path
                         .file_stem()
@@ -83,7 +38,7 @@ pub fn scan_existing_sessions() -> Vec<SessionRecord> {
                 archived_at: None,
                 config: None,
                 thinking_level: None,
-                cwd: None,
+                cwd: (!info.cwd.is_empty()).then_some(info.cwd),
             }
         })
         .collect()

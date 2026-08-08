@@ -240,11 +240,12 @@ pub async fn login_provider(
 pub async fn logout_provider(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
-    _provider_id: String,
+    provider_id: String,
 ) -> Result<DesktopState, String> {
+    providers::clear_provider_auth(&provider_id);
     Ok(store
         .mutate(&app, |_s| {
-            // Runtime snapshot removed; provider auth is checked on demand
+            // Runtime snapshot removed; provider auth is read on demand
         })
         .await)
 }

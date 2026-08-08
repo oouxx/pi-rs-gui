@@ -43,3 +43,18 @@ pub fn get_default_model(state: &DesktopState) -> serde_json::Value {
         "defaultThinkingLevel": state.global_model_settings.default_thinking_level.as_deref().unwrap_or("normal"),
     })
 }
+
+/// Populate the in-memory `global_model_settings` from pi-rs `SettingsManager`.
+/// Call once at startup so the frontend sees the persisted default
+/// provider/model/thinking-level instead of an empty skeleton.
+pub fn hydrate_global_settings(state: &mut DesktopState) {
+    let agent_dir = pi_coding_agent::config::get_agent_dir();
+    let mgr = pi_coding_agent::core::settings_manager::SettingsManager::create(
+        agent_dir.to_string_lossy().as_ref(),
+        Some(agent_dir.to_string_lossy().as_ref()),
+    );
+    let settings = mgr.get_settings();
+    state.global_model_settings.default_provider = settings.default_provider.clone();
+    state.global_model_settings.default_model_id = settings.default_model.clone();
+    state.global_model_settings.default_thinking_level = settings.default_thinking_level.clone();
+}

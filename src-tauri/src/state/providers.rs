@@ -1,8 +1,20 @@
 //! Custom provider CRUD — manages ~/.pi-rs/agent/models.json for custom
 //! (user-added) AI providers, and reads built-in provider key status.
+//!
+//! Provider API keys are persisted via pi-rs `AuthStorage` (auth.json), which
+//! the agent sessions already read by default — no env-var hacks needed.
 
 use pi_coding_agent::config;
+use pi_coding_agent::core::auth_storage::{AuthCredential, AuthStorage};
 use serde_json::{json, Map, Value};
+
+/// Build an `AuthStorage` backed by the agent auth.json. pi-rs sessions are
+/// created with `auth_storage: None`, which makes them default to this same
+/// file, so keys stored here are picked up automatically.
+fn auth_storage() -> AuthStorage {
+    let path = config::get_agent_dir().join("auth.json");
+    AuthStorage::create(path)
+}
 
 /// Read the raw custom models.json as a map of provider arrays.
 fn read_models_map() -> Map<String, Value> {
@@ -104,18 +116,26 @@ pub fn delete_custom_provider(provider_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Check if a provider's API key env var is set (not empty / not "placeholder").
+/// Check if a provider has authentication configured (stored in auth.json,
+/// set at runtime, or via env var). Delegates to pi-rs `AuthStorage`.
 pub fn has_provider_auth(provider_id: &str) -> bool {
-    pi_ai::env_api_keys::get_env_var_name(provider_id)
-        .and_then(|var| std::env::var(var).ok())
-        .map(|v| !v.is_empty() && v != "placeholder")
-        .unwrap_or(false)
+    auth_storage().has_auth(provider_id)
 }
 
-/// Set a provider's API key via environment variable. Returns the env var name used.
+/// Set a provider's API key. Persists via pi-rs `AuthStorage` to auth.json
+/// (survives restarts). Returns the env var name used for display.
 pub fn set_provider_api_key(provider_id: &str, api_key: &str) -> Result<String, String> {
     let var_name = pi_ai::env_api_keys::get_env_var_name(provider_id)
         .ok_or_else(|| format!("unknown provider '{provider_id}'"))?;
-    std::env::set_var(&var_name, api_key);
+    let mut storage = auth_storage();
+    storage.set(provider_id, AuthCredential::ApiKey {
+        key: api_key.to_string(),
+    });
     Ok(var_name.to_string())
+}
+
+/// Remove a provider's stored API key from auth.json.
+pub fn clear_provider_auth(provider_id: &str) {
+    let mut storage = auth_storage();
+    storage.remove(provider_id);
 }

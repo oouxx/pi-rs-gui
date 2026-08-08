@@ -89,6 +89,7 @@ impl Store {
                 s.selected_session_id = restored.selected_session_id.clone();
             }
             s.sessions = super::session::scan_existing_sessions();
+            super::model::hydrate_global_settings(&mut s);
             s.revision += 1;
             *state = s;
         }
