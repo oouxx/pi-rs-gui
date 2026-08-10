@@ -115,6 +115,26 @@ pub fn serialize_session_event(event: &AgentSessionEvent) -> (String, serde_json
             "auto_retry_end".into(),
             json!({"success": success, "attempt": attempt, "final_error": final_error}),
         ),
+        AgentSessionEvent::SummarizationRetryScheduled {
+            attempt,
+            max_attempts,
+            delay_ms,
+            error_message,
+        } => (
+            "summarization_retry_scheduled".into(),
+            json!({"attempt": attempt, "max_attempts": max_attempts, "delay_ms": delay_ms, "error_message": error_message}),
+        ),
+        AgentSessionEvent::SummarizationRetryAttemptStart { source, reason } => (
+            "summarization_retry_attempt_start".into(),
+            json!({"source": source, "reason": reason}),
+        ),
+        AgentSessionEvent::SummarizationRetryFinished {} => {
+            ("summarization_retry_finished".into(), json!({}))
+        }
+        AgentSessionEvent::BashExecutionUpdate { id, delta } => (
+            "bash_execution_update".into(),
+            json!({"id": id, "delta": delta}),
+        ),
     }
 }
 

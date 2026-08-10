@@ -191,6 +191,7 @@ impl Store {
                         extension_registry: Some(extension_registry),
                         fallback_message: None,
                         session_start_event: params.session_start_event,
+                        ui_context: None,
                     })
                     .await
                     .expect("Failed to create agent session");
