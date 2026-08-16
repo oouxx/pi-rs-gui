@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import {
   Sidebar,
@@ -29,6 +29,7 @@ import {
   Check,
   FileDown,
   FileJson,
+  FolderOpen,
 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useChat } from "@/hooks/useChat";
@@ -38,6 +39,15 @@ import type { AppView } from "./AppShell";
 interface PiSidebarProps {
   mode: AppView;
   onModeChange: (mode: AppView) => void;
+}
+
+interface SessionItem {
+  id: string;
+  title: string;
+  updatedAt: string;
+  status: string;
+  cwd?: string | null;
+  preview?: string;
 }
 
 function relativeTime(iso: string): string {
@@ -99,6 +109,33 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
 
   const filteredSessions = sessions.filter(matches);
 
+  // Group sessions by workspace (cwd); groups sorted by most recent session.
+  interface SessionGroup {
+    key: string;
+    label: string;
+    path?: string;
+    sessions: SessionItem[];
+  }
+  const groups = useMemo<SessionGroup[]>(() => {
+    const map = new Map<string, SessionGroup>();
+    for (const s of filteredSessions) {
+      const key = s.cwd || "";
+      const label = s.cwd ? cwdBasename(s.cwd) : "未设置目录";
+      let g = map.get(key);
+      if (!g) {
+        g = { key, label, path: s.cwd ?? undefined, sessions: [] };
+        map.set(key, g);
+      }
+      g.sessions.push(s);
+    }
+    const arr = [...map.values()];
+    for (const g of arr) {
+      g.sessions.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+    }
+    arr.sort((a, b) => (a.sessions[0].updatedAt < b.sessions[0].updatedAt ? 1 : -1));
+    return arr;
+  }, [filteredSessions]);
+
   const handleDelete = useCallback(
     async (sessionId: string) => {
       await deleteSession(sessionId);
@@ -130,11 +167,11 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
   }, []);
 
   const handleExport = useCallback(
-    async (session: { id: string; title: string }, format: "html" | "jsonl") => {
+    async (session: SessionItem, format: "html" | "jsonl") => {
       const ext = format === "html" ? "html" : "jsonl";
       const base = (session.title || "session")
         .trim()
-        .replace(/[^a-zA-Z0-9一-龥._-]+/g, "-")
+        .replace(/[^a-zA-Z0-9\u4e00-\u9fa5._-]+/g, "-")
         .replace(/^-+|-+$/g, "")
         .slice(0, 80);
       const path = await save({
@@ -155,6 +192,93 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
       }
     },
     [],
+  );
+
+  const renderSessionItem = (s: SessionItem) => (
+    <SidebarMenuItem key={s.id} className="group/item">
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div className="relative flex items-center">
+            {renamingId === s.id ? (
+              <input
+                autoFocus
+                value={renameValue}
+                onFocus={(e) => e.currentTarget.select()}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitRename(s.id, renameValue, s.title);
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setRenamingId(null);
+                  }
+                }}
+                onBlur={() => commitRename(s.id, renameValue, s.title)}
+                onClick={(e) => e.stopPropagation()}
+                className="h-7 flex-1 rounded-sm bg-background px-1 text-sm outline-none ring-1 ring-accent"
+              />
+            ) : (
+              <SidebarMenuButton
+                isActive={activeSessionId === s.id}
+                onClick={() => {
+                  onModeChange("chat");
+                  selectSession(s.id);
+                }}
+                tooltip={s.title}
+              >
+                <span
+                  className={`size-1.5 shrink-0 rounded-full ${activeSessionId === s.id ? "bg-accent" : "bg-muted-foreground"}`}
+                />
+                <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+                  <span className="w-full truncate leading-tight">
+                    {s.title}
+                  </span>
+                  <span className="text-muted-foreground w-full truncate text-[10px] leading-none">
+                    {s.preview
+                      ? `${s.preview} · ${s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}${relativeTime(s.updatedAt)}`
+                      : `${s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}${relativeTime(s.updatedAt)}`}
+                  </span>
+                </span>
+              </SidebarMenuButton>
+            )}
+            <button
+              className="text-muted-foreground hover:text-destructive absolute top-1/2 right-1.5 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/item:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete(s.id);
+              }}
+              title="Delete permanently"
+            >
+              <Trash2 className="size-3" />
+            </button>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onSelect={() => handleStartRename(s.id, s.title)}>
+            <Pencil className="size-3.5" />
+            Rename
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => handleCopyId(s.id)}>
+            {copiedId === s.id ? (
+              <Check className="size-3.5 text-emerald-500" />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
+            {copiedId === s.id ? "Copied!" : "Copy session ID"}
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => handleExport(s, "html")}>
+            <FileDown className="size-3.5" />
+            Export HTML…
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => handleExport(s, "jsonl")}>
+            <FileJson className="size-3.5" />
+            Export JSONL…
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    </SidebarMenuItem>
   );
 
   return (
@@ -240,95 +364,20 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 {search.trim() ? "No matching sessions" : "No sessions yet"}
               </div>
             ) : (
-              filteredSessions.map((s) => (
-                <SidebarMenuItem key={s.id} className="group/item">
-                  <ContextMenu>
-                    <ContextMenuTrigger asChild>
-                      <div className="relative flex items-center">
-                        {renamingId === s.id ? (
-                          <input
-                            autoFocus
-                            value={renameValue}
-                            onFocus={(e) => e.currentTarget.select()}
-                            onChange={(e) => setRenameValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                commitRename(s.id, renameValue, s.title);
-                              }
-                              if (e.key === "Escape") {
-                                e.preventDefault();
-                                setRenamingId(null);
-                              }
-                            }}
-                            onBlur={() =>
-                              commitRename(s.id, renameValue, s.title)
-                            }
-                            onClick={(e) => e.stopPropagation()}
-                            className="h-7 flex-1 rounded-sm bg-background px-1 text-sm outline-none ring-1 ring-accent"
-                          />
-                        ) : (
-                          <SidebarMenuButton
-                            isActive={activeSessionId === s.id}
-                            onClick={() => {
-                              onModeChange("chat");
-                              selectSession(s.id);
-                            }}
-                            tooltip={s.title}
-                          >
-                            <span
-                              className={`size-1.5 shrink-0 rounded-full ${activeSessionId === s.id ? "bg-accent" : "bg-muted-foreground"}`}
-                            />
-                            <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-                              <span className="w-full truncate leading-tight">
-                                {s.title}
-                              </span>
-                              <span className="text-muted-foreground w-full truncate text-[10px] leading-none">
-                                {s.preview
-                                  ? `${s.preview} · ${s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}${relativeTime(s.updatedAt)}`
-                                  : `${s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}${relativeTime(s.updatedAt)}`}
-                              </span>
-                            </span>
-                          </SidebarMenuButton>
-                        )}
-                        <button
-                          className="text-muted-foreground hover:text-destructive absolute top-1/2 right-1.5 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/item:opacity-100"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(s.id);
-                          }}
-                          title="Delete permanently"
-                        >
-                          <Trash2 className="size-3" />
-                        </button>
-                      </div>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent>
-                      <ContextMenuItem
-                        onSelect={() => handleStartRename(s.id, s.title)}
-                      >
-                        <Pencil className="size-3.5" />
-                        Rename
-                      </ContextMenuItem>
-                      <ContextMenuItem onSelect={() => handleCopyId(s.id)}>
-                        {copiedId === s.id ? (
-                          <Check className="size-3.5 text-emerald-500" />
-                        ) : (
-                          <Copy className="size-3.5" />
-                        )}
-                        {copiedId === s.id ? "Copied!" : "Copy session ID"}
-                      </ContextMenuItem>
-                      <ContextMenuItem onSelect={() => handleExport(s, "html")}>
-                        <FileDown className="size-3.5" />
-                        Export HTML…
-                      </ContextMenuItem>
-                      <ContextMenuItem onSelect={() => handleExport(s, "jsonl")}>
-                        <FileJson className="size-3.5" />
-                        Export JSONL…
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                </SidebarMenuItem>
+              groups.map((g) => (
+                <div key={g.key} className="mb-2">
+                  <div
+                    className="text-muted-foreground group-data-[collapsible=icon]:hidden flex items-center gap-1.5 px-3 py-1 text-[10px] font-medium uppercase tracking-wide"
+                    title={g.path}
+                  >
+                    <FolderOpen className="size-3" />
+                    <span className="truncate">{g.label}</span>
+                    <span className="ml-auto text-[10px] opacity-70">
+                      {g.sessions.length}
+                    </span>
+                  </div>
+                  <SidebarMenu>{g.sessions.map(renderSessionItem)}</SidebarMenu>
+                </div>
               ))
             )}
           </SidebarMenu>

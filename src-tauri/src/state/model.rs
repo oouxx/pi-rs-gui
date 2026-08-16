@@ -20,19 +20,21 @@ pub fn set_default_model(state: &mut DesktopState, provider: &str, model_id: &st
     // Update in-memory state
     state.global_model_settings.default_provider = Some(provider.to_string());
     state.global_model_settings.default_model_id = Some(model_id.to_string());
-    // Persist via pi-rs SettingsManager
+    // Persist via pi-rs SettingsManager (dedicated setters write the same keys
+    // the agent reads at session creation: defaultProvider/defaultModel).
     with_settings_mgr(|mgr| {
-        mgr.set_global("defaultProvider", json!(provider));
-        mgr.set_global("defaultModel", json!(model_id));
+        mgr.set_default_model_and_provider(provider, model_id);
     });
 }
 
 pub fn set_default_thinking_level(state: &mut DesktopState, level: &str) {
     // Update in-memory state
     state.global_model_settings.default_thinking_level = Some(level.to_string());
-    // Persist via pi-rs SettingsManager
+    // IMPORTANT: use pi-rs's dedicated setter. Writing the raw "thinkingLevel"
+    // key only changes the runtime level, NOT the persisted default that new
+    // sessions read (defaultThinkingLevel) — the setting would not stick.
     with_settings_mgr(|mgr| {
-        mgr.set_global("thinkingLevel", json!(level));
+        mgr.set_default_thinking_level(level);
     });
 }
 
@@ -58,3 +60,4 @@ pub fn hydrate_global_settings(state: &mut DesktopState) {
     state.global_model_settings.default_model_id = settings.default_model.clone();
     state.global_model_settings.default_thinking_level = settings.default_thinking_level.clone();
 }
+
