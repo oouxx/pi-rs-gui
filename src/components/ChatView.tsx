@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Folder, Search, ArrowUp, ArrowDown, X } from "lucide-react";
+import { Send, Folder, Search, ArrowUp, ArrowDown, X, Copy, Check } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
@@ -27,6 +27,46 @@ import {
   setSessionCwd,
 } from "@/api/commands";
 
+function nodeText(node: React.ReactNode): string {
+  if (node == null) return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(nodeText).join("");
+  const maybe = node as { props?: { children?: React.ReactNode } };
+  if (maybe && typeof maybe === "object" && maybe.props?.children !== undefined) {
+    return nodeText(maybe.props.children);
+  }
+  return "";
+}
+
+function CopyButton({
+  text,
+  className,
+  label,
+}: {
+  text: string;
+  className?: string;
+  label?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      title={copied ? "Copied!" : label ?? "Copy"}
+      onClick={() => {
+        navigator.clipboard?.writeText(text).catch(() => {});
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      }}
+      className={
+        className ??
+        "text-muted-foreground hover:text-foreground rounded p-1 transition-colors"
+      }
+    >
+      {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+    </button>
+  );
+}
+
 const mdComponents: Components = {
   code: ({ className, children, ...props }) => {
     const isInline = !className;
@@ -41,11 +81,17 @@ const mdComponents: Components = {
       );
     }
     return (
-      <pre className="rounded-card border-hairline bg-bg-hover text-ink-muted my-2 overflow-x-auto border p-3 font-mono text-xs leading-relaxed">
-        <code className={className} {...props}>
-          {children}
-        </code>
-      </pre>
+      <div className="group/code relative my-2">
+        <pre className="rounded-card border-hairline bg-bg-hover text-ink-muted overflow-x-auto border p-3 pr-10 font-mono text-xs leading-relaxed">
+          <code className={className} {...props}>
+            {children}
+          </code>
+        </pre>
+        <CopyButton
+          text={nodeText(children)}
+          className="text-muted-foreground hover:text-foreground absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover/code:opacity-100"
+        />
+      </div>
     );
   },
   table: ({ children }) => (
@@ -442,7 +488,7 @@ export default function ChatView() {
               return (
                 <div
                   key={msg.id}
-                  className={`flex max-w-[820px] gap-3 ${msg.role === "user" ? "flex-row-reverse self-end" : ""}`}
+                  className={`group flex max-w-[820px] gap-3 ${msg.role === "user" ? "flex-row-reverse self-end" : ""}`}
                 >
                   <span
                     className={`flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
@@ -454,12 +500,16 @@ export default function ChatView() {
                     {msg.role === "user" ? "U" : "AI"}
                   </span>
                   <div
-                    className={`rounded-xl px-4 py-3 text-sm leading-relaxed ${
+                    className={`relative rounded-xl px-4 py-3 text-sm leading-relaxed ${
                       msg.role === "user"
                         ? "bg-ink-dim max-w-[70%] rounded-tr-sm text-foreground"
                         : "border-hairline bg-bg-surface rounded-tl-sm border text-foreground/80"
                     }`}
                   >
+                    <CopyButton
+                      text={msg.content}
+                      className="text-muted-foreground hover:text-foreground absolute -top-1 right-1 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+                    />
                     {msg.role === "assistant" ? (
                       msg.blocks.length > 0 ? (
                         msg.blocks.map((block, bi) => (
