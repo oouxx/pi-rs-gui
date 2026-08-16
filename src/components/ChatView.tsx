@@ -377,6 +377,7 @@ function BlockRenderer({
 export default function ChatView() {
   const {
     messages,
+    sessions,
     sendMessage,
     streaming,
     loading,
@@ -627,6 +628,9 @@ export default function ChatView() {
     .filter((f) => f.path.toLowerCase().includes(mentionQuery.toLowerCase()))
     .slice(0, 15);
 
+  const activeTitle =
+    sessions.find((s) => s.id === activeSessionId)?.title || "";
+
   const isEmpty = messages.length === 0;
 
   return (
@@ -634,8 +638,15 @@ export default function ChatView() {
       {/* Header */}
       <div className="border-hairline bg-bg-surface flex shrink-0 items-center gap-3 border-b px-4 py-1.5">
         <SidebarTrigger className="shrink-0" />
-        <div className="text-ink-muted flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap">
-          <span className="font-medium text-foreground">pi-gui</span>
+        <div className="text-ink-muted flex min-w-0 shrink items-center gap-1.5 text-xs whitespace-nowrap">
+          <span className="font-medium text-foreground">
+            {activeTitle || "pi-gui"}
+          </span>
+          {activeSessionCwd && (
+            <span className="text-muted-foreground hidden truncate font-mono text-[11px] md:inline">
+              · {activeSessionCwd.split("/").filter(Boolean).pop()}
+            </span>
+          )}
         </div>
         <Popover open={modelOpen} onOpenChange={setModelOpen}>
           <PopoverTrigger asChild>
@@ -955,7 +966,7 @@ export default function ChatView() {
               onChange={onInputChange}
               onKeyDown={onInputKeyDown}
               placeholder="Ask anything...  (/ for commands, @ to reference files)"
-              disabled={streaming || loading}
+              disabled={loading}
               className="max-h-[120px] min-h-[44px] resize-none pr-12 text-sm"
               rows={1}
             />
