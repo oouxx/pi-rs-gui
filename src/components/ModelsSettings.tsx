@@ -17,7 +17,7 @@ export default function ModelsSettings() {
   const [models, setModels] = useState<ModelOption[]>([])
   const [defaultProvider, setDefaultProvider] = useState("")
   const [defaultModel, setDefaultModel] = useState("")
-  const [thinkingLevel, setThinkingLevel] = useState("normal")
+  const [thinkingLevel, setThinkingLevel] = useState("medium")
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({})
   const [customProviders, setCustomProviders] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -35,7 +35,7 @@ export default function ModelsSettings() {
       setModels(mods.models as ModelOption[])
       setDefaultProvider(settings.settings?.defaultProvider ?? "")
       setDefaultModel(settings.settings?.defaultModelId ?? "")
-      setThinkingLevel(settings.settings?.defaultThinkingLevel ?? "normal")
+      setThinkingLevel(settings.settings?.defaultThinkingLevel ?? "medium")
       setCustomProviders(custom as any[])
     } catch (e) { console.error("Failed to load model settings", e) }
     setLoading(false)
@@ -92,7 +92,7 @@ export default function ModelsSettings() {
               <SelectContent>
                 <SelectItem value="none">None</SelectItem>
                 <SelectItem value="low">Low</SelectItem>
-                <SelectItem value="normal">Normal</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
                 <SelectItem value="high">High</SelectItem>
               </SelectContent>
             </Select>

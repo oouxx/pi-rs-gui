@@ -24,7 +24,7 @@ pub fn get_general_settings() -> Value {
     with_mgr(|mgr| {
         let s = mgr.get_settings();
         json!({
-            "defaultThinkingLevel": s.default_thinking_level.clone().unwrap_or_else(|| "normal".to_string()),
+            "defaultThinkingLevel": s.default_thinking_level.clone().unwrap_or_else(|| "medium".to_string()),
             "compactionEnabled": mgr.get_compaction_enabled(),
             "compactionReserveTokens": mgr.get_compaction_reserve_tokens(),
             "compactionKeepRecentTokens": mgr.get_compaction_keep_recent_tokens(),

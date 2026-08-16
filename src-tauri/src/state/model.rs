@@ -40,7 +40,7 @@ pub fn get_default_model(state: &DesktopState) -> serde_json::Value {
     json!({
         "defaultProvider": state.global_model_settings.default_provider.as_deref().unwrap_or(""),
         "defaultModelId": state.global_model_settings.default_model_id.as_deref().unwrap_or(""),
-        "defaultThinkingLevel": state.global_model_settings.default_thinking_level.as_deref().unwrap_or("normal"),
+        "defaultThinkingLevel": state.global_model_settings.default_thinking_level.as_deref().unwrap_or("medium"),
     })
 }
 

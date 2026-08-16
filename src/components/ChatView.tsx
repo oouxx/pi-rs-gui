@@ -58,7 +58,6 @@ import ThinkingBlock from "@/components/ThinkingBlock";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  cancelCurrentRun,
   compactSession,
   exportSession,
   fileCompletions,
@@ -485,6 +484,7 @@ export default function ChatView({
     createSession,
     selectSession,
     sendMessage,
+    stop,
     streaming,
     loading,
     activeSessionId,
@@ -947,14 +947,6 @@ export default function ChatView({
     saveDraft(activeSessionId, "");
     await sendMessage(text);
   }, [input, streaming, sendMessage, activeSessionId, saveDraft, tryHandleSlash]);
-
-  const handleStop = useCallback(async () => {
-    try {
-      await cancelCurrentRun();
-    } catch (e) {
-      console.error("[cancelCurrentRun]", e);
-    }
-  }, []);
 
   const handlePickFolder = useCallback(async () => {
     if (!activeSessionId) return;
@@ -1526,7 +1518,7 @@ export default function ChatView({
                 size="icon"
                 variant="secondary"
                 className="absolute right-1.5 bottom-1.5 size-8"
-                onClick={handleStop}
+                onClick={stop}
                 title="Stop generating"
               >
                 <Square className="size-3.5 fill-current" />

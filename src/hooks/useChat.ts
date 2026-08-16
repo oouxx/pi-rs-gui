@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getState, submitComposer, getSelectedTranscript,
+  cancelCurrentRun,
   selectSession as apiSelectSession,
   createSession as apiCreateSession,
   archiveSession as apiArchiveSession,
@@ -265,14 +266,11 @@ export function useChat() {
     (async () => {
       unsub = await tauriListen<any>("pi-gui:selected-transcript-changed", (t: any) => {
         if (gen !== transcriptGenRef.current) return;
+        // Any transcript event means the turn ended — always clear streaming
+        // (also covers aborted runs whose transcript may be empty/partial).
         setMessages(t ? transcriptToDisplay(t.transcript) : []);
-        if (t && t.transcript.some((m: any) => m.role === "assistant")) {
-          setStreaming(false);
-          streamingRef.current = false;
-        } else if (t === null) {
-          setStreaming(false);
-          streamingRef.current = false;
-        }
+        setStreaming(false);
+        streamingRef.current = false;
       });
     })();
     return () => { unsub?.(); };
@@ -312,6 +310,16 @@ export function useChat() {
     await apiArchiveSession(sessionId);
     refreshState();
   }, [refreshState]);
+
+  const stop = useCallback(async () => {
+    try {
+      await cancelCurrentRun();
+    } catch {
+      /* ignore */
+    }
+    setStreaming(false);
+    streamingRef.current = false;
+  }, []);
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || streamingRef.current) return;
@@ -362,6 +370,7 @@ export function useChat() {
     archiveSession,
     messages,
     sendMessage,
+    stop,
     streaming,
     loading,
   };
