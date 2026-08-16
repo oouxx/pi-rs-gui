@@ -105,6 +105,15 @@ export function getExtension(name: string) {
   return tauriInvoke<any>("get_extension", { name });
 }
 
+// ── General settings ──
+
+export function getGeneralSettings() {
+  return tauriInvoke<any>("get_general_settings");
+}
+export function setGeneralSetting(key: string, value: unknown) {
+  return tauriInvoke<any>("set_general_setting", { key, value });
+}
+
 // ── Resources dirs ──
 
 export function getAgentDir() {

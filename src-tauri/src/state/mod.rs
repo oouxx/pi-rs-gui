@@ -3,6 +3,7 @@ pub(crate) mod extensions;
 pub(crate) mod model;
 pub(crate) mod providers;
 pub(crate) mod session;
+pub(crate) mod settings;
 pub(crate) mod skills;
 pub(crate) mod store;
 pub(crate) mod transcript;

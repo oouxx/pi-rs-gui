@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::state::*;
-use crate::state::{model, providers, session};
+use crate::state::{model, providers, session, settings};
 use serde_json::json;
 use tauri::{AppHandle, State};
 
@@ -385,4 +385,20 @@ pub async fn list_extensions() -> Result<Vec<serde_json::Value>, String> {
 pub async fn get_extension(name: String) -> Result<serde_json::Value, String> {
     crate::state::extensions::get_extension(&name)
         .ok_or_else(|| format!("extension '{name}' not found"))
+}
+
+// ── General settings ──
+
+#[tauri::command]
+pub async fn get_general_settings() -> Result<serde_json::Value, String> {
+    Ok(settings::get_general_settings())
+}
+
+#[tauri::command]
+pub async fn set_general_setting(
+    key: String,
+    value: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    settings::set_general_setting(&key, value)?;
+    Ok(settings::get_general_settings())
 }
