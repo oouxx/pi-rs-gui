@@ -20,7 +20,7 @@ import { useChat, type ContentBlock } from "@/hooks/useChat";
 import ToolCallCard from "@/components/ToolCallCard";
 import ThinkingBlock from "@/components/ThinkingBlock";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { setSessionCwd } from "@/api/commands";
+import { listSlashCommands, setSessionCwd } from "@/api/commands";
 
 const mdComponents: Components = {
   code: ({ className, children, ...props }) => {
@@ -79,56 +79,7 @@ const mdComponents: Components = {
   hr: () => <hr className="border-hairline my-3" />,
 };
 
-const SLASH_COMMANDS = [
-  {
-    id: "search",
-    label: "Search",
-    description: "Search codebase for symbols and files",
-    icon: "🔍",
-  },
-  {
-    id: "explain",
-    label: "Explain",
-    description: "Explain selected code in detail",
-    icon: "💡",
-  },
-  {
-    id: "refactor",
-    label: "Refactor",
-    description: "Suggest refactoring for selected code",
-    icon: "🔧",
-  },
-  {
-    id: "review",
-    label: "Code Review",
-    description: "Review current file for issues",
-    icon: "👁",
-  },
-  {
-    id: "test",
-    label: "Write Tests",
-    description: "Generate tests for selected code",
-    icon: "🧪",
-  },
-  {
-    id: "fix",
-    label: "Fix",
-    description: "Diagnose and fix issues in the code",
-    icon: "🩹",
-  },
-  {
-    id: "doc",
-    label: "Document",
-    description: "Generate documentation for code",
-    icon: "📝",
-  },
-  {
-    id: "ask",
-    label: "Ask",
-    description: "General question about the codebase",
-    icon: "💬",
-  },
-];
+
 
 /** Render a single content block. */
 function BlockRenderer({
@@ -190,6 +141,26 @@ export default function ChatView() {
   const [showMention, setShowMention] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionFiles, setMentionFiles] = useState<{ path: string }[]>([]);
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
+
+  interface SlashCommand {
+    name: string;
+    description?: string | null;
+    argumentHint?: string | null;
+    source: string;
+  }
+
+  const refreshSlashCommands = useCallback(async () => {
+    try {
+      setSlashCommands(((await listSlashCommands()) ?? []) as SlashCommand[]);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshSlashCommands();
+  }, [refreshSlashCommands]);
   const [mentionStart, setMentionStart] = useState(-1);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevInputRef = useRef("");
@@ -290,8 +261,8 @@ export default function ChatView() {
   );
 
   const handleSlashSelect = useCallback(
-    (cmdId: string) => {
-      insertAtCursor(`/${cmdId} `);
+    (cmd: SlashCommand) => {
+      insertAtCursor(`/${cmd.name} `);
       setShowSlash(false);
     },
     [insertAtCursor],
@@ -440,22 +411,45 @@ export default function ChatView() {
             <CommandInput placeholder="Search commands..." />
             <CommandList>
               <CommandEmpty>No matching commands</CommandEmpty>
-              <CommandGroup heading="Commands">
-                {SLASH_COMMANDS.map((cmd) => (
-                  <CommandItem
-                    key={cmd.id}
-                    onSelect={() => handleSlashSelect(cmd.id)}
-                  >
-                    <span className="mr-2">{cmd.icon}</span>
-                    <span className="flex-1 truncate font-medium">
-                      {cmd.label}
-                    </span>
-                    <span className="text-muted-foreground ml-auto max-w-[200px] truncate text-[10px]">
-                      {cmd.description}
-                    </span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
+              {(["builtin", "extension", "prompt", "skill"] as const).map(
+                (source) => {
+                  const group = slashCommands.filter((c) => c.source === source);
+                  if (group.length === 0) return null;
+                  return (
+                    <CommandGroup
+                      key={source}
+                      heading={
+                        source === "builtin"
+                          ? "Builtin"
+                          : source === "extension"
+                            ? "Extensions"
+                            : source === "prompt"
+                              ? "Prompts"
+                              : "Skills"
+                      }
+                    >
+                      {group.map((cmd) => (
+                        <CommandItem
+                          key={`${source}:${cmd.name}`}
+                          onSelect={() => handleSlashSelect(cmd)}
+                        >
+                          <span className="flex-1 truncate font-medium">
+                            /{cmd.name}
+                          </span>
+                          {cmd.argumentHint && (
+                            <span className="text-muted-foreground font-mono text-[10px]">
+                              {cmd.argumentHint}
+                            </span>
+                          )}
+                          <span className="text-muted-foreground ml-auto max-w-[220px] truncate text-[10px]">
+                            {cmd.description}
+                          </span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  );
+                },
+              )}
             </CommandList>
           </Command>
         </CommandDialog>

@@ -30,6 +30,7 @@ pub fn run() {
             commands::set_custom_provider,
             commands::delete_custom_provider,
             commands::get_selected_transcript,
+            commands::list_slash_commands,
             commands::get_general_settings,
             commands::set_general_setting,
             commands::get_agent_dir,

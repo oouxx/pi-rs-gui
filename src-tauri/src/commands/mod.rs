@@ -402,3 +402,12 @@ pub async fn set_general_setting(
     settings::set_general_setting(&key, value)?;
     Ok(settings::get_general_settings())
 }
+
+// ── Slash commands ──
+
+#[tauri::command]
+pub async fn list_slash_commands(
+    store: State<'_, Arc<Store>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    Ok(store.list_slash_commands().await)
+}

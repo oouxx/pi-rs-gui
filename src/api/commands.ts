@@ -105,6 +105,12 @@ export function getExtension(name: string) {
   return tauriInvoke<any>("get_extension", { name });
 }
 
+// ── Slash commands ──
+
+export function listSlashCommands() {
+  return tauriInvoke<any[]>("list_slash_commands");
+}
+
 // ── General settings ──
 
 export function getGeneralSettings() {

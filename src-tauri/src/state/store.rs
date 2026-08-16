@@ -281,6 +281,39 @@ impl Store {
         })
     }
 
+    /// List slash commands the composer menu offers: the 22 pi-rs builtins
+    /// plus extension/prompt/skill commands from the active session (mirrors
+    /// the TS interactive-mode command palette).
+    pub async fn list_slash_commands(&self) -> Vec<serde_json::Value> {
+        let mut items: Vec<serde_json::Value> = Vec::new();
+
+        for c in pi_coding_agent::core::slash_commands::builtin_slash_commands() {
+            items.push(serde_json::json!({
+                "name": c.name,
+                "description": c.description,
+                "argumentHint": c.argument_hint,
+                "source": "builtin",
+            }));
+        }
+
+        if let Some(runtime) = self.runtime.lock().await.as_ref() {
+            for c in runtime.session().get_commands_info() {
+                let source = match c.source {
+                    pi_coding_agent::core::slash_commands::SlashCommandSource::Extension => "extension",
+                    pi_coding_agent::core::slash_commands::SlashCommandSource::Prompt => "prompt",
+                    pi_coding_agent::core::slash_commands::SlashCommandSource::Skill => "skill",
+                };
+                items.push(serde_json::json!({
+                    "name": c.name,
+                    "description": c.description,
+                    "source": source,
+                }));
+            }
+        }
+
+        items
+    }
+
     /// Compute the default session directory for a given cwd.
     fn session_dir_for(cwd: &str) -> String {
         let agent_dir = pi_coding_agent::config::get_agent_dir()
