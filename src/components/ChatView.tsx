@@ -1239,19 +1239,6 @@ export default function ChatView({
           <GitBranch className="size-3.5" />
           Timeline
         </button>
-        <button
-          type="button"
-          onClick={() => setTerminalOpen((o) => !o)}
-          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
-            terminalOpen
-              ? "bg-accent/10 text-accent"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-          title="Toggle terminal panel"
-        >
-          <TerminalSquare className="size-3.5" />
-          Terminal
-        </button>
       </div>
 
       {/* Messages or empty state */}
@@ -1473,8 +1460,8 @@ export default function ChatView({
           />
         )}
 
-        {/* Working directory picker */}
-        <div className="border-hairline bg-bg-surface shrink-0 border-t px-4 pt-2">
+        {/* Working directory picker + terminal toggle */}
+        <div className="border-hairline bg-bg-surface flex shrink-0 items-center gap-1 border-t px-4 pt-2">
           <button
             type="button"
             onClick={handlePickFolder}
@@ -1489,6 +1476,19 @@ export default function ChatView({
                   activeSessionCwd)
                 : "选择工作目录"}
             </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTerminalOpen((o) => !o)}
+            className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors ${
+              terminalOpen
+                ? "bg-accent/10 text-accent"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+            title="Toggle terminal panel (⌘J)"
+          >
+            <TerminalSquare className="size-3.5" />
+            Terminal
           </button>
         </div>
         {/* Composer */}
