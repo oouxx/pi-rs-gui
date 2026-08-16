@@ -408,6 +408,53 @@ impl Store {
         })
     }
 
+    /// Session info for the frontend header popover: title, cwd, session
+    /// file, message count, created timestamp, and current model.
+    pub async fn get_session_info(&self, session_id: &str) -> serde_json::Value {
+        let (title, cwd, session_file) = {
+            let state = self.state.lock().await;
+            match state.sessions.iter().find(|s| s.id == session_id) {
+                Some(s) => (s.title.clone(), s.cwd.clone(), s.session_file.clone()),
+                None => {
+                    return serde_json::json!({ "id": session_id, "found": false });
+                }
+            }
+        };
+
+        let mut message_count: usize = 0;
+        let mut created_at: Option<String> = None;
+        if let Some(file) = session_file.as_ref().filter(|f| !f.is_empty()) {
+            let mgr = pi_coding_agent::core::session_manager::SessionManager::open(
+                file, None, None,
+            );
+            if let Some(header) = mgr.get_header() {
+                created_at = Some(header.timestamp.clone());
+            }
+            message_count = mgr
+                .get_entries()
+                .iter()
+                .filter(|e| {
+                    matches!(
+                        e,
+                        pi_coding_agent::core::session_manager::SessionEntry::Message { .. }
+                    )
+                })
+                .count();
+        }
+
+        let model = self.get_session_model().await;
+        serde_json::json!({
+            "id": session_id,
+            "found": true,
+            "title": title,
+            "cwd": cwd,
+            "sessionFile": session_file,
+            "messageCount": message_count,
+            "createdAt": created_at,
+            "model": model,
+        })
+    }
+
     /// Compute the default session directory for a given cwd.
     fn session_dir_for(cwd: &str) -> String {
         let agent_dir = pi_coding_agent::config::get_agent_dir()

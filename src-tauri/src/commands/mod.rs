@@ -522,3 +522,13 @@ pub async fn get_session_model(
 ) -> Result<serde_json::Value, String> {
     Ok(store.get_session_model().await)
 }
+
+// ── Session info ──
+
+#[tauri::command]
+pub async fn get_session_info(
+    store: State<'_, Arc<Store>>,
+    session_id: String,
+) -> Result<serde_json::Value, String> {
+    Ok(store.get_session_info(&session_id).await)
+}

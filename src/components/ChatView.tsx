@@ -16,6 +16,7 @@ import {
   Cog,
   Scissors,
   Square,
+  Info,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -50,12 +51,14 @@ import {
   fileCompletions,
   getModels,
   getProviders,
+  getSessionInfo,
   getSessionModel,
   getSessionTree,
   setSessionModel,
   listSlashCommands,
   navigateSessionTree,
   setSessionCwd,
+  type SessionInfo,
   type SessionTreeNode,
 } from "@/api/commands";
 
@@ -126,6 +129,15 @@ function nodeText(node: React.ReactNode): string {
     return nodeText(maybe.props.children);
   }
   return "";
+}
+
+function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <span className="text-muted-foreground shrink-0">{label}</span>
+      <span className="min-w-0 flex-1 truncate text-right">{children}</span>
+    </div>
+  );
 }
 
 function CopyButton({
@@ -452,6 +464,8 @@ export default function ChatView() {
   const [currentProvider, setCurrentProvider] = useState("");
   const [currentModel, setCurrentModel] = useState("");
   const [modelOpen, setModelOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionPrefix, setMentionPrefix] = useState("");
   const [mentionQuoted, setMentionQuoted] = useState(false);
@@ -511,6 +525,18 @@ export default function ChatView() {
     },
     [],
   );
+
+  const toggleInfo = useCallback(async () => {
+    setInfoOpen((prev) => {
+      const next = !prev;
+      if (next && activeSessionId) {
+        getSessionInfo(activeSessionId)
+          .then((info) => setSessionInfo(info))
+          .catch(() => setSessionInfo(null));
+      }
+      return next;
+    });
+  }, [activeSessionId]);
 
   const toggleTimeline = useCallback(async () => {
     setShowTimeline((prev) => {
@@ -848,6 +874,73 @@ export default function ChatView() {
               modelId={currentModel || undefined}
               onSelect={handleModelSelect}
             />
+          </PopoverContent>
+        </Popover>
+        <Popover open={infoOpen} onOpenChange={setInfoOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              disabled={!activeSessionId}
+              onClick={toggleInfo}
+              className="text-muted-foreground hover:text-foreground rounded-md p-1 transition-colors disabled:opacity-40"
+              title="Session info"
+            >
+              <Info className="size-3.5" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-96 p-0">
+            {sessionInfo && (
+              <div className="flex flex-col gap-2 p-3 text-xs">
+                <div className="text-foreground truncate text-sm font-medium">
+                  {sessionInfo.title || "Untitled"}
+                </div>
+                <InfoRow label="Session ID">
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground truncate font-mono transition-colors"
+                    title="Copy session ID"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(sessionInfo.id).catch(() => {});
+                    }}
+                  >
+                    {sessionInfo.id}
+                  </button>
+                </InfoRow>
+                {sessionInfo.cwd && (
+                  <InfoRow label="Working directory">
+                    <span className="text-muted-foreground truncate font-mono">
+                      {sessionInfo.cwd}
+                    </span>
+                  </InfoRow>
+                )}
+                {sessionInfo.sessionFile && (
+                  <InfoRow label="Session file">
+                    <span className="text-muted-foreground truncate font-mono">
+                      {sessionInfo.sessionFile}
+                    </span>
+                  </InfoRow>
+                )}
+                <InfoRow label="Messages">
+                  <span className="text-muted-foreground">
+                    {sessionInfo.messageCount ?? 0}
+                  </span>
+                </InfoRow>
+                {sessionInfo.model?.provider && sessionInfo.model.modelId && (
+                  <InfoRow label="Model">
+                    <span className="text-muted-foreground font-mono">
+                      {sessionInfo.model.provider}/{sessionInfo.model.modelId}
+                    </span>
+                  </InfoRow>
+                )}
+                {sessionInfo.createdAt && (
+                  <InfoRow label="Created">
+                    <span className="text-muted-foreground">
+                      {new Date(sessionInfo.createdAt).toLocaleString()}
+                    </span>
+                  </InfoRow>
+                )}
+              </div>
+            )}
           </PopoverContent>
         </Popover>
         <button

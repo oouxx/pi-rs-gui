@@ -158,6 +158,23 @@ export function setSessionModel(provider: string, modelId: string) {
   });
 }
 
+// ── Session info ──
+
+export interface SessionInfo {
+  id: string;
+  found?: boolean;
+  title?: string;
+  cwd?: string | null;
+  sessionFile?: string | null;
+  messageCount?: number;
+  createdAt?: string | null;
+  model?: { provider?: string | null; modelId?: string | null } | null;
+}
+
+export function getSessionInfo(sessionId: string) {
+  return tauriInvoke<SessionInfo>("get_session_info", { sessionId });
+}
+
 // ── Session tree (timeline) ──
 
 export interface SessionTreeNode {
