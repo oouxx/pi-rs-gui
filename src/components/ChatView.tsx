@@ -505,6 +505,32 @@ export default function ChatView() {
     refreshModelPicker();
   }, [refreshModelPicker, activeSessionId]);
 
+  // Per-session composer drafts (survive session switches and restarts).
+  useEffect(() => {
+    if (!activeSessionId) {
+      setInput("");
+      prevInputRef.current = "";
+      return;
+    }
+    try {
+      const draft = localStorage.getItem(`pi-gui:draft:${activeSessionId}`);
+      setInput(draft ?? "");
+      prevInputRef.current = draft ?? "";
+    } catch {
+      setInput("");
+    }
+  }, [activeSessionId]);
+
+  const saveDraft = useCallback((sessionId: string | null, value: string) => {
+    if (!sessionId) return;
+    try {
+      if (value.trim()) localStorage.setItem(`pi-gui:draft:${sessionId}`, value);
+      else localStorage.removeItem(`pi-gui:draft:${sessionId}`);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const handleModelSelect = useCallback(
     async (provider: string, modelId: string) => {
       setModelOpen(false);
@@ -629,6 +655,7 @@ export default function ChatView() {
       const prev = prevInputRef.current;
       prevInputRef.current = val;
       setInput(val);
+      saveDraft(activeSessionId, val);
 
       const cursorPos = e.target.selectionStart ?? val.length;
       const textBeforeCursor = val.slice(0, cursorPos);
@@ -686,7 +713,7 @@ export default function ChatView() {
         setShowSlash(false);
       }
     },
-    [showMention, showSlash],
+    [showMention, showSlash, activeSessionId, saveDraft],
   );
 
   const handleSend = useCallback(async () => {
@@ -694,8 +721,9 @@ export default function ChatView() {
     if (!text || streaming) return;
     setInput("");
     prevInputRef.current = "";
+    saveDraft(activeSessionId, "");
     await sendMessage(text);
-  }, [input, streaming, sendMessage]);
+  }, [input, streaming, sendMessage, activeSessionId, saveDraft]);
 
   const handleStop = useCallback(async () => {
     try {
