@@ -399,13 +399,7 @@ function TimelinePanel({
 }
 
 /** Render a single content block. */
-function BlockRenderer({
-  block,
-  isStreaming,
-}: {
-  block: ContentBlock;
-  isStreaming: boolean;
-}) {
+function BlockRenderer({ block }: { block: ContentBlock }) {
   switch (block.type) {
     case "text":
       return block.text ? (
@@ -469,7 +463,6 @@ export default function ChatView() {
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionPrefix, setMentionPrefix] = useState("");
   const [mentionQuoted, setMentionQuoted] = useState(false);
-  const [mentionForced, setMentionForced] = useState(false);
   const [mentionFiles, setMentionFiles] = useState<CompletionItem[]>([]);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
 
@@ -644,7 +637,6 @@ export default function ChatView() {
       const atPrefix = extractAtPrefix(textBeforeCursor);
       let prefix: string | null = null;
       let quoted = false;
-      let forced = false;
       if (atPrefix) {
         prefix = atPrefix;
         quoted = atPrefix.startsWith('@"');
@@ -659,14 +651,12 @@ export default function ChatView() {
           prefix = textBeforeCursor.slice(tokenStart);
           quoted = false;
         }
-        forced = true;
       }
       if (prefix !== null) {
         const { rawPrefix } = parsePathPrefix(prefix);
         setMentionPrefix(prefix);
         setMentionQuery(rawPrefix);
         setMentionQuoted(quoted);
-        setMentionForced(forced);
         setMentionStart(textBeforeCursor.length - prefix.length);
         setShowMention(true);
       } else if (showMention) {
@@ -1060,9 +1050,6 @@ export default function ChatView() {
             messages.map((msg, idx) => {
               const isLastAi =
                 msg.role === "assistant" && idx === messages.length - 1;
-              const hasContent = msg.blocks.some((b) =>
-                b.type === "text" ? b.text : b.type === "toolCall",
-              );
               return (
                 <div
                   key={msg.id}
@@ -1094,7 +1081,6 @@ export default function ChatView() {
                           <BlockRenderer
                             key={`${msg.id}-b${bi}`}
                             block={block}
-                            isStreaming={streaming && isLastAi}
                           />
                         ))
                       ) : streaming && isLastAi ? (

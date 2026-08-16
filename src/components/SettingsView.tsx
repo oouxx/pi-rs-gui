@@ -97,7 +97,6 @@ function ToggleRow({
 
 function GeneralTab() {
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
-  const [saving, setSaving] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -113,13 +112,10 @@ function GeneralTab() {
 
   const apply = useCallback(
     async (key: keyof GeneralSettings, value: unknown) => {
-      setSaving(true);
       try {
         setSettings((await setGeneralSetting(key, value)) as GeneralSettings);
       } catch (e) {
         console.error(`set ${key} failed`, e);
-      } finally {
-        setSaving(false);
       }
     },
     [],
@@ -132,10 +128,6 @@ function GeneralTab() {
       </div>
     );
   }
-
-  const showPath = async (path?: string) => {
-    if (path) await openPath(path);
-  };
 
   return (
     <div className="space-y-8">
