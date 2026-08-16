@@ -455,6 +455,31 @@ impl Store {
         })
     }
 
+    /// Manually compact the active session (matches TS `/compact`).
+    /// Emits the updated transcript so the chat reflects the compaction.
+    pub async fn compact_session(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        custom_instructions: Option<&str>,
+    ) -> Result<DesktopState, String> {
+        let sid = self.session_id.lock().await.clone().ok_or("No session")?;
+        let runtime = self.runtime.lock().await.take().ok_or("No session")?;
+        let result = runtime
+            .session()
+            .compact(custom_instructions)
+            .await
+            .map_err(|e| e.to_string());
+        *self.runtime.lock().await = Some(runtime);
+        result?;
+
+        let transcript = build_display_transcript(&self.get_messages().await);
+        let _ = app.emit(
+            "pi-gui:selected-transcript-changed",
+            &json!({ "sessionId": sid, "transcript": transcript }),
+        );
+        Ok(self.state.lock().await.clone())
+    }
+
     /// Compute the default session directory for a given cwd.
     fn session_dir_for(cwd: &str) -> String {
         let agent_dir = pi_coding_agent::config::get_agent_dir()

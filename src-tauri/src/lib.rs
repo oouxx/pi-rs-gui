@@ -31,6 +31,7 @@ pub fn run() {
             commands::delete_custom_provider,
             commands::get_selected_transcript,
             commands::get_session_info,
+            commands::compact_session,
             commands::export_session,
             commands::get_session_tree,
             commands::navigate_session_tree,

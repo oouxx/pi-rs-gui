@@ -45,9 +45,12 @@ import ToolCallCard from "@/components/ToolCallCard";
 import PickModel from "@/components/PickModel";
 import type { ModelOption, ProviderInfo } from "@/components/PickModel";
 import ThinkingBlock from "@/components/ThinkingBlock";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   cancelCurrentRun,
+  compactSession,
+  exportSession,
   fileCompletions,
   getModels,
   getProviders,
@@ -57,6 +60,7 @@ import {
   setSessionModel,
   listSlashCommands,
   navigateSessionTree,
+  renameSession,
   setSessionCwd,
   type SessionInfo,
   type SessionTreeNode,
@@ -438,10 +442,15 @@ function BlockRenderer({ block }: { block: ContentBlock }) {
   }
 }
 
-export default function ChatView() {
+export default function ChatView({
+  onOpenSettings,
+}: {
+  onOpenSettings?: () => void;
+}) {
   const {
     messages,
     sessions,
+    createSession,
     sendMessage,
     streaming,
     loading,
@@ -716,14 +725,105 @@ export default function ChatView() {
     [showMention, showSlash, activeSessionId, saveDraft],
   );
 
+  const exportActiveSession = useCallback(async () => {
+    if (!activeSessionId) return false;
+    const session = sessions.find((s) => s.id === activeSessionId);
+    const title = session?.title || "session";
+    const path = await saveDialog({
+      title: "Export session",
+      defaultPath: `${title}.jsonl`,
+      filters: [{ name: "JSONL file", extensions: ["jsonl"] }],
+    });
+    if (typeof path !== "string" || !path) return false;
+    try {
+      await exportSession(activeSessionId, "jsonl", path);
+    } catch (e) {
+      console.error("[export]", e);
+    }
+    return true;
+  }, [activeSessionId, sessions]);
+
+  // Route builtin slash commands to real actions (TS interactive mode does
+  // the same; unhandled commands fall through to the LLM as plain text).
+  const tryHandleSlash = useCallback(
+    async (text: string): Promise<boolean> => {
+      if (!text.startsWith("/")) return false;
+      const [cmd, ...rest] = text.split(/\s+/);
+      const arg = rest.join(" ").trim();
+      switch (cmd) {
+        case "/new":
+          await createSession();
+          return true;
+        case "/name":
+          if (arg && activeSessionId) {
+            await renameSession(activeSessionId, arg).catch(() => {});
+          }
+          return true;
+        case "/compact":
+          await compactSession(arg || undefined).catch((e) => console.error(e));
+          return true;
+        case "/export":
+          return await exportActiveSession();
+        case "/copy": {
+          const last = [...messages].reverse().find((m) => m.role === "assistant");
+          if (last) navigator.clipboard?.writeText(last.content).catch(() => {});
+          return true;
+        }
+        case "/session":
+          setInfoOpen(true);
+          toggleInfo();
+          return true;
+        case "/tree":
+          setShowTimeline(true);
+          if (activeSessionId) {
+            getSessionTree(activeSessionId)
+              .then((t) => setTimelineTree(t ?? []))
+              .catch(() => setTimelineTree([]));
+          }
+          return true;
+        case "/settings":
+        case "/hotkeys":
+          onOpenSettings?.();
+          return true;
+        case "/model":
+        case "/login":
+          setModelOpen(true);
+          return true;
+        case "/quit":
+          try {
+            await getCurrentWindow().close();
+          } catch {
+            /* ignore */
+          }
+          return true;
+        default:
+          return false;
+      }
+    },
+    [
+      createSession,
+      activeSessionId,
+      messages,
+      toggleInfo,
+      onOpenSettings,
+      exportActiveSession,
+    ],
+  );
+
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text || streaming) return;
+    if (await tryHandleSlash(text)) {
+      setInput("");
+      prevInputRef.current = "";
+      saveDraft(activeSessionId, "");
+      return;
+    }
     setInput("");
     prevInputRef.current = "";
     saveDraft(activeSessionId, "");
     await sendMessage(text);
-  }, [input, streaming, sendMessage, activeSessionId, saveDraft]);
+  }, [input, streaming, sendMessage, activeSessionId, saveDraft, tryHandleSlash]);
 
   const handleStop = useCallback(async () => {
     try {

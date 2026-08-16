@@ -197,6 +197,14 @@ export function navigateSessionTree(sessionId: string, entryId: string) {
   });
 }
 
+// ── Session maintenance ──
+
+export function compactSession(customInstructions?: string) {
+  return tauriInvoke<DesktopAppState>("compact_session", {
+    ...(customInstructions ? { customInstructions } : {}),
+  });
+}
+
 // ── Session export ──
 
 export function exportSession(

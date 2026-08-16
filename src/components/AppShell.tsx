@@ -10,16 +10,15 @@ import TerminalView from "./TerminalView"
 
 export type AppView = "chat" | "skills" | "extensions" | "terminal" | "settings"
 
-const VIEWS: Record<AppView, React.ReactNode> = {
-  chat: <ChatView />,
-  skills: <SkillsView />,
-  extensions: <ExtensionsView />,
-  terminal: <TerminalView />,
-  settings: <SettingsView />,
-};
-
 export default function AppShell() {
   const [mode, setMode] = useState<AppView>("chat")
+  const views: Record<AppView, React.ReactNode> = {
+    chat: <ChatView onOpenSettings={() => setMode("settings")} />,
+    skills: <SkillsView />,
+    extensions: <ExtensionsView />,
+    terminal: <TerminalView />,
+    settings: <SettingsView />,
+  }
 
   // Cmd/Ctrl+, toggles the Settings view from anywhere.
   useEffect(() => {
@@ -37,7 +36,7 @@ export default function AppShell() {
     <TooltipProvider>
       <SidebarProvider defaultOpen>
         <PiSidebar mode={mode} onModeChange={setMode} />
-        <SidebarInset className="overflow-hidden">{VIEWS[mode]}</SidebarInset>
+        <SidebarInset className="overflow-hidden">{views[mode]}</SidebarInset>
       </SidebarProvider>
     </TooltipProvider>
   )

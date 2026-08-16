@@ -532,3 +532,16 @@ pub async fn get_session_info(
 ) -> Result<serde_json::Value, String> {
     Ok(store.get_session_info(&session_id).await)
 }
+
+// ── Manual compaction (/compact) ──
+
+#[tauri::command]
+pub async fn compact_session(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    custom_instructions: Option<String>,
+) -> Result<DesktopState, String> {
+    store
+        .compact_session(&app, custom_instructions.as_deref())
+        .await
+}
