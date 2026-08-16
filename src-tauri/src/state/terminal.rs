@@ -98,11 +98,13 @@ impl Store {
         if session.id != session_id {
             return Err("terminal session id mismatch".to_string());
         }
-        session
-            .stdin
-            .write_all(data.as_bytes())
-            .await
-            .map_err(|e| format!("failed to write to terminal: {e}"))
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            session.stdin.write_all(data.as_bytes()),
+        )
+        .await
+        .map_err(|_| "terminal write timed out".to_string())?
+        .map_err(|e| format!("failed to write to terminal: {e}"))
     }
 
     /// Kill the running terminal (if any) and clear the session.

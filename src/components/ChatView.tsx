@@ -705,6 +705,7 @@ export default function ChatView({
       const newVal = before + text + after;
       setInput(newVal);
       prevInputRef.current = newVal;
+      saveDraft(activeSessionId, newVal);
       // Move cursor after inserted text
       requestAnimationFrame(() => {
         const pos = s + text.length;
@@ -712,7 +713,7 @@ export default function ChatView({
         ta.focus();
       });
     },
-    [input],
+    [input, activeSessionId, saveDraft],
   );
 
   const onInputChange = useCallback(
@@ -832,15 +833,20 @@ export default function ChatView({
           await compactSession(arg || undefined).catch((e) => console.error(e));
           return true;
         case "/export":
-          return await exportActiveSession();
+          await exportActiveSession();
+          return true;
         case "/copy": {
           const last = [...messages].reverse().find((m) => m.role === "assistant");
           if (last) navigator.clipboard?.writeText(last.content).catch(() => {});
           return true;
         }
         case "/session":
-          setInfoOpen(true);
-          toggleInfo();
+          if (activeSessionId) {
+            getSessionInfo(activeSessionId)
+              .then((info) => setSessionInfo(info))
+              .catch(() => {});
+            setInfoOpen(true);
+          }
           return true;
         case "/tree":
           setShowTimeline(true);
@@ -1051,14 +1057,21 @@ export default function ChatView({
 
   const handleMentionSelect = useCallback(
     (item: CompletionItem) => {
-      const needsQuotes = mentionQuoted || item.path.includes(" ");
-      const base = needsQuotes ? `@"${item.path}"` : `@${item.path}`;
       const end = mentionStart + mentionPrefix.length;
       if (item.isDir) {
-        // Directory continuation: insert with trailing slash, keep menu open
-        // so the next token is scoped inside the directory (matches TS).
-        insertAtCursor(`${base}/`, mentionStart, end);
+        // Directory continuation: insert the scoped path with a trailing
+        // slash and keep the menu open so the search re-runs inside the
+        // directory (matches TS autocomplete).
+        const newRaw = item.path.endsWith("/") ? item.path : `${item.path}/`;
+        const needsQuotes = mentionQuoted || newRaw.includes(" ");
+        const newPrefix = needsQuotes ? `@"${newRaw}"` : `@${newRaw}`;
+        insertAtCursor(newPrefix, mentionStart, end);
+        setMentionPrefix(newPrefix);
+        setMentionQuery(newRaw);
+        setMentionQuoted(needsQuotes);
       } else {
+        const needsQuotes = mentionQuoted || item.path.includes(" ");
+        const base = needsQuotes ? `@"${item.path}"` : `@${item.path}`;
         insertAtCursor(`${base} `, mentionStart, end);
         setShowMention(false);
       }

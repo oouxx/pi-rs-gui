@@ -62,6 +62,12 @@ pub struct Store {
     /// send_message task checks this before putting the runtime back, so a
     /// stale task from a previous session doesn't overwrite the new runtime.
     pub generation: AtomicU64,
+    /// Abort epoch + watch channel: bumping the epoch and sending notifies an
+    /// in-flight `add_user_text` task so it can call `session.abort()` and
+    /// actually stop the generation (the runtime is moved into the task, so
+    /// the plain flag alone never reached the running loop).
+    pub abort_epoch: AtomicU64,
+    pub abort_tx: tokio::sync::watch::Sender<u64>,
     /// Embedded terminal session (single, replaced on restart).
     pub terminal: tokio::sync::Mutex<Option<crate::state::terminal::TerminalSession>>,
 }
@@ -75,6 +81,8 @@ impl Store {
             is_streaming: AtomicBool::new(false),
             abort_flag: Arc::new(AtomicBool::new(false)),
             generation: AtomicU64::new(0),
+            abort_epoch: AtomicU64::new(0),
+            abort_tx: tokio::sync::watch::channel(0).0,
             terminal: tokio::sync::Mutex::new(None),
         })
     }
@@ -726,18 +734,37 @@ impl Store {
         eprintln!("[LLM] send: provider={diag_provider:?} model={diag_model:?}");
 
         tokio::spawn(async move {
+            // Subscribe to abort notifications BEFORE the flag check so there
+            // is no race window where a Stop arriving between the check and the
+            // select would be missed.
+            let mut abort_rx = s.abort_tx.subscribe();
+            let run_epoch = *abort_rx.borrow();
             // Check abort before starting agent loop
             if !abort.load(Ordering::SeqCst) {
                 eprintln!("[LLM] <<< {}", &t);
                 // add_user_text persists the user message AND runs the agent loop.
-                // Wrap with a 5-minute timeout to prevent hanging when the LLM
-                // API has no timeout configured or no API key is set.
-                let agent_fut = runtime.session_mut().add_user_text(&t);
-                if tokio::time::timeout(std::time::Duration::from_secs(300), agent_fut)
-                    .await
-                    .is_err()
-                {
-                    eprintln!("[LLM] add_user_text timed out after 300s, aborting");
+                // Race it against abort notifications so Stop actually stops an
+                // in-flight generation, and wrap it with a 5-minute timeout.
+                // Note: session.abort() is called only AFTER the select ends so
+                // the &mut borrow of the runtime never coexists with a shared one.
+                let mut agent_fut = Box::pin(runtime.session_mut().add_user_text(&t));
+                let aborted = tokio::time::timeout(
+                    std::time::Duration::from_secs(300),
+                    async {
+                        tokio::select! {
+                            _ = &mut agent_fut => false,
+                            changed = abort_rx.changed() => {
+                                changed.is_err() || *abort_rx.borrow() != run_epoch
+                            }
+                        }
+                    },
+                )
+                .await;
+                if aborted.is_err() || aborted.unwrap_or(false) {
+                    eprintln!("[LLM] add_user_text aborted/timed out, aborting");
+                    // End the mutable borrow held by the pinned future before
+                    // taking a shared one for abort().
+                    drop(agent_fut);
                     runtime.session().abort().await;
                 }
             }
@@ -900,6 +927,9 @@ impl Store {
     pub async fn abort(&self) {
         // Set the abort flag first — works even when runtime is moved into a tokio task
         self.abort_flag.store(true, Ordering::SeqCst);
+        // Notify the in-flight add_user_text task so it calls session.abort().
+        let epoch = self.abort_epoch.fetch_add(1, Ordering::SeqCst) + 1;
+        let _ = self.abort_tx.send(epoch);
         // Also try to abort the AgentSession directly if it's available
         if let Some(r) = self.runtime.lock().await.as_ref() {
             r.session().abort().await;
