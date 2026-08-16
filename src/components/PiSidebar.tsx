@@ -40,6 +40,24 @@ interface PiSidebarProps {
   onModeChange: (mode: AppView) => void;
 }
 
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(diff) || diff < 0) return "";
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "now";
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function cwdBasename(cwd?: string | null): string {
+  if (!cwd) return "";
+  return cwd.split("/").filter(Boolean).pop() ?? cwd;
+}
+
 export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
   const {
     sessions,
@@ -261,7 +279,15 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                             <span
                               className={`size-1.5 shrink-0 rounded-full ${activeSessionId === s.id ? "bg-accent" : "bg-muted-foreground"}`}
                             />
-                            <span className="flex-1 truncate">{s.title}</span>
+                            <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+                              <span className="w-full truncate leading-tight">
+                                {s.title}
+                              </span>
+                              <span className="text-muted-foreground w-full truncate text-[10px] leading-none">
+                                {s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}
+                                {relativeTime(s.updatedAt)}
+                              </span>
+                            </span>
                           </SidebarMenuButton>
                         )}
                         <button
