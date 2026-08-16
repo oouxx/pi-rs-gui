@@ -43,6 +43,7 @@ pub fn run() {
             commands::list_slash_commands,
             commands::terminal_start,
             commands::terminal_write,
+            commands::terminal_resize,
             commands::terminal_stop,
             commands::file_completions,
             commands::get_general_settings,

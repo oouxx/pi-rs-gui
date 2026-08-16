@@ -646,9 +646,12 @@ export default function ChatView({
   const threadSearch = useThreadSearch(timelineRef);
 
   // Auto-scroll to the bottom while streaming, unless the user scrolled up.
+  // Also resets stick-to-bottom on session switch so the newly loaded
+  // transcript lands at the bottom.
   useEffect(() => {
     const el = timelineRef.current;
     if (!el) return;
+    stickToBottomRef.current = true;
     const onScroll = () => {
       const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
       stickToBottomRef.current = nearBottom;
@@ -657,11 +660,14 @@ export default function ChatView({
     return () => el.removeEventListener("scroll", onScroll);
   }, [activeSessionId]);
 
+  // Scroll to the bottom whenever content changes (streaming deltas, or a
+  // transcript that finished loading after a session switch) while the user
+  // hasn't scrolled up.
   useEffect(() => {
-    if (!streaming || !stickToBottomRef.current) return;
+    if (!stickToBottomRef.current) return;
     const el = timelineRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, streaming]);
+  }, [messages, activeSessionId, streaming]);
 
   // Cmd/Ctrl+F opens in-chat search; Esc closes it (the hook handles cleanup)
   useEffect(() => {

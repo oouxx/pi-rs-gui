@@ -6,6 +6,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { RotateCcw, TerminalSquare } from "lucide-react";
 import {
   getActiveSessionCwd,
+  terminalResize,
   terminalStart,
   terminalStop,
   terminalWrite,
@@ -15,6 +16,7 @@ import { tauriListen } from "@/api/events";
 export default function TerminalView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
+  const fitRef = useRef<FitAddon | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const [status, setStatus] = useState<"starting" | "running" | "failed">(
     "starting",
@@ -39,14 +41,30 @@ export default function TerminalView() {
     term.open(container);
     fit.fit();
     termRef.current = term;
+    fitRef.current = fit;
     setStatus("starting");
     sessionIdRef.current = null;
 
     let disposed = false;
     let unsub: (() => void) | undefined;
+    // Buffer output arriving before the session id is known (the shell prompt
+    // can be emitted immediately after spawn) and flush it once we connect.
+    const pending: string[] = [];
 
     (async () => {
       try {
+        // Register the listener BEFORE starting the shell so no prompt output
+        // is lost; events are buffered until the session id is known.
+        unsub = await tauriListen<any>("terminal-output", (evt: any) => {
+          if (disposed) return;
+          if (sessionIdRef.current && evt.sessionId === sessionIdRef.current) {
+            term.write(evt.data ?? "");
+          } else if (!sessionIdRef.current) {
+            pending.push(evt.data ?? "");
+          }
+        });
+        if (disposed) return;
+
         const cwd = await getActiveSessionCwd();
         const id = await terminalStart(cwd);
         if (disposed) {
@@ -55,10 +73,13 @@ export default function TerminalView() {
         }
         sessionIdRef.current = id;
         setStatus("running");
-        unsub = await tauriListen<any>("terminal-output", (evt: any) => {
-          if (disposed || evt.sessionId !== sessionIdRef.current) return;
-          term.write(evt.data ?? "");
-        });
+        for (const d of pending) term.write(d);
+        pending.length = 0;
+        // Sync the PTY size with the current xterm viewport.
+        const dims = fit.proposeDimensions();
+        if (dims) {
+          terminalResize(id, dims.cols, dims.rows).catch(() => {});
+        }
       } catch (e) {
         console.error("[terminal start]", e);
         if (!disposed) setStatus("failed");
@@ -68,6 +89,13 @@ export default function TerminalView() {
     const dataSub = term.onData((d) => {
       if (sessionIdRef.current) {
         terminalWrite(sessionIdRef.current, d).catch(() => {});
+      }
+    });
+
+    // Keep the PTY size in sync with the xterm viewport.
+    const resizeSub = term.onResize(({ cols, rows }) => {
+      if (sessionIdRef.current) {
+        terminalResize(sessionIdRef.current, cols, rows).catch(() => {});
       }
     });
 
@@ -82,10 +110,12 @@ export default function TerminalView() {
       ro.disconnect();
       window.removeEventListener("resize", onWinResize);
       dataSub.dispose();
+      resizeSub.dispose();
       unsub?.();
       terminalStop().catch(() => {});
       term.dispose();
       termRef.current = null;
+      fitRef.current = null;
     };
   }, []);
 

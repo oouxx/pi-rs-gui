@@ -537,6 +537,16 @@ pub async fn terminal_write(
 }
 
 #[tauri::command]
+pub async fn terminal_resize(
+    store: State<'_, Arc<Store>>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
+    store.terminal_resize(&session_id, cols, rows).await
+}
+
+#[tauri::command]
 pub async fn terminal_stop(store: State<'_, Arc<Store>>) -> Result<(), String> {
     store.terminal_stop().await;
     Ok(())

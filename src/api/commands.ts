@@ -140,6 +140,9 @@ export function terminalStart(cwd?: string) {
 export function terminalWrite(sessionId: string, data: string) {
   return tauriInvoke<void>("terminal_write", { sessionId, data });
 }
+export function terminalResize(sessionId: string, cols: number, rows: number) {
+  return tauriInvoke<void>("terminal_resize", { sessionId, cols, rows });
+}
 export function terminalStop() {
   return tauriInvoke<void>("terminal_stop");
 }
