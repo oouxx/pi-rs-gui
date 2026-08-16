@@ -156,35 +156,115 @@ export function useChat() {
           };
           setMessages((prev) => [...prev, newMsg]);
 
-        } else if (et === "message_update") {
-          // Raw AssistantMessageEvent — partial.content has the complete blocks
-          const rawBlocks = evt.data?.partial?.content;
+        } else if (et === "text_delta") {
+          // Incremental text — append to the block at contentIndex.
+          const { contentIndex, delta } = evt.data;
+          if (typeof delta !== "string" || !delta) return;
+          setMessages((prev) => {
+            if (prev.length === 0) return prev;
+            const last = prev[prev.length - 1];
+            if (last.role !== "assistant") return prev;
+            const blocks = [...last.blocks];
+            while (blocks.length <= contentIndex) {
+              blocks.push({ type: "text", text: "" });
+            }
+            const b = blocks[contentIndex];
+            blocks[contentIndex] = {
+              type: "text",
+              text: (b.text ?? "") + delta,
+            };
+            return [...prev.slice(0, -1), { ...last, blocks, content: blocksToText(blocks) }];
+          });
+
+        } else if (et === "thinking_delta") {
+          const { contentIndex, delta } = evt.data;
+          if (typeof delta !== "string" || !delta) return;
+          setMessages((prev) => {
+            if (prev.length === 0) return prev;
+            const last = prev[prev.length - 1];
+            if (last.role !== "assistant") return prev;
+            const blocks = [...last.blocks];
+            while (blocks.length <= contentIndex) {
+              blocks.push({ type: "text", text: "" });
+            }
+            const b = blocks[contentIndex];
+            blocks[contentIndex] = {
+              type: "thinking",
+              thinking: (b.thinking ?? "") + delta,
+            };
+            return [...prev.slice(0, -1), { ...last, blocks, content: blocksToText(blocks) }];
+          });
+
+        } else if (et === "toolcall_start") {
+          // Model started streaming a tool call — create the block.
+          const { contentIndex, partial } = evt.data;
+          setMessages((prev) => {
+            if (prev.length === 0) return prev;
+            const last = prev[prev.length - 1];
+            if (last.role !== "assistant") return prev;
+            const blocks = [...last.blocks];
+            while (blocks.length <= contentIndex) {
+              blocks.push({ type: "text", text: "" });
+            }
+            const src = partial?.content?.[contentIndex] ?? {};
+            blocks[contentIndex] = {
+              type: "toolCall",
+              id: src.id ?? `tc-${contentIndex}`,
+              name: src.name ?? "tool",
+              arguments: "",
+            };
+            return [...prev.slice(0, -1), { ...last, blocks }];
+          });
+
+        } else if (et === "toolcall_delta") {
+          // Streamed JSON arguments — append the delta.
+          const { contentIndex, delta } = evt.data;
+          if (typeof delta !== "string" || !delta) return;
+          setMessages((prev) => {
+            if (prev.length === 0) return prev;
+            const last = prev[prev.length - 1];
+            if (last.role !== "assistant") return prev;
+            const blocks = [...last.blocks];
+            const b = blocks[contentIndex];
+            if (!b || b.type !== "toolCall") return prev;
+            const prevArgs =
+              typeof b.arguments === "string" ? b.arguments : JSON.stringify(b.arguments ?? "");
+            blocks[contentIndex] = { ...b, arguments: prevArgs + delta };
+            return [...prev.slice(0, -1), { ...last, blocks }];
+          });
+
+        } else if (et === "toolcall_end") {
+          // Tool call finalized — replace with the complete value.
+          const { contentIndex, toolCall } = evt.data;
+          if (!toolCall) return;
+          setMessages((prev) => {
+            if (prev.length === 0) return prev;
+            const last = prev[prev.length - 1];
+            if (last.role !== "assistant") return prev;
+            const blocks = [...last.blocks];
+            blocks[contentIndex] = {
+              type: "toolCall",
+              id: toolCall.id ?? `tc-${contentIndex}`,
+              name: toolCall.name ?? "tool",
+              arguments: toolCall.arguments ?? {},
+            };
+            return [...prev.slice(0, -1), { ...last, blocks }];
+          });
+
+        } else if (et === "message_done") {
+          // Full message at stream end — self-heal (same as message_end).
+          const msg = evt.data?.message;
+          if (!msg || msg.role !== "assistant") return;
+          const rawBlocks = msg.content;
           if (!rawBlocks) return;
           const blocks = toBlocks(rawBlocks);
           setMessages((prev) => {
             if (prev.length === 0) return prev;
             const last = prev[prev.length - 1];
             if (last.role !== "assistant") return prev;
-            // Preserve tool execution state (status/result/isError) from the
-            // previous render so partial tool output isn't wiped by deltas.
-            const prevToolState = new Map(
-              last.blocks
-                .filter((b) => b.type === "toolCall" && b.id)
-                .map((b) => [
-                  b.id,
-                  { status: b.status, result: b.result, isError: b.isError },
-                ]),
-            );
-            const merged = blocks.map((b) => {
-              if (b.type === "toolCall" && b.id) {
-                const st = prevToolState.get(b.id);
-                if (st) return { ...b, ...st };
-              }
-              return b;
-            });
             return [
               ...prev.slice(0, -1),
-              { ...last, blocks: merged, content: blocksToText(merged) },
+              { ...last, blocks, content: blocksToText(blocks) },
             ];
           });
 

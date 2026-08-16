@@ -29,10 +29,62 @@ pub fn serialize_session_event(event: &AgentSessionEvent) -> (String, serde_json
         AgentSessionEvent::MessageUpdate {
             assistant_message_event,
             ..
-        } => (
-            "message_update".into(),
-            serde_json::to_value(assistant_message_event).unwrap_or_default(),
-        ),
+        } => {
+            // Split the assistant streaming event into granular deltas instead
+            // of shipping the full partial snapshot on every update. The
+            // session-level message_start / message_end events still carry the
+            // complete message (self-healing anchors); these deltas drive
+            // smooth incremental rendering.
+            use pi_ai::types::AssistantMessageEvent;
+            match assistant_message_event {
+                AssistantMessageEvent::TextDelta {
+                    content_index,
+                    delta,
+                    ..
+                } => (
+                    "text_delta".into(),
+                    json!({ "contentIndex": content_index, "delta": delta }),
+                ),
+                AssistantMessageEvent::ThinkingDelta {
+                    content_index,
+                    delta,
+                    ..
+                } => (
+                    "thinking_delta".into(),
+                    json!({ "contentIndex": content_index, "delta": delta }),
+                ),
+                AssistantMessageEvent::ToolCallStart {
+                    content_index,
+                    partial,
+                } => (
+                    "toolcall_start".into(),
+                    json!({ "contentIndex": content_index, "partial": partial }),
+                ),
+                AssistantMessageEvent::ToolCallDelta {
+                    content_index,
+                    delta,
+                    ..
+                } => (
+                    "toolcall_delta".into(),
+                    json!({ "contentIndex": content_index, "delta": delta }),
+                ),
+                AssistantMessageEvent::ToolCallEnd {
+                    content_index,
+                    tool_call,
+                    ..
+                } => (
+                    "toolcall_end".into(),
+                    json!({ "contentIndex": content_index, "toolCall": tool_call }),
+                ),
+                AssistantMessageEvent::Done { message, .. } => {
+                    ("message_done".into(), json!({ "message": message }))
+                }
+                // Start / TextStart / TextEnd / ThinkingStart / ThinkingEnd
+                // carry the full partial — message_start/message_end anchor the
+                // message and the deltas carry the content, so these are no-ops.
+                _ => ("message_update_ignored".into(), json!({})),
+            }
+        }
         AgentSessionEvent::MessageEnd { message } => {
             ("message_end".into(), json!({"message": message}))
         }
