@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::state::*;
 use crate::state::{model, providers, session, settings};
 use serde_json::json;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 // ── Core ──
 
@@ -444,4 +444,35 @@ pub async fn export_session(
             .ok_or_else(|| format!("session '{session_id}' has no session file"))?
     };
     crate::state::export::export_session(&session_file, &format, &target_path)
+}
+
+// ── Session tree (timeline) ──
+
+#[tauri::command]
+pub async fn get_session_tree(
+    store: State<'_, Arc<Store>>,
+    session_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    store.get_session_tree_json(&session_id).await
+}
+
+#[tauri::command]
+pub async fn navigate_session_tree(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    session_id: String,
+    entry_id: String,
+) -> Result<Vec<serde_json::Value>, String> {
+    store.navigate_session_tree(&session_id, &entry_id).await?;
+    // Emit the updated transcript so the chat pane switches to the new branch.
+    let transcript =
+        crate::state::build_display_transcript(&store.get_messages().await);
+    let _ = app.emit(
+        "pi-gui:selected-transcript-changed",
+        &serde_json::json!({
+            "sessionId": session_id,
+            "transcript": transcript,
+        }),
+    );
+    store.get_session_tree_json(&session_id).await
 }

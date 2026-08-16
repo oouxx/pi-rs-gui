@@ -314,6 +314,55 @@ impl Store {
         items
     }
 
+    /// Get the session tree (timeline) for a session. Uses the in-memory
+    /// runtime for the active session, otherwise opens the session file.
+    pub async fn get_session_tree_json(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        let active_sid = self.session_id.lock().await.clone().unwrap_or_default();
+        if active_sid == session_id {
+            let runtime = self.runtime.lock().await;
+            if let Some(runtime) = runtime.as_ref() {
+                let tree = runtime.session().get_tree();
+                return Ok(crate::state::tree::tree_json(&tree, None));
+            }
+        }
+        let session_file = {
+            let state = self.state.lock().await;
+            state
+                .sessions
+                .iter()
+                .find(|s| s.id == session_id)
+                .and_then(|s| s.session_file.as_ref())
+                .filter(|f| !f.is_empty())
+                .cloned()
+                .ok_or_else(|| format!("session '{session_id}' has no session file"))?
+        };
+        Ok(crate::state::tree::tree_from_session_file(&session_file))
+    }
+
+    /// Navigate the active session's tree to a node and return the updated
+    /// tree. Non-active sessions cannot be navigated (no runtime).
+    pub async fn navigate_session_tree(
+        &self,
+        session_id: &str,
+        entry_id: &str,
+    ) -> Result<Vec<serde_json::Value>, String> {
+        let active_sid = self.session_id.lock().await.clone().unwrap_or_default();
+        if active_sid != session_id {
+            return Err("can only navigate the active session".to_string());
+        }
+        let mut runtime = self.runtime.lock().await;
+        let runtime = runtime.as_mut().ok_or("No session")?;
+        let ok = runtime.session_mut().navigate_tree(entry_id).await;
+        if !ok {
+            return Err(format!("entry '{entry_id}' not found"));
+        }
+        let tree = runtime.session().get_tree();
+        Ok(crate::state::tree::tree_json(&tree, None))
+    }
+
     /// Compute the default session directory for a given cwd.
     fn session_dir_for(cwd: &str) -> String {
         let agent_dir = pi_coding_agent::config::get_agent_dir()

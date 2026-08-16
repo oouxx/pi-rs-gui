@@ -120,6 +120,28 @@ export function listSlashCommands() {
   return tauriInvoke<any[]>("list_slash_commands");
 }
 
+// ── Session tree (timeline) ──
+
+export interface SessionTreeNode {
+  id: string;
+  parentId?: string | null;
+  kind: string;
+  label: string;
+  timestamp: string;
+  current?: boolean;
+  children: SessionTreeNode[];
+}
+
+export function getSessionTree(sessionId: string) {
+  return tauriInvoke<SessionTreeNode[]>("get_session_tree", { sessionId });
+}
+export function navigateSessionTree(sessionId: string, entryId: string) {
+  return tauriInvoke<SessionTreeNode[]>("navigate_session_tree", {
+    sessionId,
+    entryId,
+  });
+}
+
 // ── Session export ──
 
 export function exportSession(

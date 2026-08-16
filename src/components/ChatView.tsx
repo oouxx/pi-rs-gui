@@ -1,5 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Folder, Search, ArrowUp, ArrowDown, X, Copy, Check } from "lucide-react";
+import {
+  Send,
+  Folder,
+  Search,
+  ArrowUp,
+  ArrowDown,
+  X,
+  Copy,
+  Check,
+  GitBranch,
+  ChevronRight,
+  ChevronDown,
+  CornerUpLeft,
+  MessageSquare,
+  Cog,
+  Scissors,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
@@ -22,9 +38,12 @@ import ToolCallCard from "@/components/ToolCallCard";
 import ThinkingBlock from "@/components/ThinkingBlock";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
+  getSessionTree,
   listSlashCommands,
+  navigateSessionTree,
   searchWorkspaceFiles,
   setSessionCwd,
+  type SessionTreeNode,
 } from "@/api/commands";
 
 function nodeText(node: React.ReactNode): string {
@@ -132,6 +151,170 @@ const mdComponents: Components = {
 
 
 
+const KIND_ICON: Record<string, { icon: React.ReactNode; className: string }> = {
+  message: { icon: <MessageSquare className="size-3" />, className: "" },
+  model_change: { icon: <Cog className="size-3" />, className: "text-blue-500" },
+  thinking_level_change: { icon: <Cog className="size-3" />, className: "text-purple-500" },
+  compaction: { icon: <Scissors className="size-3" />, className: "text-amber-500" },
+  branch_summary: { icon: <GitBranch className="size-3" />, className: "text-emerald-500" },
+  session_info: { icon: <MessageSquare className="size-3" />, className: "text-muted-foreground" },
+};
+
+function TreeNode({
+  node,
+  depth,
+  onNavigate,
+  collapsed,
+  onToggle,
+}: {
+  node: SessionTreeNode;
+  depth: number;
+  onNavigate: (id: string) => void;
+  collapsed: Set<string>;
+  onToggle: (id: string) => void;
+}) {
+  const hasChildren = node.children.length > 0;
+  const isCollapsed = collapsed.has(node.id);
+  const meta = KIND_ICON[node.kind] ?? KIND_ICON.session_info;
+
+  return (
+    <div>
+      <div
+        className={`group flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors ${
+          node.current
+            ? "bg-accent/10 text-accent font-medium"
+            : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+        }`}
+        style={{ paddingLeft: `${8 + depth * 14}px` }}
+        onClick={() => onNavigate(node.id)}
+      >
+        <span className="flex w-3 shrink-0 justify-center">
+          {hasChildren ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle(node.id);
+              }}
+              className="rounded p-0.5 hover:bg-muted"
+            >
+              {isCollapsed ? (
+                <ChevronRight className="size-3" />
+              ) : (
+                <ChevronDown className="size-3" />
+              )}
+            </button>
+          ) : (
+            <span className="size-3" />
+          )}
+        </span>
+        <span className={`shrink-0 ${meta.className}`}>{meta.icon}</span>
+        <span className="min-w-0 flex-1 truncate">{node.label}</span>
+        {node.current && (
+          <span className="bg-accent text-accent-foreground shrink-0 rounded-full px-1.5 text-[9px]">
+            here
+          </span>
+        )}
+      </div>
+      {hasChildren && !isCollapsed && (
+        <div>
+          {node.children.map((c) => (
+            <TreeNode
+              key={c.id}
+              node={c}
+              depth={depth + 1}
+              onNavigate={onNavigate}
+              collapsed={collapsed}
+              onToggle={onToggle}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TimelinePanel({
+  tree,
+  sessionId,
+  onClose,
+  onTreeChange,
+}: {
+  tree: SessionTreeNode[];
+  sessionId: string;
+  onClose: () => void;
+  onTreeChange: (tree: SessionTreeNode[]) => void;
+}) {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+
+  const toggle = useCallback((id: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const navigate = useCallback(
+    async (entryId: string) => {
+      if (busy) return;
+      setBusy(true);
+      try {
+        const updated = await navigateSessionTree(sessionId, entryId);
+        onTreeChange(updated ?? []);
+      } catch (e) {
+        console.error("[navigate]", e);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, sessionId, onTreeChange],
+  );
+
+  return (
+    <div className="border-hairline bg-bg-surface flex w-72 shrink-0 flex-col border-l">
+      <div className="border-hairline flex items-center gap-2 border-b px-3 py-2">
+        <GitBranch className="text-muted-foreground size-3.5" />
+        <span className="text-foreground flex-1 text-xs font-medium">
+          Timeline
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-muted-foreground hover:text-foreground rounded p-0.5 transition-colors"
+          title="Close timeline"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        {tree.length === 0 ? (
+          <p className="text-muted-foreground px-2 py-4 text-center text-xs">
+            No timeline yet
+          </p>
+        ) : (
+          tree.map((n) => (
+            <TreeNode
+              key={n.id}
+              node={n}
+              depth={0}
+              onNavigate={navigate}
+              collapsed={collapsed}
+              onToggle={toggle}
+            />
+          ))
+        )}
+        <div className="text-muted-foreground mt-2 flex items-center gap-1.5 px-2 text-[10px]">
+          <CornerUpLeft className="size-3" />
+          Click a node to jump to that branch point
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Render a single content block. */
 function BlockRenderer({
   block,
@@ -190,6 +373,8 @@ export default function ChatView() {
   const [input, setInput] = useState("");
   const [showSlash, setShowSlash] = useState(false);
   const [showMention, setShowMention] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [timelineTree, setTimelineTree] = useState<SessionTreeNode[]>([]);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionFiles, setMentionFiles] = useState<{ path: string }[]>([]);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
@@ -212,6 +397,18 @@ export default function ChatView() {
   useEffect(() => {
     refreshSlashCommands();
   }, [refreshSlashCommands]);
+
+  const toggleTimeline = useCallback(async () => {
+    setShowTimeline((prev) => {
+      const next = !prev;
+      if (next && activeSessionId) {
+        getSessionTree(activeSessionId)
+          .then((t) => setTimelineTree(t ?? []))
+          .catch(() => setTimelineTree([]));
+      }
+      return next;
+    });
+  }, [activeSessionId]);
   const [mentionStart, setMentionStart] = useState(-1);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevInputRef = useRef("");
@@ -380,12 +577,27 @@ export default function ChatView() {
         <div className="text-ink-muted flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap">
           <span className="font-medium text-foreground">pi-gui</span>
         </div>
+        <button
+          type="button"
+          onClick={toggleTimeline}
+          disabled={!activeSessionId}
+          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors disabled:opacity-40 ${
+            showTimeline
+              ? "bg-accent/10 text-accent"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          title="Toggle session timeline"
+        >
+          <GitBranch className="size-3.5" />
+          Timeline
+        </button>
       </div>
 
       {/* Messages or empty state */}
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div
-          key={activeSessionId}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div
+            key={activeSessionId}
           ref={(el) => {
             timelineRef.current = el;
             scrollRef(el);
@@ -672,6 +884,15 @@ export default function ChatView() {
             </Button>
           </div>
         </div>
+        </div>
+        {showTimeline && activeSessionId && (
+          <TimelinePanel
+            tree={timelineTree}
+            sessionId={activeSessionId}
+            onClose={() => setShowTimeline(false)}
+            onTreeChange={setTimelineTree}
+          />
+        )}
       </div>
     </div>
   );
