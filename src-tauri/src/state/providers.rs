@@ -103,8 +103,9 @@ pub fn delete_custom_provider(provider_id: &str) -> Result<(), String> {
     let mut found = false;
     for (_key, arr_val) in map.iter_mut() {
         if let Some(arr) = arr_val.as_array_mut() {
+            let before = arr.len();
             arr.retain(|e| e["id"].as_str() != Some(provider_id));
-            if arr.len() != arr.capacity() {
+            if arr.len() != before {
                 found = true;
             }
         }
@@ -140,3 +141,4 @@ pub fn clear_provider_auth(provider_id: &str) {
     let mut storage = auth_storage();
     storage.remove(provider_id);
 }
+
