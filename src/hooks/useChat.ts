@@ -301,8 +301,16 @@ export function useChat() {
     // mid-switch, which makes refreshState() set activeSessionId prematurely
     // and trigger a duplicate transcript fetch whose result selectSession's
     // setMessages([]) can then wipe (and no re-fetch happens).
+    const prevRef = activeSessionIdRef.current;
     activeSessionIdRef.current = sessionId;
-    await apiSelectSession(sessionId);
+    try {
+      await apiSelectSession(sessionId);
+    } catch (e) {
+      // Restore the ref so agent-event / transcript filtering matches the
+      // still-active session after a failed switch.
+      activeSessionIdRef.current = prevRef;
+      throw e;
+    }
     setActiveSessionId(sessionId);
     setMessages([]);
     // Clear streaming: the old session's transcript event is filtered out by
