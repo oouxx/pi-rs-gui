@@ -45,6 +45,7 @@ pub fn run() {
             commands::terminal_write,
             commands::terminal_resize,
             commands::terminal_stop,
+            commands::terminal_stop_all,
             commands::file_completions,
             commands::get_general_settings,
             commands::set_session_model,

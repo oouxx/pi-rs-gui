@@ -547,8 +547,17 @@ pub async fn terminal_resize(
 }
 
 #[tauri::command]
-pub async fn terminal_stop(store: State<'_, Arc<Store>>) -> Result<(), String> {
-    store.terminal_stop().await;
+pub async fn terminal_stop(
+    store: State<'_, Arc<Store>>,
+    session_id: String,
+) -> Result<(), String> {
+    store.terminal_stop(&session_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn terminal_stop_all(store: State<'_, Arc<Store>>) -> Result<(), String> {
+    store.terminal_stop_all().await;
     Ok(())
 }
 

@@ -6,9 +6,8 @@ import ChatView from "./ChatView"
 import SkillsView from "./SkillsView"
 import ExtensionsView from "./ExtensionsView"
 import SettingsView from "./SettingsView"
-import TerminalView from "./TerminalView"
 
-export type AppView = "chat" | "skills" | "extensions" | "terminal" | "settings"
+export type AppView = "chat" | "skills" | "extensions" | "settings"
 
 export default function AppShell() {
   const [mode, setMode] = useState<AppView>("chat")
@@ -16,7 +15,6 @@ export default function AppShell() {
     chat: <ChatView onOpenSettings={() => setMode("settings")} />,
     skills: <SkillsView />,
     extensions: <ExtensionsView />,
-    terminal: <TerminalView />,
     settings: <SettingsView />,
   }
 

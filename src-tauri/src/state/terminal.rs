@@ -1,11 +1,10 @@
-//! Embedded terminal — spawns an interactive shell in a real PTY for the
-//! active session's cwd.
+//! Embedded terminal dock — spawns interactive shells in real PTYs (one per
+//! dock tab, Chrome-tab style). Output is streamed to the frontend via
+//! `terminal-output` events; input arrives through `terminal_write`.
 //!
-//! Uses `portable-pty` (same PTY engine as VS Code's terminal) so the shell
+//! Uses `portable-pty` (same PTY engine as VS Code's terminal) so each shell
 //! behaves like a real terminal: prompt, echo, line editing, job control and
-//! full-screen apps (vim, htop). Output is streamed to the frontend via
-//! `terminal-output` Tauri events; input arrives through `terminal_write`.
-//! One terminal session at a time.
+//! full-screen apps (vim, htop).
 
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
@@ -13,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
+use tokio::task::spawn_blocking;
 
 use super::Store;
 
@@ -27,16 +27,13 @@ pub struct TerminalSession {
 }
 
 impl Store {
-    /// Start (or restart) an interactive shell in `cwd`. Returns the terminal
-    /// session id.
+    /// Start a new interactive shell in `cwd` as an additional dock tab.
+    /// Returns the terminal session id.
     pub async fn terminal_start(
         self: &Arc<Self>,
         app: &AppHandle,
         cwd: &str,
     ) -> Result<String, String> {
-        // Kill any previous terminal first.
-        self.terminal_stop().await;
-
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
 
         let pty_system = native_pty_system();
@@ -73,7 +70,7 @@ impl Store {
         let a = app.clone();
 
         // Stream PTY output → events (blocking read on a worker thread).
-        tokio::task::spawn_blocking(move || {
+        spawn_blocking(move || {
             let mut buf = vec![0u8; 8192];
             loop {
                 match reader.read(&mut buf) {
@@ -89,7 +86,7 @@ impl Store {
             }
         });
 
-        *self.terminal.lock().await = Some(TerminalSession {
+        self.terminals.lock().await.push(TerminalSession {
             id: id.clone(),
             master: pair.master,
             child,
@@ -98,20 +95,20 @@ impl Store {
         Ok(id)
     }
 
-    /// Write raw bytes to the terminal's stdin (the PTY master).
+    /// Write raw bytes to a terminal's stdin (its PTY master).
     pub async fn terminal_write(&self, session_id: &str, data: &str) -> Result<(), String> {
         let writer = {
-            let term = self.terminal.lock().await;
-            let session = term.as_ref().ok_or("no terminal running")?;
-            if session.id != session_id {
-                return Err("terminal session id mismatch".to_string());
-            }
+            let list = self.terminals.lock().await;
+            let session = list
+                .iter()
+                .find(|s| s.id == session_id)
+                .ok_or("terminal not found")?;
             session.writer.clone()
         };
         let bytes = data.as_bytes().to_vec();
         tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            tokio::task::spawn_blocking(move || {
+            spawn_blocking(move || {
                 let mut w = writer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 w.write_all(&bytes)
             }),
@@ -122,18 +119,18 @@ impl Store {
         .map_err(|e| format!("failed to write to terminal: {e}"))
     }
 
-    /// Resize the PTY to match the frontend xterm viewport.
+    /// Resize a terminal's PTY to match its frontend xterm viewport.
     pub async fn terminal_resize(
         &self,
         session_id: &str,
         cols: u16,
         rows: u16,
     ) -> Result<(), String> {
-        let term = self.terminal.lock().await;
-        let session = term.as_ref().ok_or("no terminal running")?;
-        if session.id != session_id {
-            return Err("terminal session id mismatch".to_string());
-        }
+        let list = self.terminals.lock().await;
+        let session = list
+            .iter()
+            .find(|s| s.id == session_id)
+            .ok_or("terminal not found")?;
         session
             .master
             .resize(PtySize {
@@ -145,10 +142,19 @@ impl Store {
             .map_err(|e| format!("failed to resize terminal: {e}"))
     }
 
-    /// Kill the running terminal (if any) and clear the session.
-    pub async fn terminal_stop(&self) {
-        let mut term = self.terminal.lock().await;
-        if let Some(mut session) = term.take() {
+    /// Kill one terminal (closing its dock tab).
+    pub async fn terminal_stop(&self, session_id: &str) {
+        let mut list = self.terminals.lock().await;
+        if let Some(pos) = list.iter().position(|s| s.id == session_id) {
+            let mut session = list.remove(pos);
+            let _ = session.child.kill();
+        }
+    }
+
+    /// Kill every terminal (dock teardown).
+    pub async fn terminal_stop_all(&self) {
+        let mut list = self.terminals.lock().await;
+        for mut session in list.drain(..) {
             let _ = session.child.kill();
         }
     }

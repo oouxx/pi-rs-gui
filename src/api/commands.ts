@@ -143,8 +143,11 @@ export function terminalWrite(sessionId: string, data: string) {
 export function terminalResize(sessionId: string, cols: number, rows: number) {
   return tauriInvoke<void>("terminal_resize", { sessionId, cols, rows });
 }
-export function terminalStop() {
-  return tauriInvoke<void>("terminal_stop");
+export function terminalStop(sessionId: string) {
+  return tauriInvoke<void>("terminal_stop", { sessionId });
+}
+export function terminalStopAll() {
+  return tauriInvoke<void>("terminal_stop_all");
 }
 
 // ── Session model ──

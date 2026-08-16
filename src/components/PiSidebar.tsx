@@ -21,7 +21,6 @@ import {
   Settings,
   Puzzle,
   Code2,
-  TerminalSquare,
   Plus,
   Trash2,
   Pencil,
@@ -305,18 +304,6 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
       <SidebarContent>
         <SidebarGroup>
           <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                onClick={() =>
-                  onModeChange(mode === "terminal" ? "chat" : "terminal")
-                }
-                isActive={mode === "terminal"}
-                tooltip="Terminal"
-              >
-                <TerminalSquare />
-                <span>Terminal</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton
                 onClick={() =>

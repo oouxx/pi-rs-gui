@@ -19,6 +19,7 @@ import {
   Info,
   ShieldCheck,
   ShieldX,
+  TerminalSquare,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -53,6 +54,7 @@ import { useChat, type ContentBlock } from "@/hooks/useChat";
 import { useThreadSearch } from "@/hooks/use-thread-search";
 import ToolCallCard from "@/components/ToolCallCard";
 import PickModel from "@/components/PickModel";
+import TerminalDock from "@/components/TerminalDock";
 import type { ModelOption, ProviderInfo } from "@/components/PickModel";
 import ThinkingBlock from "@/components/ThinkingBlock";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
@@ -502,6 +504,7 @@ export default function ChatView({
   const [showSlash, setShowSlash] = useState(false);
   const [showMention, setShowMention] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const [timelineTree, setTimelineTree] = useState<SessionTreeNode[]>([]);
   const [modelList, setModelList] = useState<ModelOption[]>([]);
   const [providerList, setProviderList] = useState<ProviderInfo[]>([]);
@@ -1231,6 +1234,19 @@ export default function ChatView({
           <GitBranch className="size-3.5" />
           Timeline
         </button>
+        <button
+          type="button"
+          onClick={() => setTerminalOpen((o) => !o)}
+          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+            terminalOpen
+              ? "bg-accent/10 text-accent"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+          title="Toggle terminal panel"
+        >
+          <TerminalSquare className="size-3.5" />
+          Terminal
+        </button>
       </div>
 
       {/* Messages or empty state */}
@@ -1443,6 +1459,14 @@ export default function ChatView({
             </CommandList>
           </Command>
         </CommandDialog>
+
+        {/* Terminal dock — between the messages and the composer */}
+        {terminalOpen && (
+          <TerminalDock
+            cwd={activeSessionCwd}
+            onClose={() => setTerminalOpen(false)}
+          />
+        )}
 
         {/* Working directory picker */}
         <div className="border-hairline bg-bg-surface shrink-0 border-t px-4 pt-2">

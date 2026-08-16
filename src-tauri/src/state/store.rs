@@ -68,8 +68,8 @@ pub struct Store {
     /// the plain flag alone never reached the running loop).
     pub abort_epoch: AtomicU64,
     pub abort_tx: tokio::sync::watch::Sender<u64>,
-    /// Embedded terminal session (single, replaced on restart).
-    pub terminal: tokio::sync::Mutex<Option<crate::state::terminal::TerminalSession>>,
+    /// Embedded terminal sessions (one per dock tab, Chrome-tab style).
+    pub terminals: tokio::sync::Mutex<Vec<crate::state::terminal::TerminalSession>>,
 }
 
 impl Store {
@@ -83,7 +83,7 @@ impl Store {
             generation: AtomicU64::new(0),
             abort_epoch: AtomicU64::new(0),
             abort_tx: tokio::sync::watch::channel(0).0,
-            terminal: tokio::sync::Mutex::new(None),
+            terminals: tokio::sync::Mutex::new(vec![]),
         })
     }
 
