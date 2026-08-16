@@ -107,6 +107,13 @@ pub fn set_custom_provider(config: &Value) -> Result<Value, String> {
     let base_url = config["baseUrl"].as_str().unwrap_or("").to_string();
     let name = config["name"].as_str().unwrap_or(&model_id).to_string();
     let api_key = config["apiKeyEnvVar"].as_str().unwrap_or("").to_string();
+    // pi-rs resolves `${ENV}` templates in the apiKey field at request time —
+    // store the env-var reference, not the raw variable name.
+    let api_key_field = if api_key.is_empty() {
+        String::new()
+    } else {
+        format!("${{{api_key}}}")
+    };
 
     let mut map = read_models_map();
     let providers = providers_obj_mut(&mut map).ok_or("invalid models.json format")?;
@@ -117,8 +124,8 @@ pub fn set_custom_provider(config: &Value) -> Result<Value, String> {
     entry_obj.insert("name".to_string(), json!(name));
     entry_obj.insert("baseUrl".to_string(), json!(base_url));
     entry_obj.insert("api".to_string(), json!(api));
-    if !api_key.is_empty() {
-        entry_obj.insert("apiKey".to_string(), json!(api_key));
+    if !api_key_field.is_empty() {
+        entry_obj.insert("apiKey".to_string(), json!(api_key_field));
     }
     // Merge the model into the provider's models array.
     let models = entry_obj

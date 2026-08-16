@@ -301,6 +301,10 @@ export function useChat() {
     activeSessionIdRef.current = sessionId;
     setActiveSessionId(sessionId);
     setMessages([]);
+    // Clear streaming: the old session's transcript event is filtered out by
+    // the sessionId check, so nothing else would reset the Stop button.
+    setStreaming(false);
+    streamingRef.current = false;
     // The transcript effect on [activeSessionId] bumps the generation counter
     // and fetches the transcript — no need to fetch here (a second fetch would
     // always be discarded by the generation check).
@@ -314,6 +318,8 @@ export function useChat() {
       activeSessionIdRef.current = newId;
     }
     setMessages([]);
+    setStreaming(false);
+    streamingRef.current = false;
     refreshState();
     return newId;
   }, [refreshState]);

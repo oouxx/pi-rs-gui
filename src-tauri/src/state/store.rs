@@ -909,6 +909,21 @@ impl Store {
         };
 
         let action = decide_cwd_action(current_file.as_deref(), &new_cwd, current_cwd.as_deref());
+        // spawn_runtime backfills session_file on every record, including fresh
+        // sessions whose file path is computed but NOT yet created (no messages
+        // sent). Forking from a non-existent file fails — downgrade to
+        // SetInPlace (re-init the runtime with the new cwd) in that case.
+        let action = match action {
+            CwdAction::Fork
+                if current_file
+                    .as_deref()
+                    .map(|f| !std::path::Path::new(f).exists())
+                    .unwrap_or(true) =>
+            {
+                CwdAction::SetInPlace
+            }
+            other => other,
+        };
         eprintln!(
             "[CWD] set_session_cwd sid={} new_cwd={:?} current_cwd={:?} session_file={:?} action={:?}",
             session_id, new_cwd, current_cwd, current_file, action

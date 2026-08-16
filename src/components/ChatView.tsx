@@ -191,7 +191,8 @@ const mdComponents: Components = {
   code: ({ className, children, ...props }) => {
     // react-markdown v9 does not pass an `inline` prop. A fenced block without
     // a language has no className either, so fall back to a newline check to
-    // distinguish block code from inline code.
+    // distinguish block code from inline code. Block code is wrapped by the
+    // `pre` component below (no nested <pre> here).
     const text = nodeText(children);
     const isInline = !className && !text.includes("\n");
     if (isInline) {
@@ -205,19 +206,22 @@ const mdComponents: Components = {
       );
     }
     return (
-      <div className="group/code relative my-2">
-        <pre className="rounded-card border-hairline bg-bg-hover text-ink-muted overflow-x-auto border p-3 pr-10 font-mono text-xs leading-relaxed">
-          <code className={className} {...props}>
-            {children}
-          </code>
-        </pre>
-        <CopyButton
-          text={nodeText(children)}
-          className="text-muted-foreground hover:text-foreground absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover/code:opacity-100"
-        />
-      </div>
+      <code className={className} {...props}>
+        {children}
+      </code>
     );
   },
+  pre: ({ children }) => (
+    <div className="group/code relative my-2">
+      <pre className="rounded-card border-hairline bg-bg-hover text-ink-muted overflow-x-auto border p-3 pr-10 font-mono text-xs leading-relaxed">
+        {children}
+      </pre>
+      <CopyButton
+        text={nodeText(children)}
+        className="text-muted-foreground hover:text-foreground absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover/code:opacity-100"
+      />
+    </div>
+  ),
   table: ({ children }) => (
     <div className="my-2 overflow-x-auto">
       <table className="w-full border-collapse font-mono text-xs">
