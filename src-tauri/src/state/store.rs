@@ -665,20 +665,29 @@ impl Store {
         )
         .await;
         let sid = runtime.session().get_session_id();
+        // Capture the session file BEFORE moving the runtime into the store:
+        // the UI record needs it so select_session can resume this session
+        // (and the Fork-path verification can confirm persistence).
+        let session_file = runtime
+            .session()
+            .get_session_file()
+            .map(|p| p.to_string_lossy().to_string());
         *self.session_id.lock().await = Some(sid.clone());
         *self.runtime.lock().await = Some(runtime);
 
         // Universal invariant: the UI-facing record id must equal the runtime's
         // real session id, otherwise agent-event payloads (keyed by the runtime
         // id) get filtered out by the frontend. This covers legacy
-        // "sess-<ts>" records and any other id divergence.
+        // "sess-<ts>" records and any other id divergence. Also backfill the
+        // session file so the record can be resumed later.
         self.mutate(app, |s| {
-            if s.selected_session_id != sid {
-                if let Some(rec) = s.sessions.iter_mut().find(|r| r.id == s.selected_session_id) {
-                    rec.id = sid.clone();
+            if let Some(rec) = s.sessions.iter_mut().find(|r| r.id == s.selected_session_id) {
+                rec.id = sid.clone();
+                if let Some(file) = session_file.clone() {
+                    rec.session_file = Some(file);
                 }
-                s.selected_session_id = sid.clone();
             }
+            s.selected_session_id = sid.clone();
         })
         .await;
         Ok(())
