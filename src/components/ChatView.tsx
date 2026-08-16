@@ -444,28 +444,20 @@ function TimelinePanel({
 }
 
 /** Render a single content block. Memoized: unchanged block references skip
- *  re-render entirely, so a text_delta only re-renders the affected block. */
+ *  re-render entirely, so a text_delta only re-renders the affected block.
+ *  Text is rendered progressively (real-time markdown, like ChatGPT/Claude). */
 const BlockRenderer = memo(function BlockRenderer({
   block,
-  streaming,
 }: {
   block: ContentBlock;
-  streaming?: boolean;
 }) {
   switch (block.type) {
     case "text":
-      if (!block.text) return null;
-      // While a message is actively streaming, render plain text — parsing
-      // markdown on every token is the dominant re-render cost. The final
-      // ReactMarkdown pass runs once the stream settles.
-      if (streaming) {
-        return <div className="whitespace-pre-wrap">{block.text}</div>;
-      }
-      return (
+      return block.text ? (
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
           {block.text}
         </ReactMarkdown>
-      );
+      ) : null;
 
     case "thinking":
       return <ThinkingBlock thinking={block.thinking} />;
@@ -538,11 +530,7 @@ const MessageItem = memo(function MessageItem({
         {msg.role === "assistant" ? (
           msg.blocks.length > 0 ? (
             msg.blocks.map((block, bi) => (
-              <BlockRenderer
-                key={`${msg.id}-b${bi}`}
-                block={block}
-                streaming={isLastAi && streaming}
-              />
+              <BlockRenderer key={`${msg.id}-b${bi}`} block={block} />
             ))
           ) : streaming && isLastAi ? (
             <div className="flex gap-1 py-1">
