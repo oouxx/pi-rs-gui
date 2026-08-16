@@ -20,7 +20,11 @@ import { useChat, type ContentBlock } from "@/hooks/useChat";
 import ToolCallCard from "@/components/ToolCallCard";
 import ThinkingBlock from "@/components/ThinkingBlock";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { listSlashCommands, setSessionCwd } from "@/api/commands";
+import {
+  listSlashCommands,
+  searchWorkspaceFiles,
+  setSessionCwd,
+} from "@/api/commands";
 
 const mdComponents: Components = {
   code: ({ className, children, ...props }) => {
@@ -174,11 +178,22 @@ export default function ChatView() {
     });
   }, []);
 
-  // @ mention file search (stub — no workspace file listing)
+  // @ mention file search — live workspace lookup (debounced)
   useEffect(() => {
-    if (!showMention) return;
-    setMentionFiles([]);
-  }, [showMention]);
+    if (!showMention) {
+      setMentionFiles([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const files = await searchWorkspaceFiles(activeSessionCwd, mentionQuery);
+        setMentionFiles((files ?? []).map((p) => ({ path: p })));
+      } catch {
+        setMentionFiles([]);
+      }
+    }, 150);
+    return () => clearTimeout(handle);
+  }, [showMention, mentionQuery, activeSessionCwd]);
 
   const insertAtCursor = useCallback(
     (text: string, start?: number, end?: number) => {
@@ -212,7 +227,7 @@ export default function ChatView() {
       const textBeforeCursor = val.slice(0, cursorPos);
 
       // Detect @ mention trigger
-      const atMatch = textBeforeCursor.match(/@(\w*)$/);
+      const atMatch = textBeforeCursor.match(/@([\w./-]*)$/);
       if (atMatch) {
         setMentionQuery(atMatch[1]);
         setMentionStart(atMatch.index!);

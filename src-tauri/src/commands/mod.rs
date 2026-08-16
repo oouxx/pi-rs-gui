@@ -411,3 +411,14 @@ pub async fn list_slash_commands(
 ) -> Result<Vec<serde_json::Value>, String> {
     Ok(store.list_slash_commands().await)
 }
+
+// ── Workspace file search (composer @ mention) ──
+
+#[tauri::command]
+pub async fn search_workspace_files(
+    cwd: Option<String>,
+    query: String,
+) -> Result<Vec<String>, String> {
+    let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
+    crate::state::files::search_files(&cwd, &query).await
+}

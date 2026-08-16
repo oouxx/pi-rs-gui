@@ -1,5 +1,6 @@
 pub(crate) mod cwd;
 pub(crate) mod extensions;
+pub(crate) mod files;
 pub(crate) mod model;
 pub(crate) mod providers;
 pub(crate) mod session;

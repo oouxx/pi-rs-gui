@@ -105,6 +105,15 @@ export function getExtension(name: string) {
   return tauriInvoke<any>("get_extension", { name });
 }
 
+// ── Workspace file search (composer @ mention) ──
+
+export function searchWorkspaceFiles(cwd: string | null | undefined, query: string) {
+  return tauriInvoke<string[]>("search_workspace_files", {
+    ...(cwd ? { cwd } : {}),
+    query,
+  });
+}
+
 // ── Slash commands ──
 
 export function listSlashCommands() {

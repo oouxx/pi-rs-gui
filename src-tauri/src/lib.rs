@@ -31,6 +31,7 @@ pub fn run() {
             commands::delete_custom_provider,
             commands::get_selected_transcript,
             commands::list_slash_commands,
+            commands::search_workspace_files,
             commands::get_general_settings,
             commands::set_general_setting,
             commands::get_agent_dir,
