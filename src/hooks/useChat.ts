@@ -77,6 +77,85 @@ function blocksToText(blocks: ContentBlock[]): string {
     .join("");
 }
 
+// ── Streaming delta batch application ──────────────────────────
+// text/thinking/toolcall deltas are accumulated and applied once per
+// animation frame (instead of one React render per token).
+interface StreamDelta {
+  event_type: string;
+  data: any;
+}
+
+function ensureIndex(blocks: ContentBlock[], idx: number): void {
+  while (blocks.length <= idx) {
+    blocks.push({ type: "text", text: "" });
+  }
+}
+
+function applyDelta(prev: DisplayMessage[], d: StreamDelta): DisplayMessage[] {
+  if (prev.length === 0) return prev;
+  const last = prev[prev.length - 1];
+  if (last.role !== "assistant") return prev;
+  const { contentIndex, delta } = d.data ?? {};
+  const blocks = [...last.blocks];
+
+  switch (d.event_type) {
+    case "text_delta": {
+      if (typeof delta !== "string" || !delta) return prev;
+      ensureIndex(blocks, contentIndex);
+      const b = blocks[contentIndex];
+      blocks[contentIndex] = { type: "text", text: (b.text ?? "") + delta };
+      return [...prev.slice(0, -1), { ...last, blocks, content: blocksToText(blocks) }];
+    }
+    case "thinking_delta": {
+      if (typeof delta !== "string" || !delta) return prev;
+      ensureIndex(blocks, contentIndex);
+      const b = blocks[contentIndex];
+      blocks[contentIndex] = { type: "thinking", thinking: (b.thinking ?? "") + delta };
+      return [...prev.slice(0, -1), { ...last, blocks }];
+    }
+    case "toolcall_start": {
+      const src = d.data?.partial?.content?.[contentIndex] ?? {};
+      ensureIndex(blocks, contentIndex);
+      blocks[contentIndex] = {
+        type: "toolCall",
+        id: src.id ?? `tc-${contentIndex}`,
+        name: src.name ?? "tool",
+        arguments: "",
+      };
+      return [...prev.slice(0, -1), { ...last, blocks }];
+    }
+    case "toolcall_delta": {
+      if (typeof delta !== "string" || !delta) return prev;
+      const b = blocks[contentIndex];
+      if (!b || b.type !== "toolCall") return prev;
+      const prevArgs =
+        typeof b.arguments === "string" ? b.arguments : JSON.stringify(b.arguments ?? "");
+      blocks[contentIndex] = { ...b, arguments: prevArgs + delta };
+      return [...prev.slice(0, -1), { ...last, blocks }];
+    }
+    case "toolcall_end": {
+      const toolCall = d.data?.toolCall;
+      if (!toolCall) return prev;
+      ensureIndex(blocks, contentIndex);
+      blocks[contentIndex] = {
+        type: "toolCall",
+        id: toolCall.id ?? `tc-${contentIndex}`,
+        name: toolCall.name ?? "tool",
+        arguments: toolCall.arguments ?? {},
+      };
+      return [...prev.slice(0, -1), { ...last, blocks }];
+    }
+    default:
+      return prev;
+  }
+}
+
+function applyDeltaBatch(prev: DisplayMessage[], deltas: StreamDelta[]): DisplayMessage[] {
+  let out = prev;
+  for (const d of deltas) out = applyDelta(out, d);
+  return out;
+}
+
 export function useChat() {
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -86,6 +165,10 @@ export function useChat() {
   const activeSessionIdRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
   const transcriptGenRef = useRef(0);
+  // Streaming delta batching: accumulate deltas and flush once per rAF so
+  // multiple tokens within a frame trigger a single React render.
+  const deltaQueueRef = useRef<StreamDelta[]>([]);
+  const deltaRafRef = useRef<number | null>(null);
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
@@ -126,6 +209,21 @@ export function useChat() {
   useEffect(() => {
     if (!activeSessionId) return;
     let unsub: (() => void) | undefined;
+
+    const flushDeltas = () => {
+      deltaRafRef.current = null;
+      const q = deltaQueueRef.current;
+      if (q.length === 0) return;
+      deltaQueueRef.current = [];
+      setMessages((prev) => applyDeltaBatch(prev, q));
+    };
+    const queueDelta = (event_type: string, data: any) => {
+      deltaQueueRef.current.push({ event_type, data });
+      if (deltaRafRef.current === null) {
+        deltaRafRef.current = requestAnimationFrame(flushDeltas);
+      }
+    };
+
     (async () => {
       unsub = await tauriListen<any>("agent-event", (evt: any) => {
         if (evt.session_id !== activeSessionIdRef.current) return;
@@ -156,100 +254,15 @@ export function useChat() {
           };
           setMessages((prev) => [...prev, newMsg]);
 
-        } else if (et === "text_delta") {
-          // Incremental text — append to the block at contentIndex.
-          const { contentIndex, delta } = evt.data;
-          if (typeof delta !== "string" || !delta) return;
-          setMessages((prev) => {
-            if (prev.length === 0) return prev;
-            const last = prev[prev.length - 1];
-            if (last.role !== "assistant") return prev;
-            const blocks = [...last.blocks];
-            while (blocks.length <= contentIndex) {
-              blocks.push({ type: "text", text: "" });
-            }
-            const b = blocks[contentIndex];
-            blocks[contentIndex] = {
-              type: "text",
-              text: (b.text ?? "") + delta,
-            };
-            return [...prev.slice(0, -1), { ...last, blocks, content: blocksToText(blocks) }];
-          });
-
-        } else if (et === "thinking_delta") {
-          const { contentIndex, delta } = evt.data;
-          if (typeof delta !== "string" || !delta) return;
-          setMessages((prev) => {
-            if (prev.length === 0) return prev;
-            const last = prev[prev.length - 1];
-            if (last.role !== "assistant") return prev;
-            const blocks = [...last.blocks];
-            while (blocks.length <= contentIndex) {
-              blocks.push({ type: "text", text: "" });
-            }
-            const b = blocks[contentIndex];
-            blocks[contentIndex] = {
-              type: "thinking",
-              thinking: (b.thinking ?? "") + delta,
-            };
-            return [...prev.slice(0, -1), { ...last, blocks, content: blocksToText(blocks) }];
-          });
-
-        } else if (et === "toolcall_start") {
-          // Model started streaming a tool call — create the block.
-          const { contentIndex, partial } = evt.data;
-          setMessages((prev) => {
-            if (prev.length === 0) return prev;
-            const last = prev[prev.length - 1];
-            if (last.role !== "assistant") return prev;
-            const blocks = [...last.blocks];
-            while (blocks.length <= contentIndex) {
-              blocks.push({ type: "text", text: "" });
-            }
-            const src = partial?.content?.[contentIndex] ?? {};
-            blocks[contentIndex] = {
-              type: "toolCall",
-              id: src.id ?? `tc-${contentIndex}`,
-              name: src.name ?? "tool",
-              arguments: "",
-            };
-            return [...prev.slice(0, -1), { ...last, blocks }];
-          });
-
-        } else if (et === "toolcall_delta") {
-          // Streamed JSON arguments — append the delta.
-          const { contentIndex, delta } = evt.data;
-          if (typeof delta !== "string" || !delta) return;
-          setMessages((prev) => {
-            if (prev.length === 0) return prev;
-            const last = prev[prev.length - 1];
-            if (last.role !== "assistant") return prev;
-            const blocks = [...last.blocks];
-            const b = blocks[contentIndex];
-            if (!b || b.type !== "toolCall") return prev;
-            const prevArgs =
-              typeof b.arguments === "string" ? b.arguments : JSON.stringify(b.arguments ?? "");
-            blocks[contentIndex] = { ...b, arguments: prevArgs + delta };
-            return [...prev.slice(0, -1), { ...last, blocks }];
-          });
-
-        } else if (et === "toolcall_end") {
-          // Tool call finalized — replace with the complete value.
-          const { contentIndex, toolCall } = evt.data;
-          if (!toolCall) return;
-          setMessages((prev) => {
-            if (prev.length === 0) return prev;
-            const last = prev[prev.length - 1];
-            if (last.role !== "assistant") return prev;
-            const blocks = [...last.blocks];
-            blocks[contentIndex] = {
-              type: "toolCall",
-              id: toolCall.id ?? `tc-${contentIndex}`,
-              name: toolCall.name ?? "tool",
-              arguments: toolCall.arguments ?? {},
-            };
-            return [...prev.slice(0, -1), { ...last, blocks }];
-          });
+        } else if (
+          et === "text_delta" ||
+          et === "thinking_delta" ||
+          et === "toolcall_start" ||
+          et === "toolcall_delta" ||
+          et === "toolcall_end"
+        ) {
+          // Streaming deltas: batch into one React render per animation frame.
+          queueDelta(et, evt.data);
 
         } else if (et === "message_done") {
           // Full message at stream end — self-heal (same as message_end).
@@ -348,7 +361,14 @@ export function useChat() {
         }
       });
     })();
-    return () => { unsub?.(); };
+    return () => {
+      // Cancel any pending delta batch and drop queued deltas (the transcript
+      // reload on session switch supersedes them).
+      if (deltaRafRef.current !== null) cancelAnimationFrame(deltaRafRef.current);
+      deltaRafRef.current = null;
+      deltaQueueRef.current = [];
+      unsub?.();
+    };
   }, [activeSessionId]);
 
   // ── Transcript events (full transcript after turn completes) ──

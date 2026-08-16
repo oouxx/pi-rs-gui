@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Send,
   Folder,
@@ -50,7 +50,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { useChat, type ContentBlock } from "@/hooks/useChat";
+import { useChat, type ContentBlock, type DisplayMessage } from "@/hooks/useChat";
 import { useThreadSearch } from "@/hooks/use-thread-search";
 import ToolCallCard from "@/components/ToolCallCard";
 import PickModel from "@/components/PickModel";
@@ -443,15 +443,29 @@ function TimelinePanel({
   );
 }
 
-/** Render a single content block. */
-function BlockRenderer({ block }: { block: ContentBlock }) {
+/** Render a single content block. Memoized: unchanged block references skip
+ *  re-render entirely, so a text_delta only re-renders the affected block. */
+const BlockRenderer = memo(function BlockRenderer({
+  block,
+  streaming,
+}: {
+  block: ContentBlock;
+  streaming?: boolean;
+}) {
   switch (block.type) {
     case "text":
-      return block.text ? (
+      if (!block.text) return null;
+      // While a message is actively streaming, render plain text — parsing
+      // markdown on every token is the dominant re-render cost. The final
+      // ReactMarkdown pass runs once the stream settles.
+      if (streaming) {
+        return <div className="whitespace-pre-wrap">{block.text}</div>;
+      }
+      return (
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
           {block.text}
         </ReactMarkdown>
-      ) : null;
+      );
 
     case "thinking":
       return <ThinkingBlock thinking={block.thinking} />;
@@ -481,7 +495,75 @@ function BlockRenderer({ block }: { block: ContentBlock }) {
     default:
       return null;
   }
-}
+});
+
+/** A single transcript message. Memoized: during streaming only the last
+ *  assistant message's props change (new blocks), so all other messages skip
+ *  re-rendering entirely. */
+const MessageItem = memo(function MessageItem({
+  msg,
+  streaming,
+  isLast,
+}: {
+  msg: DisplayMessage;
+  streaming: boolean;
+  isLast: boolean;
+}) {
+  const isLastAi = msg.role === "assistant" && isLast;
+  return (
+    <div
+      {...(isLast ? { "data-msg-last": "true" } : {})}
+      className={`group flex max-w-[820px] gap-3 ${msg.role === "user" ? "flex-row-reverse self-end" : ""}`}
+    >
+      <span
+        className={`flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
+          msg.role === "user"
+            ? "bg-ai text-white"
+            : "bg-bg-hover text-foreground"
+        }`}
+      >
+        {msg.role === "user" ? "U" : "AI"}
+      </span>
+      <div
+        className={`relative rounded-xl px-4 py-3 text-sm leading-relaxed ${
+          msg.role === "user"
+            ? "bg-ink-dim max-w-[70%] rounded-tr-sm text-foreground"
+            : "border-hairline bg-bg-surface rounded-tl-sm border text-foreground/80"
+        }`}
+      >
+        <CopyButton
+          text={msg.content}
+          className="text-muted-foreground hover:text-foreground absolute -top-1 right-1 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+        />
+        {msg.role === "assistant" ? (
+          msg.blocks.length > 0 ? (
+            msg.blocks.map((block, bi) => (
+              <BlockRenderer
+                key={`${msg.id}-b${bi}`}
+                block={block}
+                streaming={isLastAi && streaming}
+              />
+            ))
+          ) : streaming && isLastAi ? (
+            <div className="flex gap-1 py-1">
+              <span className="bg-muted-foreground size-1.5 animate-pulse rounded-full" />
+              <span
+                className="bg-muted-foreground size-1.5 animate-pulse rounded-full"
+                style={{ animationDelay: "0.2s" }}
+              />
+              <span
+                className="bg-muted-foreground size-1.5 animate-pulse rounded-full"
+                style={{ animationDelay: "0.4s" }}
+              />
+            </div>
+          ) : null
+        ) : (
+          msg.content
+        )}
+      </div>
+    </div>
+  );
+});
 
 export default function ChatView({
   onOpenSettings,
@@ -1363,65 +1445,14 @@ export default function ChatView({
               </div>
             </div>
           ) : (
-            messages.map((msg, idx) => {
-              const isLastAi =
-                msg.role === "assistant" && idx === messages.length - 1;
-              return (
-                <div
-                  key={msg.id}
-                  {...(idx === messages.length - 1
-                    ? { "data-msg-last": "true" }
-                    : {})}
-                  className={`group flex max-w-[820px] gap-3 ${msg.role === "user" ? "flex-row-reverse self-end" : ""}`}
-                >
-                  <span
-                    className={`flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
-                      msg.role === "user"
-                        ? "bg-ai text-white"
-                        : "bg-bg-hover text-foreground"
-                    }`}
-                  >
-                    {msg.role === "user" ? "U" : "AI"}
-                  </span>
-                  <div
-                    className={`relative rounded-xl px-4 py-3 text-sm leading-relaxed ${
-                      msg.role === "user"
-                        ? "bg-ink-dim max-w-[70%] rounded-tr-sm text-foreground"
-                        : "border-hairline bg-bg-surface rounded-tl-sm border text-foreground/80"
-                    }`}
-                  >
-                    <CopyButton
-                      text={msg.content}
-                      className="text-muted-foreground hover:text-foreground absolute -top-1 right-1 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
-                    />
-                    {msg.role === "assistant" ? (
-                      msg.blocks.length > 0 ? (
-                        msg.blocks.map((block, bi) => (
-                          <BlockRenderer
-                            key={`${msg.id}-b${bi}`}
-                            block={block}
-                          />
-                        ))
-                      ) : streaming && isLastAi ? (
-                        <div className="flex gap-1 py-1">
-                          <span className="bg-muted-foreground size-1.5 animate-pulse rounded-full" />
-                          <span
-                            className="bg-muted-foreground size-1.5 animate-pulse rounded-full"
-                            style={{ animationDelay: "0.2s" }}
-                          />
-                          <span
-                            className="bg-muted-foreground size-1.5 animate-pulse rounded-full"
-                            style={{ animationDelay: "0.4s" }}
-                          />
-                        </div>
-                      ) : null
-                    ) : (
-                      msg.content
-                    )}
-                  </div>
-                </div>
-              );
-            })
+            messages.map((msg, idx) => (
+              <MessageItem
+                key={msg.id}
+                msg={msg}
+                streaming={streaming}
+                isLast={idx === messages.length - 1}
+              />
+            ))
           )}
         </div>
 
