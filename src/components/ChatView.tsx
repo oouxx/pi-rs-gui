@@ -675,6 +675,11 @@ export default function ChatView({
         threadSearch.open();
         return;
       }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        setTerminalOpen((o) => !o);
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         const ta = textareaRef.current;

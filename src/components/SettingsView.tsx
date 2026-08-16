@@ -463,6 +463,7 @@ const KEYBINDINGS: { keys: string[]; action: string }[] = [
   { keys: ["@"], action: "Reference files in the workspace" },
   { keys: ["Cmd/Ctrl+F"], action: "Find in chat" },
   { keys: ["Cmd/Ctrl+K"], action: "Focus the composer" },
+  { keys: ["Cmd/Ctrl+J"], action: "Toggle the terminal panel" },
   { keys: ["Cmd/Ctrl+N"], action: "Start a new thread" },
   { keys: ["Cmd/Ctrl+,"], action: "Open / close Settings" },
   { keys: ["Esc"], action: "Close dialogs and search" },
