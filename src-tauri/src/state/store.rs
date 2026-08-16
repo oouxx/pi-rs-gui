@@ -572,6 +572,62 @@ impl Store {
         Ok(())
     }
 
+    /// Create a new session and immediately spawn its runtime, then adopt the
+    /// runtime's real session id into the UI record. Without this, the record
+    /// id ("sess-<ts>") differs from the runtime's pi-rs UUID, so streaming
+    /// agent events (keyed by the runtime id) are filtered out by the frontend
+    /// and the new thread appears to never respond.
+    pub async fn create_session_with_runtime(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        title: Option<&str>,
+    ) -> Result<DesktopState, String> {
+        self.abort().await;
+        *self.runtime.lock().await = None;
+        *self.session_id.lock().await = None;
+
+        let mut state = self
+            .mutate(app, |s| {
+                session::create_session_simple(s, title.unwrap_or("New thread"))
+            })
+            .await;
+        let placeholder_id = state.selected_session_id.clone();
+        if placeholder_id.is_empty() {
+            return Ok(state);
+        }
+
+        let cwd = {
+            let st = self.state.lock().await;
+            let rec = st.sessions.iter().find(|r| r.id == placeholder_id);
+            match rec {
+                Some(r) => resolve_session_cwd(r.cwd.as_deref()),
+                None => return Ok(state),
+            }
+        };
+        let session_dir = Self::session_dir_for(&cwd);
+        let sm = pi_coding_agent::core::session_manager::SessionManager::new(
+            &cwd,
+            &session_dir,
+            None,
+            true,
+            None,
+        );
+        self.spawn_runtime(app, &cwd, sm).await?;
+
+        let runtime_sid = self.session_id.lock().await.clone().unwrap_or_default();
+        if !runtime_sid.is_empty() && runtime_sid != placeholder_id {
+            state = self
+                .mutate(app, |s| {
+                    if let Some(rec) = s.sessions.iter_mut().find(|r| r.id == placeholder_id) {
+                        rec.id = runtime_sid.clone();
+                    }
+                    s.selected_session_id = runtime_sid.clone();
+                })
+                .await;
+        }
+        Ok(state)
+    }
+
     /// Compute the default session directory for a given cwd.
     fn session_dir_for(cwd: &str) -> String {
         let agent_dir = pi_coding_agent::config::get_agent_dir()
