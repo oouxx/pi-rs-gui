@@ -1,12 +1,18 @@
 //! The Store struct — central state manager for the Tauri backend.
+//!
+//! Concurrency model (ACP-style): each session owns a dedicated
+//! `SessionActor` task (see `actor.rs`). The Store holds a registry of
+//! session handles and forwards commands through mpsc mailboxes with oneshot
+//! replies. Multiple sessions run in parallel; switching the selected session
+//! does NOT destroy the old actor, so background sessions keep streaming.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use pi_agent_core::types::AgentMessage;
 use pi_coding_agent::core::agent_session::AgentSessionEvent;
 use pi_coding_agent::core::agent_session_runtime::{
-    create_agent_session_runtime, AgentSessionRuntime, CreateAgentSessionRuntimeFactory,
+    create_agent_session_runtime, CreateAgentSessionRuntimeFactory,
     CreateAgentSessionRuntimeParams, CreateAgentSessionRuntimeResult,
 };
 use pi_coding_agent::core::agent_session_services::{
@@ -15,8 +21,9 @@ use pi_coding_agent::core::agent_session_services::{
 };
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 
+use super::actor::{SessionActor, SessionCommand, SessionHandle};
 use super::cwd::{decide_cwd_action, resolve_session_cwd, CwdAction};
 use super::session;
 use super::transcript::{build_display_transcript, serialize_session_event};
@@ -53,21 +60,9 @@ pub fn set_sess_status(s: &mut DesktopState, sid: &str, status: &str) {
 
 pub struct Store {
     pub state: Mutex<DesktopState>,
-    pub runtime: Mutex<Option<AgentSessionRuntime>>,
-    pub session_id: Mutex<Option<String>>,
-    pub is_streaming: AtomicBool,
-    /// Abort signal that works even when the AgentSession is moved into a tokio task.
-    pub abort_flag: Arc<AtomicBool>,
-    /// Generation counter incremented on each session switch. The spawned
-    /// send_message task checks this before putting the runtime back, so a
-    /// stale task from a previous session doesn't overwrite the new runtime.
-    pub generation: AtomicU64,
-    /// Abort epoch + watch channel: bumping the epoch and sending notifies an
-    /// in-flight `add_user_text` task so it can call `session.abort()` and
-    /// actually stop the generation (the runtime is moved into the task, so
-    /// the plain flag alone never reached the running loop).
-    pub abort_epoch: AtomicU64,
-    pub abort_tx: tokio::sync::watch::Sender<u64>,
+    /// Session actors, keyed by the session's real id. One per session;
+    /// switching selection does not destroy them.
+    pub sessions: Mutex<HashMap<String, SessionHandle>>,
     /// Embedded terminal sessions (one per dock tab, Chrome-tab style).
     pub terminals: tokio::sync::Mutex<Vec<crate::state::terminal::TerminalSession>>,
 }
@@ -76,13 +71,7 @@ impl Store {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             state: Mutex::new(default_state()),
-            runtime: Mutex::new(None),
-            session_id: Mutex::new(None),
-            is_streaming: AtomicBool::new(false),
-            abort_flag: Arc::new(AtomicBool::new(false)),
-            generation: AtomicU64::new(0),
-            abort_epoch: AtomicU64::new(0),
-            abort_tx: tokio::sync::watch::channel(0).0,
+            sessions: Mutex::new(HashMap::new()),
             terminals: tokio::sync::Mutex::new(vec![]),
         })
     }
@@ -118,20 +107,52 @@ impl Store {
         result
     }
 
+    // ── Session actor lifecycle ─────────────────────────────
+
+    /// Send a command to a session's actor and await its oneshot reply.
+    pub async fn send_cmd<T>(
+        &self,
+        session_id: &str,
+        make: impl FnOnce(oneshot::Sender<T>) -> SessionCommand,
+    ) -> Result<T, String> {
+        let tx = {
+            let reg = self.sessions.lock().await;
+            reg.get(session_id)
+                .map(|h| h.tx.clone())
+                .ok_or_else(|| "no session".to_string())?
+        };
+        let (reply_tx, reply_rx) = oneshot::channel();
+        tx.send(make(reply_tx))
+            .map_err(|_| "session closed".to_string())?;
+        reply_rx.await.map_err(|_| "session closed".to_string())
+    }
+
     /// Build the runtime factory closure that creates AgentSessions.
     ///
     /// The factory captures the Store and AppHandle, reads current state at
-    /// creation time, and subscribes to session events before returning.
+    /// creation time, and subscribes to session events before returning. The
+    /// subscription reads the session id from a shared holder (updated by the
+    /// actor on fork/import) so events keep the correct id after the session
+    /// manager is swapped.
     fn build_runtime_factory(
         self: &Arc<Self>,
         app: &AppHandle,
-    ) -> CreateAgentSessionRuntimeFactory {
+    ) -> (
+        CreateAgentSessionRuntimeFactory,
+        Arc<std::sync::Mutex<String>>,
+    ) {
         let store = self.clone();
         let a = app.clone();
-        Arc::new(move |params: CreateAgentSessionRuntimeParams| {
-            let store = store.clone();
-            let a = a.clone();
-            Box::pin(async move {
+        // Current session id, shared with the actor so fork/import swaps keep
+        // the event subscription's sid in sync.
+        let sid_holder = Arc::new(std::sync::Mutex::new(String::new()));
+        let sid_holder_f = sid_holder.clone();
+        let factory: CreateAgentSessionRuntimeFactory = Arc::new(
+            move |params: CreateAgentSessionRuntimeParams| {
+                let store = store.clone();
+                let a = a.clone();
+                let sid_holder = sid_holder_f.clone();
+                Box::pin(async move {
                 pi_ai::providers::register_builtins::register_built_in_api_providers();
 
                 // Build the registry up front and pass it in so
@@ -222,17 +243,20 @@ impl Store {
                     })
                     .await;
 
-                // Subscribe to events
-                let sid = session.get_session_id();
+                // Subscribe to events. The session id comes from the shared
+                // holder so fork/import swaps keep it in sync.
                 let store2 = store.clone();
                 let a2 = a.clone();
-                let sid2 = sid.clone();
                 session.subscribe(Arc::new(move |event: AgentSessionEvent| {
+                    let sid = sid_holder
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone();
                     let (et, data) = serialize_session_event(&event);
                     if et == "agent_start" || et == "turn_start" {
                         let store = store2.clone();
                         let app = a2.clone();
-                        let sid = sid2.clone();
+                        let sid = sid.clone();
                         tokio::spawn(async move {
                             store
                                 .mutate(&app, |s| {
@@ -243,7 +267,7 @@ impl Store {
                     } else if et == "agent_end" || et == "turn_end" {
                         let store = store2.clone();
                         let app = a2.clone();
-                        let sid = sid2.clone();
+                        let sid = sid.clone();
                         tokio::spawn(async move {
                             store
                                 .mutate(&app, |s| {
@@ -255,7 +279,7 @@ impl Store {
                     if et == "tool_execution_start" {
                         eprintln!(
                             "[TOOL] start sid={} id={} name={}",
-                            sid2,
+                            sid,
                             data.get("tool_call_id")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or(""),
@@ -275,7 +299,7 @@ impl Store {
                         let snippet: String = result_str.chars().take(160).collect();
                         eprintln!(
                             "[TOOL] end   sid={} id={} name={} is_error={} result={:?}",
-                            sid2,
+                            sid,
                             data.get("tool_call_id")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or(""),
@@ -288,7 +312,7 @@ impl Store {
                         "agent-event",
                         FrontendEvent {
                             event_type: et,
-                            session_id: sid2.clone(),
+                            session_id: sid,
                             data,
                         },
                     );
@@ -301,55 +325,143 @@ impl Store {
                     model_fallback_message: result.model_fallback_message,
                 }
             })
-        })
+        },
+    );
+        (factory, sid_holder)
     }
 
-    /// List slash commands the composer menu offers: the 22 pi-rs builtins
-    /// plus extension/prompt/skill commands from the active session (mirrors
-    /// the TS interactive-mode command palette).
-    pub async fn list_slash_commands(&self) -> Vec<serde_json::Value> {
-        let mut items: Vec<serde_json::Value> = Vec::new();
+    /// Compute the default session directory for a given cwd.
+    fn session_dir_for(cwd: &str) -> String {
+        let agent_dir = pi_coding_agent::config::get_agent_dir()
+            .to_string_lossy()
+            .to_string();
+        pi_coding_agent::core::session_manager::SessionManager::default_session_dir(cwd, &agent_dir)
+    }
 
-        for c in pi_coding_agent::core::slash_commands::builtin_slash_commands() {
-            items.push(serde_json::json!({
-                "name": c.name,
-                "description": c.description,
-                "argumentHint": c.argument_hint,
-                "source": "builtin",
-            }));
-        }
+    /// Create an AgentSessionRuntime via the factory and spawn its actor.
+    /// Registers the actor under the runtime's real session id and updates the
+    /// selected UI record (rename placeholder id + backfill session_file).
+    /// Returns the real session id.
+    async fn spawn_actor(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        cwd: &str,
+        session_manager: pi_coding_agent::core::session_manager::SessionManager,
+    ) -> Result<String, String> {
+        let agent_dir = pi_coding_agent::config::get_agent_dir()
+            .to_string_lossy()
+            .to_string();
+        let (factory, sid_holder) = self.build_runtime_factory(app);
+        let runtime = create_agent_session_runtime(
+            factory,
+            CreateAgentSessionRuntimeParams {
+                cwd: cwd.to_string(),
+                agent_dir,
+                session_manager,
+                session_start_event: None,
+            },
+        )
+        .await;
+        let sid = runtime.session().get_session_id();
+        let session_file = runtime
+            .session()
+            .get_session_file()
+            .map(|p| p.to_string_lossy().to_string());
+        *sid_holder
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = sid.clone();
 
-        if let Some(runtime) = self.runtime.lock().await.as_ref() {
-            for c in runtime.session().get_commands_info() {
-                let source = match c.source {
-                    pi_coding_agent::core::slash_commands::SlashCommandSource::Extension => "extension",
-                    pi_coding_agent::core::slash_commands::SlashCommandSource::Prompt => "prompt",
-                    pi_coding_agent::core::slash_commands::SlashCommandSource::Skill => "skill",
-                };
-                items.push(serde_json::json!({
-                    "name": c.name,
-                    "description": c.description,
-                    "source": source,
-                }));
+        let handle = SessionActor::spawn(runtime, self.clone(), app.clone(), sid_holder);
+        self.sessions.lock().await.insert(sid.clone(), handle);
+
+        // Universal invariant: the UI-facing record id must equal the runtime's
+        // real session id, otherwise agent-event payloads (keyed by the runtime
+        // id) get filtered out by the frontend. Also backfill the session file
+        // so the record can be resumed later.
+        self.mutate(app, |s| {
+            if let Some(rec) = s.sessions.iter_mut().find(|r| r.id == s.selected_session_id) {
+                rec.id = sid.clone();
+                if let Some(file) = session_file.clone() {
+                    rec.session_file = Some(file);
+                }
             }
-        }
+            s.selected_session_id = sid.clone();
+        })
+        .await;
+        Ok(sid)
+    }
 
-        items
+    /// Ensure an actor exists for `session_id` (spawn one from the record's
+    /// file if missing). Used on selection so switching is instant and
+    /// background sessions stay alive.
+    pub async fn ensure_actor(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        session_id: &str,
+    ) -> Result<(), String> {
+        if self.sessions.lock().await.contains_key(session_id) {
+            return Ok(());
+        }
+        let (cwd, session_file) = {
+            let state = self.state.lock().await;
+            match state.sessions.iter().find(|s| s.id == session_id) {
+                Some(s) => (
+                    resolve_session_cwd(s.cwd.as_deref()),
+                    s.session_file.clone().filter(|f| !f.is_empty()),
+                ),
+                None => return Ok(()),
+            }
+        };
+        let session_dir = Self::session_dir_for(&cwd);
+        let session_manager = pi_coding_agent::core::session_manager::SessionManager::new(
+            &cwd,
+            &session_dir,
+            session_file.as_deref(),
+            true,
+            None,
+        );
+        self.spawn_actor(app, &cwd, session_manager).await?;
+        Ok(())
+    }
+
+    /// Ensure the currently selected session has an actor.
+    pub async fn ensure_selected_actor(self: &Arc<Self>, app: &AppHandle) -> Result<(), String> {
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() {
+            return Ok(());
+        }
+        self.ensure_actor(app, &sid).await
+    }
+
+    /// Abort and destroy a session's actor (archive/delete).
+    pub async fn shutdown_actor(self: &Arc<Self>, session_id: &str) {
+        if let Some(handle) = self.sessions.lock().await.remove(session_id) {
+            let _ = handle.tx.send(SessionCommand::Shutdown);
+        }
+    }
+
+    /// List slash commands the composer menu offers: the pi-rs builtins plus
+    /// extension/prompt/skill commands from the active session.
+    pub async fn list_slash_commands(&self) -> Vec<serde_json::Value> {
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() {
+            return Vec::new();
+        }
+        self.send_cmd(&sid, |reply| SessionCommand::GetCommands { reply })
+            .await
+            .unwrap_or_default()
     }
 
     /// Get the session tree (timeline) for a session. Uses the in-memory
-    /// runtime for the active session, otherwise opens the session file.
+    /// runtime when the session has a live actor, otherwise opens the file.
     pub async fn get_session_tree_json(
         &self,
         session_id: &str,
     ) -> Result<Vec<serde_json::Value>, String> {
-        let active_sid = self.session_id.lock().await.clone().unwrap_or_default();
-        if active_sid == session_id {
-            let runtime = self.runtime.lock().await;
-            if let Some(runtime) = runtime.as_ref() {
-                let tree = runtime.session().get_tree();
-                return Ok(crate::state::tree::tree_json(&tree, None));
-            }
+        if self.sessions.lock().await.contains_key(session_id) {
+            return self
+                .send_cmd(session_id, |reply| SessionCommand::GetTree { reply })
+                .await;
         }
         let session_file = {
             let state = self.state.lock().await;
@@ -365,48 +477,41 @@ impl Store {
         Ok(crate::state::tree::tree_from_session_file(&session_file))
     }
 
-    /// Navigate the active session's tree to a node and return the updated
-    /// tree. Non-active sessions cannot be navigated (no runtime).
+    /// Navigate the session's tree to a node and return the updated tree.
     pub async fn navigate_session_tree(
-        &self,
+        self: &Arc<Self>,
+        app: &AppHandle,
         session_id: &str,
         entry_id: &str,
     ) -> Result<Vec<serde_json::Value>, String> {
-        let active_sid = self.session_id.lock().await.clone().unwrap_or_default();
-        if active_sid != session_id {
-            return Err("can only navigate the active session".to_string());
-        }
-        let mut runtime = self.runtime.lock().await;
-        let runtime = runtime.as_mut().ok_or("No session")?;
-        let ok = runtime.session_mut().navigate_tree(entry_id).await;
-        if !ok {
-            return Err(format!("entry '{entry_id}' not found"));
-        }
-        let tree = runtime.session().get_tree();
-        Ok(crate::state::tree::tree_json(&tree, None))
+        self.send_cmd(session_id, |reply| SessionCommand::Navigate {
+            entry_id: entry_id.to_string(),
+            reply,
+        })
+        .await??;
+        // Emit the updated transcript so the chat pane switches to the branch.
+        let transcript = build_display_transcript(&self.get_messages().await);
+        let _ = app.emit(
+            "pi-gui:selected-transcript-changed",
+            &json!({ "sessionId": session_id, "transcript": transcript }),
+        );
+        self.get_session_tree_json(session_id).await
     }
 
-    /// Set the active session's model (and persist it as the global default,
-    /// matching the Models settings page behavior). Delegates to pi-rs
-    /// `AgentSession::set_model`, which also validates provider auth.
+    /// Set the selected session's model (and persist it as the global default).
     pub async fn set_session_model(
         self: &Arc<Self>,
         app: &AppHandle,
         provider: &str,
         model_id: &str,
     ) -> Result<DesktopState, String> {
-        // Take the runtime out of the mutex while awaiting so the command
-        // future stays Send (mirrors send_message).
-        let runtime = self.runtime.lock().await.take().ok_or("No session")?;
-        let model = runtime
-            .session()
-            .get_model_registry()
-            .find(provider, model_id)
-            .ok_or_else(|| format!("model '{provider}/{model_id}' not found"))?;
-        let result = runtime.session().set_model(model).await;
-        *self.runtime.lock().await = Some(runtime);
-        result?;
-
+        let sid = self.state.lock().await.selected_session_id.clone();
+        self.send_cmd(&sid, |reply| SessionCommand::SetModel {
+            provider: provider.to_string(),
+            model_id: model_id.to_string(),
+            reply,
+        })
+        .await??;
         Ok(self
             .mutate(app, |s| {
                 super::model::set_default_model(s, provider, model_id);
@@ -414,22 +519,25 @@ impl Store {
             .await)
     }
 
-    /// The active session's current model (falls back to the global default).
+    /// The selected session's current model (falls back to the global default).
     pub async fn get_session_model(&self) -> serde_json::Value {
-        let runtime = self.runtime.lock().await;
-        if let Some(runtime) = runtime.as_ref() {
-            let m = runtime.session().get_model().await;
-            return serde_json::json!({ "provider": m.provider, "modelId": m.id });
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if !sid.is_empty() {
+            if let Ok(v) = self
+                .send_cmd(&sid, |reply| SessionCommand::GetModel { reply })
+                .await
+            {
+                return v;
+            }
         }
         let state = self.state.lock().await;
-        serde_json::json!({
+        json!({
             "provider": state.global_model_settings.default_provider,
             "modelId": state.global_model_settings.default_model_id,
         })
     }
 
-    /// Session info for the frontend header popover: title, cwd, session
-    /// file, message count, created timestamp, and current model.
+    /// Session info for the frontend header popover.
     pub async fn get_session_info(&self, session_id: &str) -> serde_json::Value {
         let (title, cwd, session_file) = {
             let state = self.state.lock().await;
@@ -475,132 +583,107 @@ impl Store {
         })
     }
 
-    /// Manually compact the active session (matches TS `/compact`).
-    /// Emits the updated transcript so the chat reflects the compaction.
+    /// Manually compact the selected session (matches TS `/compact`).
     pub async fn compact_session(
         self: &Arc<Self>,
-        app: &AppHandle,
+        _app: &AppHandle,
         custom_instructions: Option<&str>,
     ) -> Result<DesktopState, String> {
-        let sid = self.session_id.lock().await.clone().ok_or("No session")?;
-        let runtime = self.runtime.lock().await.take().ok_or("No session")?;
-        let result = runtime
-            .session()
-            .compact(custom_instructions)
-            .await
-            .map_err(|e| e.to_string());
-        *self.runtime.lock().await = Some(runtime);
-        result?;
-
-        let transcript = build_display_transcript(&self.get_messages().await);
-        let _ = app.emit(
-            "pi-gui:selected-transcript-changed",
-            &json!({ "sessionId": sid, "transcript": transcript }),
-        );
+        let sid = self.state.lock().await.selected_session_id.clone();
+        self.send_cmd(&sid, |reply| SessionCommand::Compact {
+            custom_instructions: custom_instructions.map(|s| s.to_string()),
+            reply,
+        })
+        .await??;
         Ok(self.state.lock().await.clone())
     }
 
-    /// Refresh the Store after the runtime's session was replaced (fork/import):
-    /// update the active session id, rescan the session list, and emit the
-    /// updated transcript.
+    /// Refresh the Store after a fork/import swapped the session: re-register
+    /// the actor handle under the new id, rescan the session list, select the
+    /// new session, and emit the updated transcript.
     async fn refresh_after_session_swap(
         self: &Arc<Self>,
         app: &AppHandle,
+        old_id: &str,
+        new_id: &str,
     ) -> DesktopState {
-        let new_sid = self
-            .runtime
-            .lock()
-            .await
-            .as_ref()
-            .map(|r| r.session().get_session_id().to_string())
-            .unwrap_or_default();
-        if !new_sid.is_empty() {
-            *self.session_id.lock().await = Some(new_sid.clone());
+        // Re-register the actor under the new id (same mailbox).
+        if new_id != old_id {
+            let mut reg = self.sessions.lock().await;
+            if let Some(handle) = reg.remove(old_id) {
+                reg.insert(new_id.to_string(), handle);
+            }
         }
-        let state = self
-            .mutate(app, |s| {
+        if !new_id.is_empty() {
+            let state = self
+                .mutate(app, |s| {
+                    s.sessions = super::session::scan_existing_sessions();
+                    s.selected_session_id = new_id.to_string();
+                    super::session::select_session_by_id(s, new_id);
+                })
+                .await;
+            let transcript = build_display_transcript(&self.get_messages().await);
+            if !transcript.is_empty() {
+                let _ = app.emit(
+                    "pi-gui:selected-transcript-changed",
+                    &json!({ "sessionId": new_id, "transcript": transcript }),
+                );
+            }
+            state
+        } else {
+            self.mutate(app, |s| {
                 s.sessions = super::session::scan_existing_sessions();
-                if !new_sid.is_empty() {
-                    s.selected_session_id = new_sid.clone();
-                    super::session::select_session_by_id(s, &new_sid);
-                }
             })
-            .await;
-        let transcript = build_display_transcript(&self.get_messages().await);
-        if !transcript.is_empty() {
-            let _ = app.emit(
-                "pi-gui:selected-transcript-changed",
-                &json!({ "sessionId": new_sid, "transcript": transcript }),
-            );
+            .await
         }
-        state
     }
 
-    /// Fork the active session at a timeline node (matches TS `fork` at
-    /// position "at"). The runtime swaps to the new branch; the session list
-    /// is rescanned so the new session appears.
+    /// Fork the selected session at a timeline node (matches TS `fork`).
     pub async fn fork_session_at(
         self: &Arc<Self>,
         app: &AppHandle,
         entry_id: &str,
     ) -> Result<DesktopState, String> {
-        // Use the session-level fork (session_mgr_fork): the runtime-level
-        // `AgentSessionRuntime::fork` holds non-Sync internals across awaits
-        // which makes its future !Send for Tauri IPC.
-        let mut runtime = self.runtime.lock().await.take().ok_or("No session")?;
-        let result = runtime
-            .session_mut()
-            .session_mgr_fork(entry_id)
-            .await
-            .map_err(|e| e.to_string());
-        *self.runtime.lock().await = Some(runtime);
-        result?;
-        Ok(self.refresh_after_session_swap(app).await)
+        let sid = self.state.lock().await.selected_session_id.clone();
+        let new_id = self
+            .send_cmd(&sid, |reply| SessionCommand::ForkAt {
+                entry_id: entry_id.to_string(),
+                reply,
+            })
+            .await??;
+        Ok(self.refresh_after_session_swap(app, &sid, &new_id).await)
     }
 
-    /// Import a session from a JSONL file (matches TS `/import`): switches the
-    /// active session manager to the imported file.
+    /// Import a session from a JSONL file (matches TS `/import`).
     pub async fn import_session(
         self: &Arc<Self>,
         app: &AppHandle,
         input_path: &str,
     ) -> Result<DesktopState, String> {
-        let mut runtime = self.runtime.lock().await.take().ok_or("No session")?;
-        let result = runtime
-            .session_mut()
-            .session_mgr_switch(input_path, None)
-            .await
-            .map_err(|e| e.to_string());
-        *self.runtime.lock().await = Some(runtime);
-        result?;
-        Ok(self.refresh_after_session_swap(app).await)
+        let sid = self.state.lock().await.selected_session_id.clone();
+        let new_id = self
+            .send_cmd(&sid, |reply| SessionCommand::Import {
+                path: input_path.to_string(),
+                reply,
+            })
+            .await??;
+        Ok(self.refresh_after_session_swap(app, &sid, &new_id).await)
     }
 
     /// Reload settings (matches TS `/reload`).
     pub async fn reload_session(&self) -> Result<(), String> {
-        let runtime = self.runtime.lock().await.take().ok_or("No session")?;
-        runtime.session().reload().await;
-        *self.runtime.lock().await = Some(runtime);
-        Ok(())
+        let sid = self.state.lock().await.selected_session_id.clone();
+        self.send_cmd(&sid, |reply| SessionCommand::Reload { reply })
+            .await?
     }
 
-    /// Create a new session and immediately spawn its runtime, then adopt the
-    /// runtime's real session id into the UI record. Without this, the record
-    /// id ("sess-<ts>") differs from the runtime's pi-rs UUID, so streaming
-    /// agent events (keyed by the runtime id) are filtered out by the frontend
-    /// and the new thread appears to never respond.
+    /// Create a new session and immediately spawn its actor, then adopt the
+    /// runtime's real session id into the UI record.
     pub async fn create_session_with_runtime(
         self: &Arc<Self>,
         app: &AppHandle,
         title: Option<&str>,
     ) -> Result<DesktopState, String> {
-        // Bump generation so an in-flight send_message task from the previous
-        // session won't put its stale runtime back over the new one.
-        self.generation.fetch_add(1, Ordering::SeqCst);
-        self.abort().await;
-        *self.runtime.lock().await = None;
-        *self.session_id.lock().await = None;
-
         let state = self
             .mutate(app, |s| {
                 session::create_session_simple(s, title.unwrap_or("New thread"))
@@ -616,7 +699,7 @@ impl Store {
             let rec = st.sessions.iter().find(|r| r.id == placeholder_id);
             match rec {
                 Some(r) => resolve_session_cwd(r.cwd.as_deref()),
-                None => return Ok(state),
+                None => return Ok(self.state.lock().await.clone()),
             }
         };
         let session_dir = Self::session_dir_for(&cwd);
@@ -627,250 +710,63 @@ impl Store {
             true,
             None,
         );
-        self.spawn_runtime(app, &cwd, sm).await?;
-        // spawn_runtime adopts the runtime's real id into the record, so
-        // `state` above may carry a stale placeholder id — return fresh state.
+        self.spawn_actor(app, &cwd, sm).await?;
+        // spawn_actor adopts the runtime's real id into the record, so `state`
+        // above may carry a stale placeholder id — return fresh state.
         Ok(self.state.lock().await.clone())
     }
 
-    /// Compute the default session directory for a given cwd.
-    fn session_dir_for(cwd: &str) -> String {
-        let agent_dir = pi_coding_agent::config::get_agent_dir()
-            .to_string_lossy()
-            .to_string();
-        pi_coding_agent::core::session_manager::SessionManager::default_session_dir(cwd, &agent_dir)
-    }
-
-    /// Single point that assembles an `AgentSessionRuntime` via the factory and
-    /// installs it as the active runtime. All session/runtime swaps (init,
-    /// select, fork) go through here.
-    async fn spawn_runtime(
-        self: &Arc<Self>,
-        app: &AppHandle,
-        cwd: &str,
-        session_manager: pi_coding_agent::core::session_manager::SessionManager,
-    ) -> Result<(), String> {
-        let agent_dir = pi_coding_agent::config::get_agent_dir()
-            .to_string_lossy()
-            .to_string();
-        let factory = self.build_runtime_factory(app);
-        let runtime = create_agent_session_runtime(
-            factory,
-            CreateAgentSessionRuntimeParams {
-                cwd: cwd.to_string(),
-                agent_dir,
-                session_manager,
-                session_start_event: None,
-            },
-        )
-        .await;
-        let sid = runtime.session().get_session_id();
-        // Capture the session file BEFORE moving the runtime into the store:
-        // the UI record needs it so select_session can resume this session
-        // (and the Fork-path verification can confirm persistence).
-        let session_file = runtime
-            .session()
-            .get_session_file()
-            .map(|p| p.to_string_lossy().to_string());
-        *self.session_id.lock().await = Some(sid.clone());
-        *self.runtime.lock().await = Some(runtime);
-
-        // Universal invariant: the UI-facing record id must equal the runtime's
-        // real session id, otherwise agent-event payloads (keyed by the runtime
-        // id) get filtered out by the frontend. This covers legacy
-        // "sess-<ts>" records and any other id divergence. Also backfill the
-        // session file so the record can be resumed later.
-        self.mutate(app, |s| {
-            if let Some(rec) = s.sessions.iter_mut().find(|r| r.id == s.selected_session_id) {
-                rec.id = sid.clone();
-                if let Some(file) = session_file.clone() {
-                    rec.session_file = Some(file);
-                }
-            }
-            s.selected_session_id = sid.clone();
-        })
-        .await;
-        Ok(())
-    }
-
-    /// Create the initial AgentSessionRuntime for a given cwd.
-    async fn init_runtime(self: &Arc<Self>, app: &AppHandle, cwd: &str) -> Result<(), String> {
-        eprintln!(
-            "[CWD] init_runtime cwd={:?} exists={}",
-            cwd,
-            std::path::Path::new(cwd).exists()
-        );
-        if cwd.is_empty() {
-            eprintln!("[CWD] WARNING cwd is empty — bash tool will fail");
-        } else if !std::path::Path::new(cwd).exists() {
-            eprintln!("[CWD] WARNING cwd does not exist — bash tool will fail");
-        }
-
-        let session_dir = Self::session_dir_for(cwd);
-        let session_manager = pi_coding_agent::core::session_manager::SessionManager::new(
-            cwd,
-            &session_dir,
-            None,
-            true,
-            None,
-        );
-        self.spawn_runtime(app, cwd, session_manager).await
-    }
-
-    /// Select a session: abort current streaming, discard old runtime, and
-    /// initialize a new runtime for the selected session (loading its session
-    /// file if one exists on disk).
+    /// Select a session: update the selected id and ensure its actor exists.
+    /// The previously selected session's actor is NOT destroyed — background
+    /// streaming continues (multi-session).
     pub async fn select_session(
         self: &Arc<Self>,
         app: &AppHandle,
         session_id: &str,
     ) -> Result<DesktopState, String> {
-        // 1. Bump generation so any in-flight send_message task won't
-        //    overwrite our new runtime with the old one.
-        self.generation.fetch_add(1, Ordering::SeqCst);
-
-        // 2. Abort any current streaming
-        self.abort().await;
-
-        // 3. Discard old runtime
-        *self.runtime.lock().await = None;
-
-        // 4. Update state (selected_session_id)
-        let state = self
+        let _state = self
             .mutate(app, |s| {
                 session::select_session_by_id(s, session_id);
             })
             .await;
-
-        // 5. Read session info for runtime init (cwd + session_file)
-        let (cwd, session_file) = {
-            let state_lock = self.state.lock().await;
-            let sess = state_lock.sessions.iter().find(|s| s.id == session_id);
-            match sess {
-                Some(s) => (
-                    resolve_session_cwd(s.cwd.as_deref()),
-                    s.session_file.clone().filter(|f| !f.is_empty()),
-                ),
-                None => return Ok(state),
-            }
-        };
-
-        // 6. Initialize a new runtime for the selected session
-        let session_dir = Self::session_dir_for(&cwd);
-        let session_manager = pi_coding_agent::core::session_manager::SessionManager::new(
-            &cwd,
-            &session_dir,
-            session_file.as_deref(),
-            true,
-            None,
-        );
-        self.spawn_runtime(app, &cwd, session_manager).await?;
-
+        self.ensure_actor(app, session_id).await?;
         Ok(self.state.lock().await.clone())
     }
 
     pub async fn send_message(self: &Arc<Self>, app: &AppHandle, text: &str) -> Result<(), String> {
-        // Lazily init runtime if not yet created
-        if self.runtime.lock().await.is_none() {
-            let cwd = {
-                let state = self.state.lock().await;
-                let sess_cwd = state
-                    .sessions
-                    .iter()
-                    .find(|s| s.id == state.selected_session_id)
-                    .and_then(|s| s.cwd.as_deref());
-                resolve_session_cwd(sess_cwd)
-            };
-            self.init_runtime(app, &cwd).await?;
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() {
+            return Err("No session".to_string());
         }
+        // Lazy-init an actor for the selected session if needed.
+        self.ensure_actor(app, &sid).await?;
 
-        let sid = self.session_id.lock().await.clone().ok_or("No session")?;
-        let mut runtime = self.runtime.lock().await.take().ok_or("No session")?;
-        self.abort_flag.store(false, Ordering::SeqCst);
-        self.is_streaming.store(true, Ordering::SeqCst);
-        let s = self.clone();
-        let a = app.clone();
-        let t = text.to_string();
-        let sid2 = sid.clone();
-        let abort = self.abort_flag.clone();
-        let gen = self.generation.load(Ordering::SeqCst);
         let _ = app.emit(
             "agent-event",
             FrontendEvent {
                 event_type: "user_message".into(),
-                session_id: sid,
+                session_id: sid.clone(),
                 data: json!({"text": text, "timestamp": chrono::Utc::now().timestamp_millis()}),
             },
         );
 
-        let diag_provider;
-        let diag_model;
-        {
-            let agent_dir = pi_coding_agent::config::get_agent_dir();
-            let mgr = pi_coding_agent::core::settings_manager::SettingsManager::create(
-                agent_dir.to_string_lossy().as_ref(),
-                Some(agent_dir.to_string_lossy().as_ref()),
-            );
-            let settings = mgr.get_settings();
-            diag_provider = settings.default_provider.clone();
-            diag_model = settings.default_model.clone();
-        }
-        eprintln!("[LLM] send: provider={diag_provider:?} model={diag_model:?}");
-
-        tokio::spawn(async move {
-            // Subscribe to abort notifications BEFORE the flag check so there
-            // is no race window where a Stop arriving between the check and the
-            // select would be missed.
-            let mut abort_rx = s.abort_tx.subscribe();
-            let run_epoch = *abort_rx.borrow();
-            // Check abort before starting agent loop
-            if !abort.load(Ordering::SeqCst) {
-                eprintln!("[LLM] <<< {}", &t);
-                // add_user_text persists the user message AND runs the agent loop.
-                // Race it against abort notifications so Stop actually stops an
-                // in-flight generation, and wrap it with a 5-minute timeout.
-                // Note: session.abort() is called only AFTER the select ends so
-                // the &mut borrow of the runtime never coexists with a shared one.
-                let mut agent_fut = Box::pin(runtime.session_mut().add_user_text(&t));
-                let aborted = tokio::time::timeout(
-                    std::time::Duration::from_secs(300),
-                    async {
-                        tokio::select! {
-                            _ = &mut agent_fut => false,
-                            changed = abort_rx.changed() => {
-                                changed.is_err() || *abort_rx.borrow() != run_epoch
-                            }
-                        }
-                    },
-                )
-                .await;
-                if aborted.is_err() || aborted.unwrap_or(false) {
-                    eprintln!("[LLM] add_user_text aborted/timed out, aborting");
-                    // End the mutable borrow held by the pinned future before
-                    // taking a shared one for abort().
-                    drop(agent_fut);
-                    runtime.session().abort().await;
-                }
-            }
-            eprintln!("[LLM] add_user_text done");
-            // Only put the runtime back if the generation hasn't changed
-            // (i.e. no session switch happened while we were streaming).
-            if s.generation.load(Ordering::SeqCst) == gen {
-                *s.runtime.lock().await = Some(runtime);
-            } else {
-                eprintln!("[LLM] generation changed — discarding stale runtime");
-            }
-            s.is_streaming.store(false, Ordering::SeqCst);
-            // Emit transcript with captured sid2 (not state.selected_session_id)
-            // so the frontend gets the right transcript even after a session switch.
-            let msgs2 = s.get_messages().await;
-            let transcript = build_display_transcript(&msgs2);
-            if !transcript.is_empty() {
-                let payload = json!({"sessionId": sid2, "transcript": transcript});
-                let _ = a.emit("pi-gui:selected-transcript-changed", &payload);
-            }
-        });
+        self.send_cmd(&sid, |reply| SessionCommand::SendMessage {
+            text: text.to_string(),
+            reply,
+        })
+        .await??;
         Ok(())
+    }
+
+    /// Abort the selected session's in-flight run.
+    pub async fn abort(&self) {
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() {
+            return;
+        }
+        let _ = self
+            .send_cmd(&sid, |reply| SessionCommand::Abort { reply })
+            .await;
     }
 
     /// Set the working directory for a session. If the session is already
@@ -909,7 +805,7 @@ impl Store {
         };
 
         let action = decide_cwd_action(current_file.as_deref(), &new_cwd, current_cwd.as_deref());
-        // spawn_runtime backfills session_file on every record, including fresh
+        // spawn_actor backfills session_file on every record, including fresh
         // sessions whose file path is computed but NOT yet created (no messages
         // sent). Forking from a non-existent file fails — downgrade to
         // SetInPlace (re-init the runtime with the new cwd) in that case.
@@ -932,14 +828,9 @@ impl Store {
         match action {
             CwdAction::NoOp => Ok(self.state.lock().await.clone()),
             CwdAction::SetInPlace => {
-                // The record has no session file, but a runtime may already
-                // exist (create_session_with_runtime spawns one immediately).
-                // Discard it and re-init with the new cwd so tools (bash etc.)
-                // run in the right directory.
-                self.generation.fetch_add(1, Ordering::SeqCst);
-                self.abort().await;
-                *self.runtime.lock().await = None;
-                *self.session_id.lock().await = None;
+                // No history: destroy the old actor (its cwd is fixed at
+                // creation) and re-init a fresh one with the new cwd.
+                self.shutdown_actor(session_id).await;
                 let sid = session_id.to_string();
                 let cwd = new_cwd.clone();
                 self.mutate(app, |s| {
@@ -948,14 +839,10 @@ impl Store {
                     }
                 })
                 .await;
-                self.init_runtime(app, &new_cwd).await?;
+                self.ensure_selected_actor(app).await?;
                 Ok(self.state.lock().await.clone())
             }
             CwdAction::Fork => {
-                // Bump generation so an in-flight send_message task from the
-                // old session won't put its stale runtime back over the fork.
-                self.generation.fetch_add(1, Ordering::SeqCst);
-                self.abort().await;
                 let new_id = format!("sess-{}", chrono::Utc::now().timestamp_millis());
                 let cwd_for_record = new_cwd.clone();
                 let title2 = title.clone();
@@ -981,15 +868,13 @@ impl Store {
                     s.selected_session_id = new_id.clone();
                 })
                 .await;
-                // Fork the session via AgentSessionRuntime.
-                // pi-rs copies the history into a new session file under the new cwd.
+                // pi-rs copies the history into a new session file under the
+                // new cwd; spawn a fresh actor for it. The original session's
+                // actor stays alive (multi-session).
                 let old_file = current_file.clone().unwrap_or_default();
                 let result = if old_file.is_empty() {
-                    // No history to fork — just init a new runtime
-                    self.init_runtime(app, &new_cwd).await.map(|_| ())
+                    self.ensure_selected_actor(app).await.map(|_| ())
                 } else {
-                    // Discard old runtime and create a new one forked from the old file
-                    *self.runtime.lock().await = None;
                     let session_dir = Self::session_dir_for(&new_cwd);
                     let session_manager =
                         pi_coding_agent::core::session_manager::SessionManager::fork_from(
@@ -999,19 +884,14 @@ impl Store {
                             None,
                         )
                         .map_err(|e| format!("Failed to fork session: {e}"))?;
-                    self.spawn_runtime(app, &new_cwd, session_manager).await
+                    self.spawn_actor(app, &new_cwd, session_manager).await.map(|_| ())
                 };
                 match result {
                     Ok(()) => {
-                        // spawn_runtime renames the placeholder record to the
-                        // runtime's real pi-rs id — verify THAT record has a
+                        // spawn_actor renames the placeholder record to the
+                        // runtime's real id — verify THAT record has a
                         // session_file (pi-rs backfills it on fork).
-                        let real_id = self
-                            .session_id
-                            .lock()
-                            .await
-                            .clone()
-                            .unwrap_or_default();
+                        let real_id = self.state.lock().await.selected_session_id.clone();
                         let state = self.state.lock().await;
                         let file_set = state
                             .sessions
@@ -1044,23 +924,13 @@ impl Store {
         }
     }
 
-    pub async fn abort(&self) {
-        // Set the abort flag first — works even when runtime is moved into a tokio task
-        self.abort_flag.store(true, Ordering::SeqCst);
-        // Notify the in-flight add_user_text task so it calls session.abort().
-        let epoch = self.abort_epoch.fetch_add(1, Ordering::SeqCst) + 1;
-        let _ = self.abort_tx.send(epoch);
-        // Also try to abort the AgentSession directly if it's available
-        if let Some(r) = self.runtime.lock().await.as_ref() {
-            r.session().abort().await;
-        }
-        self.is_streaming.store(false, Ordering::SeqCst);
-    }
-
     pub async fn get_messages(&self) -> Vec<AgentMessage> {
-        match self.runtime.lock().await.as_ref() {
-            Some(r) => r.session().get_messages().await,
-            None => vec![],
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() {
+            return vec![];
         }
+        self.send_cmd(&sid, |reply| SessionCommand::GetMessages { reply })
+            .await
+            .unwrap_or_default()
     }
 }

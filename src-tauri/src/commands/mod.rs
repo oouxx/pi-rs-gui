@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::state::*;
 use crate::state::{model, providers, session, settings};
+use crate::state::actor::SessionCommand;
 use serde_json::json;
 use tauri::{AppHandle, Emitter, State};
 
@@ -43,18 +44,14 @@ pub async fn archive_session(
     store: State<'_, Arc<Store>>,
     session_id: String,
 ) -> Result<DesktopState, String> {
-    // Bump generation so an in-flight send_message task won't put its stale
-    // runtime back after we discard it below.
-    store.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    store.abort().await;
-    let active = store.session_id.lock().await.clone().unwrap_or_default();
-    if active == session_id {
-        *store.runtime.lock().await = None;
-        *store.session_id.lock().await = None;
-    }
-    Ok(store
+    // Destroy the session's actor (abort + remove from the registry).
+    store.shutdown_actor(&session_id).await;
+    let state = store
         .mutate(&app, |s| session::archive_session_by_id(s, &session_id))
-        .await)
+        .await;
+    // Ensure the newly selected session has an actor ready.
+    store.ensure_selected_actor(&app).await.ok();
+    Ok(state)
 }
 
 #[tauri::command]
@@ -63,21 +60,14 @@ pub async fn delete_session(
     store: State<'_, Arc<Store>>,
     session_id: String,
 ) -> Result<DesktopState, String> {
-    // Bump generation so an in-flight send_message task won't put its stale
-    // runtime back after we discard it below.
-    store.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    store.abort().await;
-    // If the deleted session is the active runtime, discard the runtime so a
-    // later send can't resurrect the deleted file (send_message lazily
-    // re-creates a runtime for the newly selected session).
-    let active = store.session_id.lock().await.clone().unwrap_or_default();
-    if active == session_id {
-        *store.runtime.lock().await = None;
-        *store.session_id.lock().await = None;
-    }
-    Ok(store
+    // Destroy the session's actor (abort + remove from the registry).
+    store.shutdown_actor(&session_id).await;
+    let state = store
         .mutate(&app, |s| session::delete_session_by_id(s, &session_id))
-        .await)
+        .await;
+    // Ensure the newly selected session has an actor ready.
+    store.ensure_selected_actor(&app).await.ok();
+    Ok(state)
 }
 
 #[tauri::command]
@@ -89,12 +79,17 @@ pub async fn rename_session(
 ) -> Result<DesktopState, String> {
     // Persist the name to the session file via pi-rs (append_session_info) so
     // renames survive restarts — the in-memory record alone is rebuilt from
-    // the files on the next launch.
-    let active = store.session_id.lock().await.clone().unwrap_or_default();
-    if active == session_id {
-        if let Some(runtime) = store.runtime.lock().await.as_ref() {
-            runtime.session().set_session_name(&title);
-        }
+    // the files on the next launch. If the session has a live actor, delegate
+    // to its SetName command; otherwise open the file directly.
+    let has_actor = store.sessions.lock().await.contains_key(&session_id);
+    if has_actor {
+        store
+            .send_cmd(&session_id, |reply| SessionCommand::SetName {
+                name: title.clone(),
+                reply,
+            })
+            .await
+            .ok();
     } else {
         let file = {
             let state = store.state.lock().await;
@@ -337,12 +332,10 @@ pub async fn get_selected_transcript(
         return Ok(None);
     }
 
-    // Prefer in-memory session messages (more up-to-date than file),
-    // but only if the active AgentSession matches the requested session.
-    // During streaming the session is moved into a tokio task, so
-    // get_messages() returns empty — fall through to file-based read.
-    let active_sid = store.session_id.lock().await.clone().unwrap_or_default();
-    if active_sid == sess_id {
+    // Prefer in-memory session messages (more up-to-date than file) whenever
+    // the session has a live actor — with multi-session the actor for the
+    // selected session may exist even while another session streams.
+    if store.sessions.lock().await.contains_key(&sess_id) {
         let in_memory = store.get_messages().await;
         if !in_memory.is_empty() {
             let transcript = crate::state::build_display_transcript(&in_memory);
@@ -501,7 +494,7 @@ pub async fn navigate_session_tree(
     session_id: String,
     entry_id: String,
 ) -> Result<Vec<serde_json::Value>, String> {
-    store.navigate_session_tree(&session_id, &entry_id).await?;
+    store.navigate_session_tree(&app, &session_id, &entry_id).await?;
     // Emit the updated transcript so the chat pane switches to the new branch.
     let transcript =
         crate::state::build_display_transcript(&store.get_messages().await);

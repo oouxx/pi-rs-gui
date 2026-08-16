@@ -1,3 +1,4 @@
+pub(crate) mod actor;
 pub(crate) mod cwd;
 pub(crate) mod export;
 pub(crate) mod extensions;

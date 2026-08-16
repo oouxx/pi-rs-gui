@@ -140,6 +140,10 @@ export function useChat() {
           // merged onto their toolCall block via tool_execution_* events.
           const msg = evt.data?.message;
           if (!msg || msg.role !== "assistant") return;
+          // A turn is starting for the active session — reflect streaming
+          // (covers switching to a background session that is still running).
+          setStreaming(true);
+          streamingRef.current = true;
           const rawBlocks = msg.content;
           const blocks = toBlocks(rawBlocks);
           const text = extractText(rawBlocks);
@@ -313,10 +317,19 @@ export function useChat() {
     }
     setActiveSessionId(sessionId);
     setMessages([]);
-    // Clear streaming: the old session's transcript event is filtered out by
-    // the sessionId check, so nothing else would reset the Stop button.
-    setStreaming(false);
-    streamingRef.current = false;
+    // Multi-session: the backend no longer aborts the old session. Derive
+    // streaming from the selected session's status (a background session that
+    // is still running keeps the Stop button visible).
+    try {
+      const state = await getState();
+      const sess = (state.sessions ?? []).find((s: any) => s.id === sessionId);
+      const running = sess?.status === "running";
+      setStreaming(running);
+      streamingRef.current = running;
+    } catch {
+      setStreaming(false);
+      streamingRef.current = false;
+    }
     // The transcript effect on [activeSessionId] bumps the generation counter
     // and fetches the transcript — no need to fetch here (a second fetch would
     // always be discarded by the generation check).
