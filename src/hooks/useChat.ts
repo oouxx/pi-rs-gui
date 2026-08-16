@@ -297,8 +297,12 @@ export function useChat() {
   }, [activeSessionId]);
 
   const selectSession = useCallback(async (sessionId: string) => {
-    await apiSelectSession(sessionId);
+    // Set the ref BEFORE the await: the backend emits pi-gui:state-changed
+    // mid-switch, which makes refreshState() set activeSessionId prematurely
+    // and trigger a duplicate transcript fetch whose result selectSession's
+    // setMessages([]) can then wipe (and no re-fetch happens).
     activeSessionIdRef.current = sessionId;
+    await apiSelectSession(sessionId);
     setActiveSessionId(sessionId);
     setMessages([]);
     // Clear streaming: the old session's transcript event is filtered out by

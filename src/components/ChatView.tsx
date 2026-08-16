@@ -632,15 +632,6 @@ export default function ChatView({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevInputRef = useRef("");
 
-  // Scroll to bottom when switching sessions. The `key` on the container forces
-  // a re-mount, and the ref callback runs after the DOM is committed.
-  const scrollRef = useCallback((el: HTMLDivElement | null) => {
-    if (!el) return;
-    requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
-    });
-  }, []);
-
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
   const threadSearch = useThreadSearch(timelineRef);
@@ -662,11 +653,15 @@ export default function ChatView({
 
   // Scroll to the bottom whenever content changes (streaming deltas, or a
   // transcript that finished loading after a session switch) while the user
-  // hasn't scrolled up.
+  // hasn't scrolled up. Runs after paint (rAF) so scrollHeight is final.
   useEffect(() => {
     if (!stickToBottomRef.current) return;
     const el = timelineRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    const raf = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(raf);
   }, [messages, activeSessionId, streaming]);
 
   // Cmd/Ctrl+F opens in-chat search; Esc closes it (the hook handles cleanup)
@@ -1243,12 +1238,9 @@ export default function ChatView({
         <div className="flex min-h-0 flex-1 flex-col">
           <div
             key={activeSessionId}
-          ref={(el) => {
-            timelineRef.current = el;
-            scrollRef(el);
-          }}
-          className="timeline relative flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-5"
-        >
+            ref={timelineRef}
+            className="timeline relative flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-5"
+          >
           {threadSearch.isOpen && (
             <div className="bg-popover border-hairline absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-md">
               <Search className="text-muted-foreground size-3.5" />
