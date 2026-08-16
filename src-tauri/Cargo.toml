@@ -20,6 +20,7 @@ pi-ai = { git = "https://github.com/oouxx/pi-rs", tag = "v1.82.8"}
 pi-extensions = { git = "https://github.com/oouxx/pi-rs", tag = "v1.82.8" }
 tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }

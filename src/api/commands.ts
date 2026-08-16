@@ -21,6 +21,19 @@ export function getState() {
 export function getSelectedTranscript() {
   return tauriInvoke<any>("get_selected_transcript");
 }
+
+/** Resolve the active session's working directory (falls back to undefined). */
+export async function getActiveSessionCwd(): Promise<string | undefined> {
+  try {
+    const state = await getState();
+    const sess = (state.sessions ?? []).find(
+      (s: any) => s.id === state.selectedSessionId,
+    );
+    return sess?.cwd ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
 export function submitComposer(text: string) {
   return tauriInvoke<DesktopAppState>("submit_composer", { text });
 }
@@ -76,14 +89,11 @@ export function deleteCustomProvider(providerId: string) {
 
 // ── Skills ──
 
-export function listSkills() {
-  return tauriInvoke<any[]>("list_skills");
+export function listSkills(cwd?: string) {
+  return tauriInvoke<any[]>("list_skills", cwd ? { cwd } : {});
 }
-export function getSkill(name: string) {
-  return tauriInvoke<any>("get_skill", { name });
-}
-export function deleteSkill(name: string) {
-  return tauriInvoke<void>("delete_skill", { name });
+export function getSkill(name: string, cwd?: string) {
+  return tauriInvoke<any>("get_skill", cwd ? { name, cwd } : { name });
 }
 
 // ── Extensions ──
@@ -94,8 +104,17 @@ export function listExtensions() {
 export function getExtension(name: string) {
   return tauriInvoke<any>("get_extension", { name });
 }
-export function deleteExtension(name: string) {
-  return tauriInvoke<void>("delete_extension", { name });
+
+// ── Resources dirs ──
+
+export function getAgentDir() {
+  return tauriInvoke<string>("get_agent_dir");
+}
+
+// ── Shell (open folders in the OS file manager) ──
+
+export function openPath(path: string) {
+  return import("@tauri-apps/plugin-shell").then((m) => m.open(path));
 }
 
 // ── Session CRUD ──

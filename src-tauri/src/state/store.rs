@@ -13,9 +13,6 @@ use pi_coding_agent::core::agent_session_services::{
     create_agent_session_from_services, create_agent_session_services,
     CreateAgentSessionFromServicesOptions, CreateAgentSessionServicesOptions,
 };
-use pi_coding_agent::core::extensions::{
-    create_builtin_source_info, ExtensionRegistry,
-};
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::Mutex;
@@ -157,12 +154,7 @@ impl Store {
                     .as_ref()
                     .and_then(|p| model_id.as_ref().and_then(|m| registry.find(p, m)));
 
-                let mut extension_registry = ExtensionRegistry::new();
-
-                extension_registry.register(
-                    Box::new(pi_extensions::goal::GoalExtension::new()),
-                    create_builtin_source_info("goal"),
-                );
+                let extension_registry = crate::state::extensions::build_default_registry();
 
                 let model = initial_model.unwrap_or_else(|| {
                     let available = registry.get_available();

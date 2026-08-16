@@ -5,6 +5,7 @@ mod state;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(state::Store::new_with_runtime())
         .invoke_handler(tauri::generate_handler![
             commands::ping,
@@ -29,6 +30,11 @@ pub fn run() {
             commands::set_custom_provider,
             commands::delete_custom_provider,
             commands::get_selected_transcript,
+            commands::get_agent_dir,
+            commands::list_skills,
+            commands::get_skill,
+            commands::list_extensions,
+            commands::get_extension,
             commands::list_custom_providers,
             commands::get_custom_provider,
             commands::has_provider_auth,

@@ -346,3 +346,43 @@ pub async fn get_custom_provider(provider_id: String) -> Result<serde_json::Valu
 pub async fn has_provider_auth(provider_id: String) -> Result<bool, String> {
     Ok(providers::has_provider_auth(&provider_id))
 }
+
+// ── Resources dirs ──
+
+#[tauri::command]
+pub async fn get_agent_dir() -> Result<String, String> {
+    Ok(pi_coding_agent::config::get_agent_dir()
+        .to_string_lossy()
+        .to_string())
+}
+
+// ── Skills ──
+
+#[tauri::command]
+pub async fn list_skills(cwd: Option<String>) -> Result<Vec<serde_json::Value>, String> {
+    let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
+    Ok(crate::state::skills::list_skills(&cwd))
+}
+
+#[tauri::command]
+pub async fn get_skill(
+    cwd: Option<String>,
+    name: String,
+) -> Result<serde_json::Value, String> {
+    let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
+    crate::state::skills::get_skill(&cwd, &name)
+        .ok_or_else(|| format!("skill '{name}' not found"))
+}
+
+// ── Extensions ──
+
+#[tauri::command]
+pub async fn list_extensions() -> Result<Vec<serde_json::Value>, String> {
+    Ok(crate::state::extensions::list_extensions())
+}
+
+#[tauri::command]
+pub async fn get_extension(name: String) -> Result<serde_json::Value, String> {
+    crate::state::extensions::get_extension(&name)
+        .ok_or_else(|| format!("extension '{name}' not found"))
+}
