@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Send,
   Folder,
@@ -656,16 +656,43 @@ export default function ChatView({
 
   // Scroll to the bottom whenever content changes (streaming deltas, or a
   // transcript that finished loading after a session switch) while the user
-  // hasn't scrolled up. Runs after paint (rAF) so scrollHeight is final.
+  // hasn't scrolled up. Prefers scrollIntoView on the last message — it
+  // scrolls whichever ancestor actually scrolls, so it doesn't depend on the
+  // timeline div being the scroll container. Falls back to scrollTop.
   useEffect(() => {
     if (!stickToBottomRef.current) return;
     const el = timelineRef.current;
     if (!el) return;
     const raf = requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
+      const last = el.querySelector('[data-msg-last="true"]');
+      if (last instanceof HTMLElement) {
+        last.scrollIntoView({ block: "end" });
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
     });
     return () => cancelAnimationFrame(raf);
   }, [messages, activeSessionId, streaming]);
+
+  // Belt-and-suspenders: when a session's transcript finishes loading
+  // (messages went from empty to non-empty), scroll synchronously before
+  // paint so the new content is never shown at the top.
+  const prevEmptyRef = useRef(true);
+  useLayoutEffect(() => {
+    const isEmpty = messages.length === 0;
+    if (prevEmptyRef.current && !isEmpty) {
+      const el = timelineRef.current;
+      if (el) {
+        const last = el.querySelector('[data-msg-last="true"]');
+        if (last instanceof HTMLElement) {
+          last.scrollIntoView({ block: "end" });
+        } else {
+          el.scrollTop = el.scrollHeight;
+        }
+      }
+    }
+    prevEmptyRef.current = isEmpty;
+  }, [messages, activeSessionId]);
 
   // Cmd/Ctrl+F opens in-chat search; Esc closes it (the hook handles cleanup)
   useEffect(() => {
@@ -1342,6 +1369,9 @@ export default function ChatView({
               return (
                 <div
                   key={msg.id}
+                  {...(idx === messages.length - 1
+                    ? { "data-msg-last": "true" }
+                    : {})}
                   className={`group flex max-w-[820px] gap-3 ${msg.role === "user" ? "flex-row-reverse self-end" : ""}`}
                 >
                   <span
