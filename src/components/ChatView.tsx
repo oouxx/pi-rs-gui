@@ -966,6 +966,12 @@ export default function ChatView({
         handleSend();
         return;
       }
+      if (e.key === "Escape") {
+        if (showMention) setShowMention(false);
+        if (showArgMenu) setShowArgMenu(false);
+        if (showSlash) setShowSlash(false);
+        return;
+      }
       if (e.key === "Tab") {
         const ta = textareaRef.current;
         if (!ta) return;
@@ -1003,7 +1009,7 @@ export default function ChatView({
         }
       }
     },
-    [handleSend, streaming],
+    [handleSend, streaming, showMention, showArgMenu, showSlash],
   );
 
   const handleSlashSelect = useCallback(
