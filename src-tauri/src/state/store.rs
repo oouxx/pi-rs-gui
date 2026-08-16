@@ -586,7 +586,7 @@ impl Store {
         *self.runtime.lock().await = None;
         *self.session_id.lock().await = None;
 
-        let mut state = self
+        let state = self
             .mutate(app, |s| {
                 session::create_session_simple(s, title.unwrap_or("New thread"))
             })
@@ -613,19 +613,9 @@ impl Store {
             None,
         );
         self.spawn_runtime(app, &cwd, sm).await?;
-
-        let runtime_sid = self.session_id.lock().await.clone().unwrap_or_default();
-        if !runtime_sid.is_empty() && runtime_sid != placeholder_id {
-            state = self
-                .mutate(app, |s| {
-                    if let Some(rec) = s.sessions.iter_mut().find(|r| r.id == placeholder_id) {
-                        rec.id = runtime_sid.clone();
-                    }
-                    s.selected_session_id = runtime_sid.clone();
-                })
-                .await;
-        }
-        Ok(state)
+        // spawn_runtime adopts the runtime's real id into the record, so
+        // `state` above may carry a stale placeholder id — return fresh state.
+        Ok(self.state.lock().await.clone())
     }
 
     /// Compute the default session directory for a given cwd.
@@ -662,6 +652,20 @@ impl Store {
         let sid = runtime.session().get_session_id();
         *self.session_id.lock().await = Some(sid.clone());
         *self.runtime.lock().await = Some(runtime);
+
+        // Universal invariant: the UI-facing record id must equal the runtime's
+        // real session id, otherwise agent-event payloads (keyed by the runtime
+        // id) get filtered out by the frontend. This covers legacy
+        // "sess-<ts>" records and any other id divergence.
+        self.mutate(app, |s| {
+            if s.selected_session_id != sid {
+                if let Some(rec) = s.sessions.iter_mut().find(|r| r.id == s.selected_session_id) {
+                    rec.id = sid.clone();
+                }
+                s.selected_session_id = sid.clone();
+            }
+        })
+        .await;
         Ok(())
     }
 
