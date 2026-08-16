@@ -111,10 +111,16 @@ export function getExtension(name: string) {
   return tauriInvoke<any>("get_extension", { name });
 }
 
-// ── Workspace file search (composer @ mention) ──
+// ── Workspace file completion (composer @ mention / Tab) ──
 
-export function searchWorkspaceFiles(cwd: string | null | undefined, query: string) {
-  return tauriInvoke<string[]>("search_workspace_files", {
+export interface FileCompletion {
+  name: string;
+  path: string;
+  isDir: boolean;
+}
+
+export function fileCompletions(cwd: string | null | undefined, query: string) {
+  return tauriInvoke<FileCompletion[]>("file_completions", {
     ...(cwd ? { cwd } : {}),
     query,
   });

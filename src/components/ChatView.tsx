@@ -47,6 +47,7 @@ import ThinkingBlock from "@/components/ThinkingBlock";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   cancelCurrentRun,
+  fileCompletions,
   getModels,
   getProviders,
   getSessionModel,
@@ -54,10 +55,67 @@ import {
   setSessionModel,
   listSlashCommands,
   navigateSessionTree,
-  searchWorkspaceFiles,
   setSessionCwd,
   type SessionTreeNode,
 } from "@/api/commands";
+
+// ── @ path autocomplete helpers (port of TS autocomplete.ts) ──
+const PATH_DELIMITERS = new Set([" ", "\t", '"', "'", "="]);
+
+function findLastDelimiter(text: string): number {
+  for (let i = text.length - 1; i >= 0; i -= 1) {
+    if (PATH_DELIMITERS.has(text[i] ?? "")) return i;
+  }
+  return -1;
+}
+
+function findUnclosedQuoteStart(text: string): number | null {
+  let inQuotes = false;
+  let quoteStart = -1;
+  for (let i = 0; i < text.length; i += 1) {
+    if (text[i] === '"') {
+      inQuotes = !inQuotes;
+      if (inQuotes) quoteStart = i;
+    }
+  }
+  return inQuotes ? quoteStart : null;
+}
+
+function isTokenStart(text: string, index: number): boolean {
+  return index === 0 || PATH_DELIMITERS.has(text[index - 1] ?? "");
+}
+
+function extractQuotedPrefix(text: string): string | null {
+  const quoteStart = findUnclosedQuoteStart(text);
+  if (quoteStart === null) return null;
+  if (quoteStart > 0 && text[quoteStart - 1] === "@") {
+    if (!isTokenStart(text, quoteStart - 1)) return null;
+    return text.slice(quoteStart - 1);
+  }
+  if (!isTokenStart(text, quoteStart)) return null;
+  return text.slice(quoteStart);
+}
+
+function extractAtPrefix(text: string): string | null {
+  const quotedPrefix = extractQuotedPrefix(text);
+  if (quotedPrefix?.startsWith('@"')) return quotedPrefix;
+  const lastDelimiterIndex = findLastDelimiter(text);
+  const tokenStart = lastDelimiterIndex === -1 ? 0 : lastDelimiterIndex + 1;
+  if (text[tokenStart] === "@") return text.slice(tokenStart);
+  return null;
+}
+
+function parsePathPrefix(prefix: string): { rawPrefix: string; isQuotedPrefix: boolean } {
+  if (prefix.startsWith('@"')) return { rawPrefix: prefix.slice(2), isQuotedPrefix: true };
+  if (prefix.startsWith("@")) return { rawPrefix: prefix.slice(1), isQuotedPrefix: false };
+  return { rawPrefix: prefix, isQuotedPrefix: false };
+}
+
+interface CompletionItem {
+  name: string;
+  path: string;
+  isDir: boolean;
+}
 
 function nodeText(node: React.ReactNode): string {
   if (node == null) return "";
@@ -395,7 +453,10 @@ export default function ChatView() {
   const [currentModel, setCurrentModel] = useState("");
   const [modelOpen, setModelOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
-  const [mentionFiles, setMentionFiles] = useState<{ path: string }[]>([]);
+  const [mentionPrefix, setMentionPrefix] = useState("");
+  const [mentionQuoted, setMentionQuoted] = useState(false);
+  const [mentionForced, setMentionForced] = useState(false);
+  const [mentionFiles, setMentionFiles] = useState<CompletionItem[]>([]);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
 
   interface SlashCommand {
@@ -463,6 +524,7 @@ export default function ChatView() {
     });
   }, [activeSessionId]);
   const [mentionStart, setMentionStart] = useState(-1);
+  const mentionForcedRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevInputRef = useRef("");
 
@@ -500,7 +562,7 @@ export default function ChatView() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [threadSearch]);
 
-  // @ mention file search — live workspace lookup (debounced)
+  // @ mention / Tab file completion — live workspace lookup (debounced)
   useEffect(() => {
     if (!showMention) {
       setMentionFiles([]);
@@ -508,8 +570,8 @@ export default function ChatView() {
     }
     const handle = setTimeout(async () => {
       try {
-        const files = await searchWorkspaceFiles(activeSessionCwd, mentionQuery);
-        setMentionFiles((files ?? []).map((p) => ({ path: p })));
+        const items = await fileCompletions(activeSessionCwd, mentionQuery);
+        setMentionFiles((items ?? []) as CompletionItem[]);
       } catch {
         setMentionFiles([]);
       }
@@ -548,11 +610,34 @@ export default function ChatView() {
       const cursorPos = e.target.selectionStart ?? val.length;
       const textBeforeCursor = val.slice(0, cursorPos);
 
-      // Detect @ mention trigger
-      const atMatch = textBeforeCursor.match(/@([\w./-]*)$/);
-      if (atMatch) {
-        setMentionQuery(atMatch[1]);
-        setMentionStart(atMatch.index!);
+      // Detect @ mention trigger (or continue a Tab-forced path completion)
+      const atPrefix = extractAtPrefix(textBeforeCursor);
+      let prefix: string | null = null;
+      let quoted = false;
+      let forced = false;
+      if (atPrefix) {
+        prefix = atPrefix;
+        quoted = atPrefix.startsWith('@"');
+      } else if (showMention && mentionForcedRef.current) {
+        const q = extractQuotedPrefix(textBeforeCursor);
+        if (q) {
+          prefix = q;
+          quoted = q.startsWith('"');
+        } else {
+          const lastDelimiterIndex = findLastDelimiter(textBeforeCursor);
+          const tokenStart = lastDelimiterIndex === -1 ? 0 : lastDelimiterIndex + 1;
+          prefix = textBeforeCursor.slice(tokenStart);
+          quoted = false;
+        }
+        forced = true;
+      }
+      if (prefix !== null) {
+        const { rawPrefix } = parsePathPrefix(prefix);
+        setMentionPrefix(prefix);
+        setMentionQuery(rawPrefix);
+        setMentionQuoted(quoted);
+        setMentionForced(forced);
+        setMentionStart(textBeforeCursor.length - prefix.length);
         setShowMention(true);
       } else if (showMention) {
         setShowMention(false);
@@ -600,9 +685,46 @@ export default function ChatView() {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         handleSend();
+        return;
+      }
+      if (e.key === "Tab") {
+        const ta = textareaRef.current;
+        if (!ta) return;
+        const textBeforeCursor = ta.value.slice(0, ta.selectionStart);
+        const atPrefix = extractAtPrefix(textBeforeCursor);
+        let prefix: string | null = null;
+        let quoted = false;
+        if (atPrefix) {
+          prefix = atPrefix;
+          quoted = atPrefix.startsWith('@"');
+        } else if (!streaming) {
+          // Force file completion at the current token (TS shouldTriggerFileCompletion).
+          const q = extractQuotedPrefix(textBeforeCursor);
+          if (q) {
+            prefix = q;
+            quoted = q.startsWith('"');
+          } else {
+            const lastDelimiterIndex = findLastDelimiter(textBeforeCursor);
+            const tokenStart = lastDelimiterIndex === -1 ? 0 : lastDelimiterIndex + 1;
+            const token = textBeforeCursor.slice(tokenStart);
+            if (token !== "" || textBeforeCursor.endsWith(" ")) {
+              prefix = token;
+            }
+          }
+        }
+        if (prefix !== null) {
+          e.preventDefault();
+          mentionForcedRef.current = true;
+          const { rawPrefix } = parsePathPrefix(prefix);
+          setMentionPrefix(prefix);
+          setMentionQuery(rawPrefix);
+          setMentionQuoted(quoted);
+          setMentionStart(textBeforeCursor.length - prefix.length);
+          setShowMention(true);
+        }
       }
     },
-    [handleSend],
+    [handleSend, streaming],
   );
 
   const handleSlashSelect = useCallback(
@@ -614,19 +736,21 @@ export default function ChatView() {
   );
 
   const handleMentionSelect = useCallback(
-    (filePath: string) => {
-      // Replace from @ to the end with the chosen file reference
-      const end = mentionStart + mentionQuery.length + 1;
-      insertAtCursor(`@${filePath} `, mentionStart, end);
-      setShowMention(false);
+    (item: CompletionItem) => {
+      const needsQuotes = mentionQuoted || item.path.includes(" ");
+      const base = needsQuotes ? `@"${item.path}"` : `@${item.path}`;
+      const end = mentionStart + mentionPrefix.length;
+      if (item.isDir) {
+        // Directory continuation: insert with trailing slash, keep menu open
+        // so the next token is scoped inside the directory (matches TS).
+        insertAtCursor(`${base}/`, mentionStart, end);
+      } else {
+        insertAtCursor(`${base} `, mentionStart, end);
+        setShowMention(false);
+      }
     },
-    [mentionStart, mentionQuery, insertAtCursor],
+    [mentionStart, mentionPrefix, mentionQuoted, insertAtCursor],
   );
-
-  // Filter mention files by query
-  const filteredMentions = mentionFiles
-    .filter((f) => f.path.toLowerCase().includes(mentionQuery.toLowerCase()))
-    .slice(0, 15);
 
   const activeTitle =
     sessions.find((s) => s.id === activeSessionId)?.title || "";
@@ -928,32 +1052,42 @@ export default function ChatView() {
         {/* Composer */}
         <div className="border-hairline bg-bg-surface shrink-0 border-t px-4 py-2">
           <div className="relative mx-auto max-w-[820px]">
-            {/* @ mention popover */}
+            {/* @ mention / file completion popover */}
             {showMention && (
               <div className="bg-popover border-hairline absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-md">
-                {filteredMentions.length === 0 ? (
+                {mentionFiles.length === 0 ? (
                   <div className="text-muted-foreground px-3 py-2 text-xs">
                     No files found
                   </div>
                 ) : (
-                  filteredMentions.map((f) => (
+                  mentionFiles.map((f) => (
                     <button
                       key={f.path}
                       className="hover:bg-muted flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors"
-                      onClick={() => handleMentionSelect(f.path)}
+                      onClick={() => handleMentionSelect(f)}
                       onMouseDown={(e) => e.preventDefault()}
                     >
-                      <svg
-                        className="text-muted-foreground size-3 shrink-0"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                      >
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                        <polyline points="14 2 14 8 20 8" />
-                      </svg>
-                      <span className="truncate">{f.path}</span>
+                      {f.isDir ? (
+                        <Folder className="text-ai size-3.5 shrink-0" />
+                      ) : (
+                        <svg
+                          className="text-muted-foreground size-3 shrink-0"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                      )}
+                      <span className="min-w-0 flex-1 truncate">
+                        {f.name}
+                        {f.isDir ? "/" : ""}
+                      </span>
+                      <span className="text-muted-foreground/70 max-w-[50%] truncate font-mono text-[10px]">
+                        {f.path}
+                      </span>
                     </button>
                   ))
                 )}

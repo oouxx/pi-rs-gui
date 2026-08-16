@@ -412,15 +412,15 @@ pub async fn list_slash_commands(
     Ok(store.list_slash_commands().await)
 }
 
-// ── Workspace file search (composer @ mention) ──
+// ── Workspace file completion (composer @ mention / Tab) ──
 
 #[tauri::command]
-pub async fn search_workspace_files(
+pub async fn file_completions(
     cwd: Option<String>,
     query: String,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<serde_json::Value>, String> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
-    crate::state::files::search_files(&cwd, &query).await
+    Ok(crate::state::files::file_completions(&cwd, &query))
 }
 
 // ── Session export ──

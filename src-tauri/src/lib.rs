@@ -37,7 +37,7 @@ pub fn run() {
             commands::terminal_start,
             commands::terminal_write,
             commands::terminal_stop,
-            commands::search_workspace_files,
+            commands::file_completions,
             commands::get_general_settings,
             commands::set_session_model,
             commands::get_session_model,
