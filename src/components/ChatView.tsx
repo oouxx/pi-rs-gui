@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Send,
   Folder,
@@ -525,6 +525,10 @@ export default function ChatView() {
   }, [activeSessionId]);
   const [mentionStart, setMentionStart] = useState(-1);
   const mentionForcedRef = useRef(false);
+  const [showArgMenu, setShowArgMenu] = useState(false);
+  const [argCmd, setArgCmd] = useState<"model" | "login">("model");
+  const [argStart, setArgStart] = useState(0);
+  const [argPrefix, setArgPrefix] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const prevInputRef = useRef("");
 
@@ -643,14 +647,30 @@ export default function ChatView() {
         setShowMention(false);
       }
 
+      // Detect /command <arg> argument completion (builtin model/login)
+      const argMatch = textBeforeCursor.match(/^\/(model|login)\s+([\w./:-]*)$/);
+      if (argMatch) {
+        const cmd = argMatch[1] as "model" | "login";
+        const argPrefixText = argMatch[2];
+        setArgCmd(cmd);
+        setArgStart(("/" + cmd + " ").length);
+        setArgPrefix(argPrefixText);
+        setShowArgMenu(true);
+      } else if (showArgMenu) {
+        setShowArgMenu(false);
+      }
+
       // Detect / slash trigger — only when `val` starts with `/` and `prev` didn't
       if (val.startsWith("/") && !prev.startsWith("/")) {
         setShowSlash(true);
+      } else if (showSlash && val.includes(" ")) {
+        // A command name + space means the user is past command selection.
+        setShowSlash(false);
       } else if (!val.startsWith("/")) {
         setShowSlash(false);
       }
     },
-    [showMention],
+    [showMention, showSlash],
   );
 
   const handleSend = useCallback(async () => {
@@ -733,6 +753,39 @@ export default function ChatView() {
       setShowSlash(false);
     },
     [insertAtCursor],
+  );
+
+  const argItems = useMemo(() => {
+    const q = argPrefix.trim().toLowerCase();
+    if (argCmd === "model") {
+      return modelList
+        .filter(
+          (m) =>
+            !q ||
+            `${m.providerId}/${m.modelId}`.toLowerCase().includes(q) ||
+            m.label.toLowerCase().includes(q),
+        )
+        .slice(0, 15)
+        .map((m) => ({
+          value: `${m.providerId}/${m.modelId}`,
+          label: m.modelId,
+          description: m.providerId,
+        }));
+    }
+    return providerList
+      .filter(
+        (p) => !q || p.id.toLowerCase().includes(q) || p.name.toLowerCase().includes(q),
+      )
+      .slice(0, 15)
+      .map((p) => ({ value: p.id, label: p.id, description: p.name }));
+  }, [argCmd, argPrefix, modelList, providerList]);
+
+  const handleArgSelect = useCallback(
+    (value: string) => {
+      insertAtCursor(value, argStart, argStart + argPrefix.length);
+      setShowArgMenu(false);
+    },
+    [argStart, argPrefix, insertAtCursor],
   );
 
   const handleMentionSelect = useCallback(
@@ -1087,6 +1140,33 @@ export default function ChatView() {
                       </span>
                       <span className="text-muted-foreground/70 max-w-[50%] truncate font-mono text-[10px]">
                         {f.path}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* /command argument completion popover */}
+            {showArgMenu && (
+              <div className="bg-popover border-hairline absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-md">
+                {argItems.length === 0 ? (
+                  <div className="text-muted-foreground px-3 py-2 text-xs">
+                    No matching {argCmd === "model" ? "models" : "providers"}
+                  </div>
+                ) : (
+                  argItems.map((item) => (
+                    <button
+                      key={item.value}
+                      className="hover:bg-muted flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors"
+                      onClick={() => handleArgSelect(item.value)}
+                      onMouseDown={(e) => e.preventDefault()}
+                    >
+                      <span className="min-w-0 flex-1 truncate font-mono">
+                        {item.label}
+                      </span>
+                      <span className="text-muted-foreground/70 truncate text-[10px]">
+                        {item.description}
                       </span>
                     </button>
                   ))
