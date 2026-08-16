@@ -58,6 +58,10 @@ pub fn scan_existing_sessions() -> Vec<SessionRecord> {
     let sessions = futures::executor::block_on(SessionManager::list_all(None));
     sessions
         .into_iter()
+        // pi-rs list_all scans every subdirectory of the sessions dir,
+        // including `archived/` — exclude those so archived sessions don't
+        // reappear in the UI.
+        .filter(|info| !info.path.to_string_lossy().contains("/archived/"))
         .map(|info| {
             let title = info.name.unwrap_or_else(|| {
                 if !info.first_message.is_empty() && info.first_message != "(no messages)" {
