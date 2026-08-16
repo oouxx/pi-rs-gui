@@ -47,6 +47,12 @@ pub async fn archive_session(
     store: State<'_, Arc<Store>>,
     session_id: String,
 ) -> Result<DesktopState, String> {
+    store.abort().await;
+    let active = store.session_id.lock().await.clone().unwrap_or_default();
+    if active == session_id {
+        *store.runtime.lock().await = None;
+        *store.session_id.lock().await = None;
+    }
     Ok(store
         .mutate(&app, |s| session::archive_session_by_id(s, &session_id))
         .await)
@@ -58,6 +64,15 @@ pub async fn delete_session(
     store: State<'_, Arc<Store>>,
     session_id: String,
 ) -> Result<DesktopState, String> {
+    store.abort().await;
+    // If the deleted session is the active runtime, discard the runtime so a
+    // later send can't resurrect the deleted file (send_message lazily
+    // re-creates a runtime for the newly selected session).
+    let active = store.session_id.lock().await.clone().unwrap_or_default();
+    if active == session_id {
+        *store.runtime.lock().await = None;
+        *store.session_id.lock().await = None;
+    }
     Ok(store
         .mutate(&app, |s| session::delete_session_by_id(s, &session_id))
         .await)
