@@ -13,33 +13,37 @@ import {
 import { tauriListen } from "@/api/events";
 
 // ── terminal-output bus ──────────────────────────────────────────
-// Routes backend `terminal-output` events to per-session subscribers.
-// Output for sessions without a live subscriber yet is buffered so the
-// shell prompt emitted right after spawn is never lost (the dock registers
-// its listener before any terminal is started).
+// Retains a capped raw-output log per session (so a re-mounted tab can
+// rehydrate its visible history quickly) and routes live events to the
+// session's subscriber (only the active tab is mounted, so at most one
+// subscriber exists).
+const terminalLogs = new Map<string, string[]>();
 const terminalSubs = new Map<string, Set<(data: string) => void>>();
-const terminalBuffers = new Map<string, string[]>();
+const LOG_CAP_CHARS = 200_000;
+
+function trimLog(log: string[]) {
+  let total = 0;
+  for (let i = log.length - 1; i >= 0; i--) {
+    total += log[i].length;
+    if (total > LOG_CAP_CHARS && i > 0) {
+      log.splice(0, i);
+      break;
+    }
+  }
+}
 
 function routeTerminalOutput(id: string, data: string) {
+  const log = terminalLogs.get(id) ?? [];
+  log.push(data);
+  trimLog(log);
+  terminalLogs.set(id, log);
   const set = terminalSubs.get(id);
   if (set && set.size > 0) {
     for (const fn of [...set]) fn(data);
-  } else {
-    let buf = terminalBuffers.get(id);
-    if (!buf) {
-      buf = [];
-      terminalBuffers.set(id, buf);
-    }
-    buf.push(data);
   }
 }
 
 function subscribeTerminal(id: string, fn: (data: string) => void): () => void {
-  const buffered = terminalBuffers.get(id);
-  if (buffered && buffered.length > 0) {
-    for (const d of buffered) fn(d);
-    terminalBuffers.delete(id);
-  }
   const set = terminalSubs.get(id) ?? new Set<(data: string) => void>();
   set.add(fn);
   terminalSubs.set(id, set);
@@ -49,17 +53,18 @@ function subscribeTerminal(id: string, fn: (data: string) => void): () => void {
   };
 }
 
-// ── Single terminal tab ──────────────────────────────────────────
-function TerminalInstance({
-  sessionId,
-  active,
-}: {
-  sessionId: string;
-  active: boolean;
-}) {
+function writeLog(id: string, term: Terminal) {
+  const log = terminalLogs.get(id);
+  if (log) {
+    for (const d of log) term.write(d);
+  }
+}
+
+// ── Single terminal tab (only mounted while active) ──────────────
+function TerminalInstance({ sessionId }: { sessionId: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const termRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
+  const [hasOutput, setHasOutput] = useState(false);
+  const hasOutputRef = useRef(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -74,61 +79,75 @@ function TerminalInstance({
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(container);
-    fit.fit();
-    termRef.current = term;
-    fitRef.current = fit;
 
-    let disposed = false;
+    // The container is live (this tab is active) and laid out by now, so a
+    // synchronous fit gives the correct size BEFORE the retained log is
+    // written — avoids rendering it at the default 80x24 then re-rendering.
+    fit.fit();
+    setHasOutput((terminalLogs.get(sessionId)?.length ?? 0) > 0);
+
+    // Rehydrate retained output, then subscribe for live output. There is no
+    // gap: routeTerminalOutput appends to the log synchronously, and this
+    // whole block runs without awaiting between writeLog and subscribe.
+    writeLog(sessionId, term);
     const unsub = subscribeTerminal(sessionId, (data) => {
-      if (!disposed) term.write(data);
+      // Flip the placeholder exactly once; React bails on identical state so
+      // subsequent per-chunk writes don't re-render the component.
+      if (!hasOutputRef.current) {
+        hasOutputRef.current = true;
+        setHasOutput(true);
+      }
+      term.write(data);
     });
 
-    // Sync the PTY size with the current xterm viewport.
+    // Sync the PTY size with the current xterm viewport (immediate for the
+    // initial fit; later onResize events are debounced).
     const dims = fit.proposeDimensions();
     if (dims) terminalResize(sessionId, dims.cols, dims.rows).catch(() => {});
 
     const dataSub = term.onData((d) => {
       terminalWrite(sessionId, d).catch(() => {});
     });
+
+    // Debounce resize IPC: term.onResize fires on every fit(), which can be
+    // rapid during window drags / panel resizes.
+    let resizeTimer: number | undefined;
     const resizeSub = term.onResize(({ cols, rows }) => {
-      terminalResize(sessionId, cols, rows).catch(() => {});
+      if (resizeTimer !== undefined) clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        terminalResize(sessionId, cols, rows).catch(() => {});
+      }, 100);
     });
 
-    const doFit = () => {
-      if (active) requestAnimationFrame(() => fit.fit());
-    };
+    const doFit = () => requestAnimationFrame(() => fit.fit());
     const ro = new ResizeObserver(doFit);
     ro.observe(container);
     window.addEventListener("resize", doFit);
 
     return () => {
-      disposed = true;
       unsub();
+      if (resizeTimer !== undefined) clearTimeout(resizeTimer);
       ro.disconnect();
       window.removeEventListener("resize", doFit);
       dataSub.dispose();
       resizeSub.dispose();
       term.dispose();
-      termRef.current = null;
-      fitRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  // Re-fit when this tab becomes active (inactive tabs are display:none so
-  // their container has zero size until shown).
-  useEffect(() => {
-    if (!active) return;
-    const fit = fitRef.current;
-    if (fit) requestAnimationFrame(() => fit.fit());
-  }, [active]);
-
   return (
-    <div
-      ref={containerRef}
-      className="h-full w-full bg-[#0d1117]"
-      style={{ display: active ? "block" : "none" }}
-    />
+    <div className="relative h-full w-full bg-[#0d1117]">
+      <div ref={containerRef} className="h-full w-full" />
+      {/* Shell is still initializing (e.g. slow .zshrc) — show a hint so the
+          blank screen doesn't look frozen. */}
+      {!hasOutput && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <span className="text-muted-foreground animate-pulse text-xs">
+            Starting shell…
+          </span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -149,7 +168,7 @@ export default function TerminalDock({
   const [activeId, setActiveId] = useState<string | null>(null);
   const autoCreatedRef = useRef(false);
 
-  // One global listener routes output to per-session subscribers.
+  // One global listener routes output to the bus (log + subscriber).
   useEffect(() => {
     let unsub: (() => void) | undefined;
     (async () => {
@@ -192,6 +211,7 @@ export default function TerminalDock({
   const closeTab = useCallback(
     async (id: string) => {
       await terminalStop(id).catch(() => {});
+      terminalLogs.delete(id);
       const remaining = tabs.filter((t) => t.id !== id);
       setTabs(remaining);
       setActiveId((cur) =>
@@ -256,15 +276,14 @@ export default function TerminalDock({
         </button>
       </div>
 
-      {/* Terminals (only the active one is visible) */}
+      {/* Only the active tab's terminal is mounted (bounds memory/DOM to one
+          xterm; switching remounts it and rehydrates from the retained log). */}
       <div className="min-h-0 flex-1">
-        {tabs.map((t) => (
-          <TerminalInstance
-            key={t.id}
-            sessionId={t.id}
-            active={t.id === activeId}
-          />
-        ))}
+        {tabs.map((t) =>
+          t.id === activeId ? (
+            <TerminalInstance key={t.id} sessionId={t.id} />
+          ) : null,
+        )}
       </div>
     </div>
   );

@@ -70,8 +70,10 @@ impl Store {
         let a = app.clone();
 
         // Stream PTY output → events (blocking read on a worker thread).
+        // A large buffer keeps the IPC event rate low for fast producers
+        // (e.g. `cat` of a big file) while keeping per-event latency small.
         spawn_blocking(move || {
-            let mut buf = vec![0u8; 8192];
+            let mut buf = vec![0u8; 65536];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
