@@ -6,6 +6,51 @@ use crate::state::{now_iso, DesktopState, SessionRecord};
 use pi_coding_agent::core::session_manager::SessionManager;
 use serde_json::json;
 
+/// Extract a short preview of the LAST message from a session file by reading
+/// only the file tail (cheap — no full JSONL parse).
+fn last_message_preview(path: &str) -> String {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return String::new();
+    };
+    let last_line = content
+        .lines()
+        .rev()
+        .find(|l| l.trim_start().starts_with("{\"type\":\"message\""))
+        .map(|l| l.to_string());
+    let Some(line) = last_line else {
+        return String::new();
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+        return String::new();
+    };
+    let message = v.get("message");
+    let role = message
+        .and_then(|m| m.get("role"))
+        .and_then(|r| r.as_str())
+        .unwrap_or("");
+    let mut text = String::new();
+    if let Some(content) = message.and_then(|m| m.get("content")).and_then(|c| c.as_array()) {
+        for block in content {
+            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                if let Some(t) = block.get("text").and_then(|t| t.as_str()) {
+                    text.push_str(t);
+                }
+            }
+        }
+    }
+    let text = text.trim();
+    if text.is_empty() {
+        return String::new();
+    }
+    let prefix = if role == "user" { "You: " } else { "AI: " };
+    let truncated: String = text.chars().take(80).collect();
+    if truncated != text {
+        format!("{prefix}{truncated}…")
+    } else {
+        format!("{prefix}{text}")
+    }
+}
+
 /// Scan `~/.pi-rs/agent/sessions/` for `.jsonl` files and return session records.
 /// Delegates to pi-rs `SessionManager::list_all()` (which provides the title,
 /// first-message text, and timestamps — no manual JSONL parsing here).
@@ -25,13 +70,18 @@ pub fn scan_existing_sessions() -> Vec<SessionRecord> {
                         .to_string()
                 }
             });
+            let preview = info
+                .path
+                .to_str()
+                .map(last_message_preview)
+                .unwrap_or_default();
             SessionRecord {
                 id: info.id.clone(),
                 title,
                 updated_at: info
                     .modified
                     .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-                preview: String::new(),
+                preview,
                 status: "idle".to_string(),
                 has_unseen_update: false,
                 session_file: Some(info.path.to_string_lossy().to_string()),
@@ -245,3 +295,4 @@ pub fn rename_session_by_id(state: &mut DesktopState, session_id: &str, title: &
         sess.title = title.to_string();
     }
 }
+

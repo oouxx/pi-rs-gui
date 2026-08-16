@@ -284,8 +284,9 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                                 {s.title}
                               </span>
                               <span className="text-muted-foreground w-full truncate text-[10px] leading-none">
-                                {s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}
-                                {relativeTime(s.updatedAt)}
+                                {s.preview
+                                  ? `${s.preview} · ${s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}${relativeTime(s.updatedAt)}`
+                                  : `${s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}${relativeTime(s.updatedAt)}`}
                               </span>
                             </span>
                           </SidebarMenuButton>

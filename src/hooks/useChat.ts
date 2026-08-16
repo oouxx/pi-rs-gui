@@ -38,6 +38,7 @@ interface SessionItem {
   updatedAt: string;
   status: string;
   cwd?: string | null;
+  preview?: string;
 }
 
 /** Extract text from an assistant message's content blocks. */
@@ -101,6 +102,7 @@ export function useChat() {
             updatedAt: s.updatedAt,
             status: s.status,
             cwd: s.cwd ?? null,
+            preview: s.preview ?? "",
           })),
       );
       if (state.selectedSessionId && state.selectedSessionId !== activeSessionIdRef.current) {
