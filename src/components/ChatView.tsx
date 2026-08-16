@@ -52,6 +52,9 @@ import {
   compactSession,
   exportSession,
   fileCompletions,
+  forkSessionAt,
+  importSession,
+  reloadSession,
   getModels,
   getProviders,
   getSessionInfo,
@@ -251,12 +254,14 @@ function TreeNode({
   node,
   depth,
   onNavigate,
+  onFork,
   collapsed,
   onToggle,
 }: {
   node: SessionTreeNode;
   depth: number;
   onNavigate: (id: string) => void;
+  onFork: (id: string) => void;
   collapsed: Set<string>;
   onToggle: (id: string) => void;
 }) {
@@ -302,6 +307,17 @@ function TreeNode({
             here
           </span>
         )}
+        <button
+          type="button"
+          title="Fork session at this point"
+          onClick={(e) => {
+            e.stopPropagation();
+            onFork(node.id);
+          }}
+          className="text-muted-foreground hover:text-accent shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+        >
+          <GitBranch className="size-3" />
+        </button>
       </div>
       {hasChildren && !isCollapsed && (
         <div>
@@ -311,6 +327,7 @@ function TreeNode({
               node={c}
               depth={depth + 1}
               onNavigate={onNavigate}
+              onFork={onFork}
               collapsed={collapsed}
               onToggle={onToggle}
             />
@@ -326,11 +343,13 @@ function TimelinePanel({
   sessionId,
   onClose,
   onTreeChange,
+  onFork,
 }: {
   tree: SessionTreeNode[];
   sessionId: string;
   onClose: () => void;
   onTreeChange: (tree: SessionTreeNode[]) => void;
+  onFork: (id: string) => void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -388,6 +407,7 @@ function TimelinePanel({
               node={n}
               depth={0}
               onNavigate={navigate}
+              onFork={onFork}
               collapsed={collapsed}
               onToggle={toggle}
             />
@@ -725,6 +745,18 @@ export default function ChatView({
     [showMention, showSlash, activeSessionId, saveDraft],
   );
 
+  const handleForkAt = useCallback(
+    async (entryId: string) => {
+      try {
+        await forkSessionAt(entryId);
+        setShowTimeline(false);
+      } catch (e) {
+        console.error("[fork]", e);
+      }
+    },
+    [],
+  );
+
   const exportActiveSession = useCallback(async () => {
     if (!activeSessionId) return false;
     const session = sessions.find((s) => s.id === activeSessionId);
@@ -788,6 +820,30 @@ export default function ChatView({
         case "/model":
         case "/login":
           setModelOpen(true);
+          return true;
+        case "/fork":
+          setShowTimeline(true);
+          if (activeSessionId) {
+            getSessionTree(activeSessionId)
+              .then((t) => setTimelineTree(t ?? []))
+              .catch(() => setTimelineTree([]));
+          }
+          return true;
+        case "/import": {
+          const selected = await openDialog({
+            multiple: false,
+            filters: [{ name: "JSONL session", extensions: ["jsonl"] }],
+          });
+          if (typeof selected === "string" && selected) {
+            await importSession(selected).catch((e) => console.error(e));
+          }
+          return true;
+        }
+        case "/reload":
+          await reloadSession().catch((e) => console.error(e));
+          return true;
+        case "/logout":
+          onOpenSettings?.();
           return true;
         case "/quit":
           try {
@@ -1421,6 +1477,7 @@ export default function ChatView({
             sessionId={activeSessionId}
             onClose={() => setShowTimeline(false)}
             onTreeChange={setTimelineTree}
+            onFork={handleForkAt}
           />
         )}
       </div>

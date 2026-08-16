@@ -205,6 +205,18 @@ export function compactSession(customInstructions?: string) {
   });
 }
 
+// ── Fork / import / reload ──
+
+export function forkSessionAt(entryId: string) {
+  return tauriInvoke<DesktopAppState>("fork_session_at", { entryId });
+}
+export function importSession(inputPath: string) {
+  return tauriInvoke<DesktopAppState>("import_session", { inputPath });
+}
+export function reloadSession() {
+  return tauriInvoke<void>("reload_session");
+}
+
 // ── Session export ──
 
 export function exportSession(

@@ -480,6 +480,90 @@ impl Store {
         Ok(self.state.lock().await.clone())
     }
 
+    /// Refresh the Store after the runtime's session was replaced (fork/import):
+    /// update the active session id, rescan the session list, and emit the
+    /// updated transcript.
+    async fn refresh_after_session_swap(
+        self: &Arc<Self>,
+        app: &AppHandle,
+    ) -> DesktopState {
+        let new_sid = self
+            .runtime
+            .lock()
+            .await
+            .as_ref()
+            .map(|r| r.session().get_session_id().to_string())
+            .unwrap_or_default();
+        if !new_sid.is_empty() {
+            *self.session_id.lock().await = Some(new_sid.clone());
+        }
+        let state = self
+            .mutate(app, |s| {
+                s.sessions = super::session::scan_existing_sessions();
+                if !new_sid.is_empty() {
+                    s.selected_session_id = new_sid.clone();
+                    super::session::select_session_by_id(s, &new_sid);
+                }
+            })
+            .await;
+        let transcript = build_display_transcript(&self.get_messages().await);
+        if !transcript.is_empty() {
+            let _ = app.emit(
+                "pi-gui:selected-transcript-changed",
+                &json!({ "sessionId": new_sid, "transcript": transcript }),
+            );
+        }
+        state
+    }
+
+    /// Fork the active session at a timeline node (matches TS `fork` at
+    /// position "at"). The runtime swaps to the new branch; the session list
+    /// is rescanned so the new session appears.
+    pub async fn fork_session_at(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        entry_id: &str,
+    ) -> Result<DesktopState, String> {
+        // Use the session-level fork (session_mgr_fork): the runtime-level
+        // `AgentSessionRuntime::fork` holds non-Sync internals across awaits
+        // which makes its future !Send for Tauri IPC.
+        let mut runtime = self.runtime.lock().await.take().ok_or("No session")?;
+        let result = runtime
+            .session_mut()
+            .session_mgr_fork(entry_id)
+            .await
+            .map_err(|e| e.to_string());
+        *self.runtime.lock().await = Some(runtime);
+        result?;
+        Ok(self.refresh_after_session_swap(app).await)
+    }
+
+    /// Import a session from a JSONL file (matches TS `/import`): switches the
+    /// active session manager to the imported file.
+    pub async fn import_session(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        input_path: &str,
+    ) -> Result<DesktopState, String> {
+        let mut runtime = self.runtime.lock().await.take().ok_or("No session")?;
+        let result = runtime
+            .session_mut()
+            .session_mgr_switch(input_path, None)
+            .await
+            .map_err(|e| e.to_string());
+        *self.runtime.lock().await = Some(runtime);
+        result?;
+        Ok(self.refresh_after_session_swap(app).await)
+    }
+
+    /// Reload settings (matches TS `/reload`).
+    pub async fn reload_session(&self) -> Result<(), String> {
+        let runtime = self.runtime.lock().await.take().ok_or("No session")?;
+        runtime.session().reload().await;
+        *self.runtime.lock().await = Some(runtime);
+        Ok(())
+    }
+
     /// Compute the default session directory for a given cwd.
     fn session_dir_for(cwd: &str) -> String {
         let agent_dir = pi_coding_agent::config::get_agent_dir()

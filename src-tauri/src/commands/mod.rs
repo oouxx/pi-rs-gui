@@ -545,3 +545,28 @@ pub async fn compact_session(
         .compact_session(&app, custom_instructions.as_deref())
         .await
 }
+
+// ── Fork / import / reload (/fork, /import, /reload) ──
+
+#[tauri::command]
+pub async fn fork_session_at(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    entry_id: String,
+) -> Result<DesktopState, String> {
+    store.fork_session_at(&app, &entry_id).await
+}
+
+#[tauri::command]
+pub async fn import_session(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    input_path: String,
+) -> Result<DesktopState, String> {
+    store.import_session(&app, &input_path).await
+}
+
+#[tauri::command]
+pub async fn reload_session(store: State<'_, Arc<Store>>) -> Result<(), String> {
+    store.reload_session().await
+}
