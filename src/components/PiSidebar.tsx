@@ -224,7 +224,9 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 isActive={activeSessionId === s.id}
                 onClick={() => {
                   onModeChange("chat");
-                  selectSession(s.id);
+                  selectSession(s.id).catch((e) =>
+                    console.error("[selectSession]", e),
+                  );
                 }}
                 tooltip={s.title}
               >
