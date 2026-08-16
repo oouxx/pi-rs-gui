@@ -62,6 +62,8 @@ pub struct Store {
     /// send_message task checks this before putting the runtime back, so a
     /// stale task from a previous session doesn't overwrite the new runtime.
     pub generation: AtomicU64,
+    /// Embedded terminal session (single, replaced on restart).
+    pub terminal: tokio::sync::Mutex<Option<crate::state::terminal::TerminalSession>>,
 }
 
 impl Store {
@@ -73,6 +75,7 @@ impl Store {
             is_streaming: AtomicBool::new(false),
             abort_flag: Arc::new(AtomicBool::new(false)),
             generation: AtomicU64::new(0),
+            terminal: tokio::sync::Mutex::new(None),
         })
     }
 

@@ -476,3 +476,30 @@ pub async fn navigate_session_tree(
     );
     store.get_session_tree_json(&session_id).await
 }
+
+// ── Terminal ──
+
+#[tauri::command]
+pub async fn terminal_start(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    cwd: Option<String>,
+) -> Result<String, String> {
+    let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
+    store.terminal_start(&app, &cwd).await
+}
+
+#[tauri::command]
+pub async fn terminal_write(
+    store: State<'_, Arc<Store>>,
+    session_id: String,
+    data: String,
+) -> Result<(), String> {
+    store.terminal_write(&session_id, &data).await
+}
+
+#[tauri::command]
+pub async fn terminal_stop(store: State<'_, Arc<Store>>) -> Result<(), String> {
+    store.terminal_stop().await;
+    Ok(())
+}

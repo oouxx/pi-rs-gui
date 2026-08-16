@@ -126,6 +126,18 @@ export function listSlashCommands() {
   return tauriInvoke<any[]>("list_slash_commands");
 }
 
+// ── Terminal ──
+
+export function terminalStart(cwd?: string) {
+  return tauriInvoke<string>("terminal_start", cwd ? { cwd } : {});
+}
+export function terminalWrite(sessionId: string, data: string) {
+  return tauriInvoke<void>("terminal_write", { sessionId, data });
+}
+export function terminalStop() {
+  return tauriInvoke<void>("terminal_stop");
+}
+
 // ── Session tree (timeline) ──
 
 export interface SessionTreeNode {
