@@ -120,6 +120,20 @@ export function listSlashCommands() {
   return tauriInvoke<any[]>("list_slash_commands");
 }
 
+// ── Session export ──
+
+export function exportSession(
+  sessionId: string,
+  format: "html" | "jsonl",
+  targetPath: string,
+) {
+  return tauriInvoke<string>("export_session", {
+    sessionId,
+    format,
+    targetPath,
+  });
+}
+
 // ── General settings ──
 
 export function getGeneralSettings() {

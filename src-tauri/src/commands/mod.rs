@@ -422,3 +422,26 @@ pub async fn search_workspace_files(
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
     crate::state::files::search_files(&cwd, &query).await
 }
+
+// ── Session export ──
+
+#[tauri::command]
+pub async fn export_session(
+    store: State<'_, Arc<Store>>,
+    session_id: String,
+    format: String,
+    target_path: String,
+) -> Result<String, String> {
+    let session_file = {
+        let state = store.state.lock().await;
+        state
+            .sessions
+            .iter()
+            .find(|s| s.id == session_id)
+            .and_then(|s| s.session_file.as_ref())
+            .filter(|f| !f.is_empty())
+            .cloned()
+            .ok_or_else(|| format!("session '{session_id}' has no session file"))?
+    };
+    crate::state::export::export_session(&session_file, &format, &target_path)
+}

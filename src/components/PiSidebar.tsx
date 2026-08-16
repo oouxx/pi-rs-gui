@@ -26,9 +26,12 @@ import {
   Pencil,
   Copy,
   Check,
+  FileDown,
+  FileJson,
 } from "lucide-react";
+import { save } from "@tauri-apps/plugin-dialog";
 import { useChat } from "@/hooks/useChat";
-import { renameSession } from "@/api/commands";
+import { exportSession, renameSession } from "@/api/commands";
 import type { AppView } from "./AppShell";
 
 interface PiSidebarProps {
@@ -94,6 +97,34 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     copyTimerRef.current = setTimeout(() => setCopiedId(null), 1200);
   }, []);
+
+  const handleExport = useCallback(
+    async (session: { id: string; title: string }, format: "html" | "jsonl") => {
+      const ext = format === "html" ? "html" : "jsonl";
+      const base = (session.title || "session")
+        .trim()
+        .replace(/[^a-zA-Z0-9一-龥._-]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 80);
+      const path = await save({
+        title: `Export session (${format.toUpperCase()})`,
+        defaultPath: `${base || "session"}.${ext}`,
+        filters: [
+          {
+            name: format === "html" ? "HTML file" : "JSONL file",
+            extensions: [ext],
+          },
+        ],
+      });
+      if (typeof path !== "string" || !path) return;
+      try {
+        await exportSession(session.id, format, path);
+      } catch (e) {
+        console.error(`[export ${format}]`, e);
+      }
+    },
+    [],
+  );
 
   return (
     <Sidebar collapsible="icon">
@@ -234,6 +265,14 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                           <Copy className="size-3.5" />
                         )}
                         {copiedId === s.id ? "Copied!" : "Copy session ID"}
+                      </ContextMenuItem>
+                      <ContextMenuItem onSelect={() => handleExport(s, "html")}>
+                        <FileDown className="size-3.5" />
+                        Export HTML…
+                      </ContextMenuItem>
+                      <ContextMenuItem onSelect={() => handleExport(s, "jsonl")}>
+                        <FileJson className="size-3.5" />
+                        Export JSONL…
                       </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenu>
