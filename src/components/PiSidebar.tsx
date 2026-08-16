@@ -250,6 +250,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 handleDelete(s.id);
               }}
               title="Delete permanently"
+              style={{ display: renamingId === s.id ? "none" : undefined }}
             >
               <Trash2 className="size-3" />
             </button>

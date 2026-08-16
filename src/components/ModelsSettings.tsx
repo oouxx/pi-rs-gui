@@ -61,6 +61,15 @@ export default function ModelsSettings() {
     } catch (e) { console.error("setDefault failed", e) }
   }, [thinkingLevel])
 
+  // Persist a standalone thinking-level change immediately (the General tab
+  // already does this via set_general_setting; keep both consistent).
+  const setThinking = useCallback(async (level: string) => {
+    setThinkingLevel(level)
+    try {
+      await apiSetDefaultThinkingLevel(level)
+    } catch (e) { console.error("setThinkingLevel failed", e) }
+  }, [])
+
   const providerMap = new Map(providers.map((p) => [p.id, p]))
 
   if (loading) {
@@ -85,7 +94,7 @@ export default function ModelsSettings() {
           </div>
           <div className="w-32">
             <label className="text-muted-foreground mb-1 block text-xs">Thinking</label>
-            <Select value={thinkingLevel} onValueChange={setThinkingLevel}>
+            <Select value={thinkingLevel} onValueChange={setThinking}>
               <SelectTrigger className="h-8 text-xs">
                 <SelectValue />
               </SelectTrigger>

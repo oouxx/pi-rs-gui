@@ -134,22 +134,23 @@ impl Store {
             Box::pin(async move {
                 pi_ai::providers::register_builtins::register_built_in_api_providers();
 
-                let mut services =
+                // Build the registry up front and pass it in so
+                // create_agent_session_services wires the auth.json credential
+                // resolver onto it (pi-rs v1.82.9+).
+                let registry = pi_coding_agent::core::model_registry::ModelRegistry::new(
+                    pi_coding_agent::core::model_registry::ModelRegistry::builtin_models_list(),
+                );
+
+                let services =
                     create_agent_session_services(CreateAgentSessionServicesOptions {
                         cwd: params.cwd.clone(),
                         agent_dir: Some(params.agent_dir.clone()),
                         auth_storage: None,
                         settings_manager: None,
-                        model_registry: None,
+                        model_registry: Some(registry),
                         resource_loader_options: None,
                     })
                     .await;
-
-                // Populate model registry with built-in models so model resolution works.
-                // create_agent_session_services creates an empty registry.
-                services.model_registry = pi_coding_agent::core::model_registry::ModelRegistry::new(
-                    pi_coding_agent::core::model_registry::ModelRegistry::builtin_models_list(),
-                );
 
                 let (provider, model_id, thinking_level) = {
                     let settings = services.settings_manager.get_settings();
@@ -169,7 +170,18 @@ impl Store {
 
                 let model = initial_model.unwrap_or_else(|| {
                     let available = registry.get_available();
-                    available.into_iter().next().expect("No models available")
+                    available.into_iter().next().unwrap_or_else(|| {
+                        // No provider has auth configured (fresh install, no env
+                        // keys, no models.json). Fall back to the first model in
+                        // the registry so session creation succeeds; the agent
+                        // surfaces a graceful "No API key configured" error on
+                        // the first message instead of panicking here.
+                        registry
+                            .get_models()
+                            .into_iter()
+                            .next()
+                            .expect("registry always has builtin models")
+                    })
                 });
 
                 // Capture cwd/agent_dir before `services` is moved into
@@ -582,6 +594,9 @@ impl Store {
         app: &AppHandle,
         title: Option<&str>,
     ) -> Result<DesktopState, String> {
+        // Bump generation so an in-flight send_message task from the previous
+        // session won't put its stale runtime back over the new one.
+        self.generation.fetch_add(1, Ordering::SeqCst);
         self.abort().await;
         *self.runtime.lock().await = None;
         *self.session_id.lock().await = None;
@@ -893,17 +908,30 @@ impl Store {
         match action {
             CwdAction::NoOp => Ok(self.state.lock().await.clone()),
             CwdAction::SetInPlace => {
+                // The record has no session file, but a runtime may already
+                // exist (create_session_with_runtime spawns one immediately).
+                // Discard it and re-init with the new cwd so tools (bash etc.)
+                // run in the right directory.
+                self.generation.fetch_add(1, Ordering::SeqCst);
+                self.abort().await;
+                *self.runtime.lock().await = None;
+                *self.session_id.lock().await = None;
                 let sid = session_id.to_string();
                 let cwd = new_cwd.clone();
-                Ok(self
-                    .mutate(app, |s| {
-                        if let Some(sess) = s.sessions.iter_mut().find(|s| s.id == sid) {
-                            sess.cwd = Some(cwd.clone());
-                        }
-                    })
-                    .await)
+                self.mutate(app, |s| {
+                    if let Some(sess) = s.sessions.iter_mut().find(|s| s.id == sid) {
+                        sess.cwd = Some(cwd.clone());
+                    }
+                })
+                .await;
+                self.init_runtime(app, &new_cwd).await?;
+                Ok(self.state.lock().await.clone())
             }
             CwdAction::Fork => {
+                // Bump generation so an in-flight send_message task from the
+                // old session won't put its stale runtime back over the fork.
+                self.generation.fetch_add(1, Ordering::SeqCst);
+                self.abort().await;
                 let new_id = format!("sess-{}", chrono::Utc::now().timestamp_millis());
                 let cwd_for_record = new_cwd.clone();
                 let title2 = title.clone();
@@ -951,17 +979,25 @@ impl Store {
                 };
                 match result {
                     Ok(()) => {
-                        // Verify pi-rs backfilled session_file onto the new record.
+                        // spawn_runtime renames the placeholder record to the
+                        // runtime's real pi-rs id — verify THAT record has a
+                        // session_file (pi-rs backfills it on fork).
+                        let real_id = self
+                            .session_id
+                            .lock()
+                            .await
+                            .clone()
+                            .unwrap_or_default();
                         let state = self.state.lock().await;
                         let file_set = state
                             .sessions
                             .iter()
-                            .any(|s| s.id == new_id && s.session_file.is_some());
+                            .any(|s| s.id == real_id && s.session_file.is_some());
                         if !file_set {
                             drop(state);
                             let old_sid = session_id.to_string();
                             self.mutate(app, |s| {
-                                s.sessions.retain(|s| s.id != new_id);
+                                s.sessions.retain(|s| s.id != real_id);
                                 s.selected_session_id = old_sid.clone();
                             })
                             .await;

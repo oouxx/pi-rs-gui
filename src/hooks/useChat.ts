@@ -161,9 +161,26 @@ export function useChat() {
             if (prev.length === 0) return prev;
             const last = prev[prev.length - 1];
             if (last.role !== "assistant") return prev;
+            // Preserve tool execution state (status/result/isError) from the
+            // previous render so partial tool output isn't wiped by deltas.
+            const prevToolState = new Map(
+              last.blocks
+                .filter((b) => b.type === "toolCall" && b.id)
+                .map((b) => [
+                  b.id,
+                  { status: b.status, result: b.result, isError: b.isError },
+                ]),
+            );
+            const merged = blocks.map((b) => {
+              if (b.type === "toolCall" && b.id) {
+                const st = prevToolState.get(b.id);
+                if (st) return { ...b, ...st };
+              }
+              return b;
+            });
             return [
               ...prev.slice(0, -1),
-              { ...last, blocks, content: blocksToText(blocks) },
+              { ...last, blocks: merged, content: blocksToText(merged) },
             ];
           });
 
@@ -266,6 +283,9 @@ export function useChat() {
     (async () => {
       unsub = await tauriListen<any>("pi-gui:selected-transcript-changed", (t: any) => {
         if (gen !== transcriptGenRef.current) return;
+        // Ignore transcripts for other sessions (a stale send_message task can
+        // emit a transcript for a session that is no longer selected).
+        if (t?.sessionId && t.sessionId !== activeSessionIdRef.current) return;
         // Any transcript event means the turn ended — always clear streaming
         // (also covers aborted runs whose transcript may be empty/partial).
         setMessages(t ? transcriptToDisplay(t.transcript) : []);
@@ -281,12 +301,9 @@ export function useChat() {
     activeSessionIdRef.current = sessionId;
     setActiveSessionId(sessionId);
     setMessages([]);
-    const gen = ++transcriptGenRef.current;
-    getSelectedTranscript().then((t: any) => {
-      if (gen === transcriptGenRef.current) {
-        setMessages(t ? transcriptToDisplay(t.transcript) : []);
-      }
-    });
+    // The transcript effect on [activeSessionId] bumps the generation counter
+    // and fetches the transcript — no need to fetch here (a second fetch would
+    // always be discarded by the generation check).
   }, []);
 
   const createSession = useCallback(async (title?: string) => {
@@ -345,12 +362,14 @@ export function useChat() {
     streamingRef.current = true;
     try {
       await submitComposer(text);
+      // Safety net matching the backend's 300s add_user_text timeout. The
+      // transcript event normally clears streaming when the turn ends.
       setTimeout(() => {
         if (streamingRef.current) {
           setStreaming(false);
           streamingRef.current = false;
         }
-      }, 120_000);
+      }, 300_000);
     } catch {
       setStreaming(false);
       streamingRef.current = false;

@@ -43,6 +43,9 @@ pub async fn archive_session(
     store: State<'_, Arc<Store>>,
     session_id: String,
 ) -> Result<DesktopState, String> {
+    // Bump generation so an in-flight send_message task won't put its stale
+    // runtime back after we discard it below.
+    store.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     store.abort().await;
     let active = store.session_id.lock().await.clone().unwrap_or_default();
     if active == session_id {
@@ -60,6 +63,9 @@ pub async fn delete_session(
     store: State<'_, Arc<Store>>,
     session_id: String,
 ) -> Result<DesktopState, String> {
+    // Bump generation so an in-flight send_message task won't put its stale
+    // runtime back after we discard it below.
+    store.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     store.abort().await;
     // If the deleted session is the active runtime, discard the runtime so a
     // later send can't resurrect the deleted file (send_message lazily
@@ -81,6 +87,31 @@ pub async fn rename_session(
     session_id: String,
     title: String,
 ) -> Result<DesktopState, String> {
+    // Persist the name to the session file via pi-rs (append_session_info) so
+    // renames survive restarts — the in-memory record alone is rebuilt from
+    // the files on the next launch.
+    let active = store.session_id.lock().await.clone().unwrap_or_default();
+    if active == session_id {
+        if let Some(runtime) = store.runtime.lock().await.as_ref() {
+            runtime.session().set_session_name(&title);
+        }
+    } else {
+        let file = {
+            let state = store.state.lock().await;
+            state
+                .sessions
+                .iter()
+                .find(|s| s.id == session_id)
+                .and_then(|s| s.session_file.clone())
+                .filter(|f| !f.is_empty())
+        };
+        if let Some(file) = file {
+            let mut mgr = pi_coding_agent::core::session_manager::SessionManager::open(
+                &file, None, None,
+            );
+            mgr.append_session_info(&title);
+        }
+    }
     Ok(store
         .mutate(&app, |s| {
             session::rename_session_by_id(s, &session_id, &title)
@@ -145,10 +176,8 @@ pub async fn get_models(store: State<'_, Arc<Store>>) -> Result<serde_json::Valu
     let providers = registry.get_providers();
     let mut models = Vec::new();
     for pid in &providers {
-        let has_auth = pi_ai::env_api_keys::get_env_var_name(pid)
-            .and_then(|var| std::env::var(var).ok())
-            .map(|v| !v.is_empty() && v != "placeholder")
-            .unwrap_or(false);
+        // AuthStorage-aware: covers auth.json keys set in the GUI + env vars.
+        let has_auth = providers::has_provider_auth(pid);
         for m in registry.get_models_for_provider(pid) {
             models.push(json!({
                 "providerId": pid,
@@ -171,10 +200,8 @@ pub async fn get_providers(store: State<'_, Arc<Store>>) -> Result<serde_json::V
     let providers = registry.get_providers();
     let mut provider_list = Vec::new();
     for pid in &providers {
-        let has_auth = pi_ai::env_api_keys::get_env_var_name(pid)
-            .and_then(|var| std::env::var(var).ok())
-            .map(|v| !v.is_empty() && v != "placeholder")
-            .unwrap_or(false);
+        // AuthStorage-aware: covers auth.json keys set in the GUI + env vars.
+        let has_auth = providers::has_provider_auth(pid);
         let name = BUILT_IN_PROVIDER_DISPLAY_NAMES
             .get(pid.as_str())
             .map(|n| n.to_string())

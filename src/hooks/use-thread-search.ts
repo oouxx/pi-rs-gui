@@ -106,7 +106,13 @@ export function useThreadSearch(timelinePaneRef: React.RefObject<HTMLDivElement 
       current.className = "thread-find-match";
     }
 
-    const next = (activeIndex + direction + elements.length) % elements.length;
+    // With no active match, start from the first (or last) match.
+    const next =
+      activeIndex < 0
+        ? direction === 1
+          ? 0
+          : elements.length - 1
+        : (activeIndex + direction + elements.length) % elements.length;
     const nextEl = elements[next];
     setActiveIndex(next);
     if (nextEl) {

@@ -77,7 +77,7 @@ export default function PickModel({
     (e: React.KeyboardEvent) => {
       if (e.key === "ArrowDown") {
         e.preventDefault()
-        setSelIdx((i) => Math.min(i + 1, results.length - 1))
+        if (results.length > 0) setSelIdx((i) => Math.min(i + 1, results.length - 1))
       } else if (e.key === "ArrowUp") {
         e.preventDefault()
         setSelIdx((i) => Math.max(i - 1, 0))

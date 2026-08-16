@@ -189,7 +189,11 @@ function CopyButton({
 
 const mdComponents: Components = {
   code: ({ className, children, ...props }) => {
-    const isInline = !className;
+    // react-markdown v9 does not pass an `inline` prop. A fenced block without
+    // a language has no className either, so fall back to a newline check to
+    // distinguish block code from inline code.
+    const text = nodeText(children);
+    const isInline = !className && !text.includes("\n");
     if (isInline) {
       return (
         <code
@@ -592,29 +596,29 @@ export default function ChatView({
     [],
   );
 
-  const toggleInfo = useCallback(async () => {
-    setInfoOpen((prev) => {
-      const next = !prev;
-      if (next && activeSessionId) {
-        getSessionInfo(activeSessionId)
-          .then((info) => setSessionInfo(info))
-          .catch(() => setSessionInfo(null));
-      }
-      return next;
-    });
-  }, [activeSessionId]);
+  const toggleInfo = useCallback(() => {
+    setInfoOpen((prev) => !prev);
+  }, []);
 
-  const toggleTimeline = useCallback(async () => {
-    setShowTimeline((prev) => {
-      const next = !prev;
-      if (next && activeSessionId) {
-        getSessionTree(activeSessionId)
-          .then((t) => setTimelineTree(t ?? []))
-          .catch(() => setTimelineTree([]));
-      }
-      return next;
-    });
-  }, [activeSessionId]);
+  useEffect(() => {
+    if (infoOpen && activeSessionId) {
+      getSessionInfo(activeSessionId)
+        .then((info) => setSessionInfo(info))
+        .catch(() => setSessionInfo(null));
+    }
+  }, [infoOpen, activeSessionId]);
+
+  const toggleTimeline = useCallback(() => {
+    setShowTimeline((prev) => !prev);
+  }, []);
+
+  useEffect(() => {
+    if (showTimeline && activeSessionId) {
+      getSessionTree(activeSessionId)
+        .then((t) => setTimelineTree(t ?? []))
+        .catch(() => setTimelineTree([]));
+    }
+  }, [showTimeline, activeSessionId]);
   const [mentionStart, setMentionStart] = useState(-1);
   const mentionForcedRef = useRef(false);
   const [showArgMenu, setShowArgMenu] = useState(false);
@@ -860,7 +864,26 @@ export default function ChatView({
         case "/hotkeys":
           onOpenSettings?.();
           return true;
-        case "/model":
+        case "/model": {
+          if (arg) {
+            // /model <provider>/<modelId> — apply the selection directly.
+            const [prov, modelId] = arg.split("/");
+            if (prov && modelId) {
+              try {
+                await setSessionModel(prov, modelId);
+                setCurrentProvider(prov);
+                setCurrentModel(modelId);
+              } catch (e) {
+                console.error("[setSessionModel]", e);
+              }
+            } else {
+              setModelOpen(true);
+            }
+          } else {
+            setModelOpen(true);
+          }
+          return true;
+        }
         case "/login":
           setModelOpen(true);
           return true;
