@@ -1274,7 +1274,7 @@ export default function ChatView({
           <div
             key={activeSessionId}
             ref={timelineRef}
-            className="timeline relative flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-5"
+            className="timeline relative flex flex-1 flex-col gap-5 overflow-y-auto px-6 pt-5 pb-12"
           >
           {threadSearch.isOpen && (
             <div className="bg-popover border-hairline absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-md">
@@ -1372,6 +1372,7 @@ export default function ChatView({
                   {...(idx === messages.length - 1
                     ? { "data-msg-last": "true" }
                     : {})}
+                  style={idx === messages.length - 1 ? { scrollMarginBottom: 48 } : undefined}
                   className={`group flex max-w-[820px] gap-3 ${msg.role === "user" ? "flex-row-reverse self-end" : ""}`}
                 >
                   <span
