@@ -503,3 +503,22 @@ pub async fn terminal_stop(store: State<'_, Arc<Store>>) -> Result<(), String> {
     store.terminal_stop().await;
     Ok(())
 }
+
+// ── Session model ──
+
+#[tauri::command]
+pub async fn set_session_model(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    provider: String,
+    model_id: String,
+) -> Result<DesktopState, String> {
+    store.set_session_model(&app, &provider, &model_id).await
+}
+
+#[tauri::command]
+pub async fn get_session_model(
+    store: State<'_, Arc<Store>>,
+) -> Result<serde_json::Value, String> {
+    Ok(store.get_session_model().await)
+}

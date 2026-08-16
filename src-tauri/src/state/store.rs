@@ -366,6 +366,48 @@ impl Store {
         Ok(crate::state::tree::tree_json(&tree, None))
     }
 
+    /// Set the active session's model (and persist it as the global default,
+    /// matching the Models settings page behavior). Delegates to pi-rs
+    /// `AgentSession::set_model`, which also validates provider auth.
+    pub async fn set_session_model(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        provider: &str,
+        model_id: &str,
+    ) -> Result<DesktopState, String> {
+        // Take the runtime out of the mutex while awaiting so the command
+        // future stays Send (mirrors send_message).
+        let runtime = self.runtime.lock().await.take().ok_or("No session")?;
+        let model = runtime
+            .session()
+            .get_model_registry()
+            .find(provider, model_id)
+            .ok_or_else(|| format!("model '{provider}/{model_id}' not found"))?;
+        let result = runtime.session().set_model(model).await;
+        *self.runtime.lock().await = Some(runtime);
+        result?;
+
+        Ok(self
+            .mutate(app, |s| {
+                super::model::set_default_model(s, provider, model_id);
+            })
+            .await)
+    }
+
+    /// The active session's current model (falls back to the global default).
+    pub async fn get_session_model(&self) -> serde_json::Value {
+        let runtime = self.runtime.lock().await;
+        if let Some(runtime) = runtime.as_ref() {
+            let m = runtime.session().get_model().await;
+            return serde_json::json!({ "provider": m.provider, "modelId": m.id });
+        }
+        let state = self.state.lock().await;
+        serde_json::json!({
+            "provider": state.global_model_settings.default_provider,
+            "modelId": state.global_model_settings.default_model_id,
+        })
+    }
+
     /// Compute the default session directory for a given cwd.
     fn session_dir_for(cwd: &str) -> String {
         let agent_dir = pi_coding_agent::config::get_agent_dir()

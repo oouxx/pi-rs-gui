@@ -22,6 +22,11 @@ import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
@@ -36,11 +41,17 @@ import {
 import { useChat, type ContentBlock } from "@/hooks/useChat";
 import { useThreadSearch } from "@/hooks/use-thread-search";
 import ToolCallCard from "@/components/ToolCallCard";
+import PickModel from "@/components/PickModel";
+import type { ModelOption, ProviderInfo } from "@/components/PickModel";
 import ThinkingBlock from "@/components/ThinkingBlock";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   cancelCurrentRun,
+  getModels,
+  getProviders,
+  getSessionModel,
   getSessionTree,
+  setSessionModel,
   listSlashCommands,
   navigateSessionTree,
   searchWorkspaceFiles,
@@ -377,6 +388,11 @@ export default function ChatView() {
   const [showMention, setShowMention] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [timelineTree, setTimelineTree] = useState<SessionTreeNode[]>([]);
+  const [modelList, setModelList] = useState<ModelOption[]>([]);
+  const [providerList, setProviderList] = useState<ProviderInfo[]>([]);
+  const [currentProvider, setCurrentProvider] = useState("");
+  const [currentModel, setCurrentModel] = useState("");
+  const [modelOpen, setModelOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionFiles, setMentionFiles] = useState<{ path: string }[]>([]);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
@@ -399,6 +415,40 @@ export default function ChatView() {
   useEffect(() => {
     refreshSlashCommands();
   }, [refreshSlashCommands]);
+
+  const refreshModelPicker = useCallback(async () => {
+    try {
+      const [prov, mods, cur] = await Promise.all([
+        getProviders(),
+        getModels(),
+        getSessionModel(),
+      ]);
+      setProviderList(prov.providers as ProviderInfo[]);
+      setModelList(mods.models as ModelOption[]);
+      setCurrentProvider(cur.provider ?? "");
+      setCurrentModel(cur.modelId ?? "");
+    } catch (e) {
+      console.error("[model picker]", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshModelPicker();
+  }, [refreshModelPicker, activeSessionId]);
+
+  const handleModelSelect = useCallback(
+    async (provider: string, modelId: string) => {
+      setModelOpen(false);
+      try {
+        await setSessionModel(provider, modelId);
+        setCurrentProvider(provider);
+        setCurrentModel(modelId);
+      } catch (e) {
+        console.error("[setSessionModel]", e);
+      }
+    },
+    [],
+  );
 
   const toggleTimeline = useCallback(async () => {
     setShowTimeline((prev) => {
@@ -587,6 +637,31 @@ export default function ChatView() {
         <div className="text-ink-muted flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap">
           <span className="font-medium text-foreground">pi-gui</span>
         </div>
+        <Popover open={modelOpen} onOpenChange={setModelOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              disabled={!activeSessionId}
+              className="text-muted-foreground hover:text-foreground inline-flex max-w-[220px] items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[11px] transition-colors disabled:opacity-40"
+              title="Select model"
+            >
+              <span className="truncate">
+                {currentProvider && currentModel
+                  ? `${currentProvider}/${currentModel}`
+                  : "select model"}
+              </span>
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-80 p-2">
+            <PickModel
+              models={modelList}
+              providers={providerList}
+              providerId={currentProvider || undefined}
+              modelId={currentModel || undefined}
+              onSelect={handleModelSelect}
+            />
+          </PopoverContent>
+        </Popover>
         <button
           type="button"
           onClick={toggleTimeline}

@@ -39,6 +39,8 @@ pub fn run() {
             commands::terminal_stop,
             commands::search_workspace_files,
             commands::get_general_settings,
+            commands::set_session_model,
+            commands::get_session_model,
             commands::set_general_setting,
             commands::get_agent_dir,
             commands::list_skills,

@@ -138,6 +138,20 @@ export function terminalStop() {
   return tauriInvoke<void>("terminal_stop");
 }
 
+// ── Session model ──
+
+export function getSessionModel() {
+  return tauriInvoke<{ provider?: string | null; modelId?: string | null }>(
+    "get_session_model",
+  );
+}
+export function setSessionModel(provider: string, modelId: string) {
+  return tauriInvoke<DesktopAppState>("set_session_model", {
+    provider,
+    modelId,
+  });
+}
+
 // ── Session tree (timeline) ──
 
 export interface SessionTreeNode {
