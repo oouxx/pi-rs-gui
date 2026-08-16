@@ -205,6 +205,21 @@ export function compactSession(customInstructions?: string) {
   });
 }
 
+// ── Project trust ──
+
+export function getProjectTrust(cwd?: string | null) {
+  return tauriInvoke<{ cwd: string; decision: boolean | null }>(
+    "get_project_trust",
+    cwd ? { cwd } : {},
+  );
+}
+export function setProjectTrust(cwd: string, decision: boolean | null) {
+  return tauriInvoke<{ cwd: string; decision: boolean | null }>(
+    "set_project_trust",
+    { cwd, decision },
+  );
+}
+
 // ── Fork / import / reload ──
 
 export function forkSessionAt(entryId: string) {

@@ -17,12 +17,22 @@ import {
   Scissors,
   Square,
   Info,
+  ShieldCheck,
+  ShieldX,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
@@ -53,8 +63,10 @@ import {
   exportSession,
   fileCompletions,
   forkSessionAt,
+  getProjectTrust,
   importSession,
   reloadSession,
+  setProjectTrust,
   getModels,
   getProviders,
   getSessionInfo,
@@ -490,6 +502,11 @@ export default function ChatView({
   const [modelOpen, setModelOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
+  const [trustOpen, setTrustOpen] = useState(false);
+  const [trustInfo, setTrustInfo] = useState<{
+    cwd: string;
+    decision: boolean | null;
+  } | null>(null);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionPrefix, setMentionPrefix] = useState("");
   const [mentionQuoted, setMentionQuoted] = useState(false);
@@ -865,6 +882,16 @@ export default function ChatView({
         case "/logout":
           onOpenSettings?.();
           return true;
+        case "/trust": {
+          try {
+            const info = await getProjectTrust(activeSessionCwd);
+            setTrustInfo(info);
+            setTrustOpen(true);
+          } catch (e) {
+            console.error(e);
+          }
+          return true;
+        }
         case "/resume": {
           const q = arg.toLowerCase();
           if (q) {
@@ -1505,6 +1532,63 @@ export default function ChatView({
           </div>
         </div>
         </div>
+        <Dialog open={trustOpen} onOpenChange={setTrustOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Project trust</DialogTitle>
+              <DialogDescription>
+                {trustInfo?.cwd ?? ""}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex flex-col gap-1.5 text-sm">
+              <span className="text-muted-foreground text-xs">
+                Current:{" "}
+                {trustInfo?.decision === true
+                  ? "Trusted"
+                  : trustInfo?.decision === false
+                    ? "Ignored"
+                    : "Not set"}
+              </span>
+            </div>
+            <DialogFooter className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  if (trustInfo) {
+                    await setProjectTrust(trustInfo.cwd, true).catch(() => {});
+                    setTrustOpen(false);
+                  }
+                }}
+              >
+                <ShieldCheck className="size-3.5" />
+                Trust
+              </Button>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  if (trustInfo) {
+                    await setProjectTrust(trustInfo.cwd, false).catch(() => {});
+                    setTrustOpen(false);
+                  }
+                }}
+              >
+                <ShieldX className="size-3.5" />
+                Ignore
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={async () => {
+                  if (trustInfo) {
+                    await setProjectTrust(trustInfo.cwd, null).catch(() => {});
+                    setTrustOpen(false);
+                  }
+                }}
+              >
+                Clear
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         {showTimeline && activeSessionId && (
           <TimelinePanel
             tree={timelineTree}

@@ -570,3 +570,20 @@ pub async fn import_session(
 pub async fn reload_session(store: State<'_, Arc<Store>>) -> Result<(), String> {
     store.reload_session().await
 }
+
+// ── Project trust (/trust) ──
+
+#[tauri::command]
+pub async fn get_project_trust(cwd: Option<String>) -> Result<serde_json::Value, String> {
+    let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
+    Ok(crate::state::trust::get_project_trust(&cwd))
+}
+
+#[tauri::command]
+pub async fn set_project_trust(
+    cwd: Option<String>,
+    decision: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
+    Ok(crate::state::trust::set_project_trust(&cwd, decision))
+}

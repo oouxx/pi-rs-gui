@@ -37,6 +37,8 @@ pub fn run() {
             commands::compact_session,
             commands::export_session,
             commands::get_session_tree,
+            commands::get_project_trust,
+            commands::set_project_trust,
             commands::navigate_session_tree,
             commands::list_slash_commands,
             commands::terminal_start,
