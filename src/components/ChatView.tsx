@@ -471,6 +471,7 @@ export default function ChatView({
     messages,
     sessions,
     createSession,
+    selectSession,
     sendMessage,
     streaming,
     loading,
@@ -616,7 +617,26 @@ export default function ChatView({
   }, []);
 
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
   const threadSearch = useThreadSearch(timelineRef);
+
+  // Auto-scroll to the bottom while streaming, unless the user scrolled up.
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      stickToBottomRef.current = nearBottom;
+    };
+    el.addEventListener("scroll", onScroll);
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    if (!streaming || !stickToBottomRef.current) return;
+    const el = timelineRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, streaming]);
 
   // Cmd/Ctrl+F opens in-chat search; Esc closes it (the hook handles cleanup)
   useEffect(() => {
@@ -845,6 +865,18 @@ export default function ChatView({
         case "/logout":
           onOpenSettings?.();
           return true;
+        case "/resume": {
+          const q = arg.toLowerCase();
+          if (q) {
+            const match = sessions.find(
+              (s) =>
+                s.id.toLowerCase().startsWith(q) ||
+                s.title.toLowerCase().includes(q),
+            );
+            if (match) await selectSession(match.id);
+          }
+          return true;
+        }
         case "/quit":
           try {
             await getCurrentWindow().close();
@@ -858,6 +890,8 @@ export default function ChatView({
     },
     [
       createSession,
+      selectSession,
+      sessions,
       activeSessionId,
       messages,
       toggleInfo,
