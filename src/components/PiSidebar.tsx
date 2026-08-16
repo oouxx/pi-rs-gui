@@ -62,6 +62,18 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     [],
   );
 
+  // Cmd/Ctrl+N starts a new thread from anywhere.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        void createSession().then(() => onModeChange("chat"));
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [createSession, onModeChange]);
+
   const matches = (s: { title: string }) =>
     !search.trim() ||
     s.title.toLowerCase().includes(search.trim().toLowerCase());

@@ -188,6 +188,16 @@ export default function ChatView() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
         threadSearch.open();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        const ta = textareaRef.current;
+        if (ta) {
+          ta.focus();
+          const pos = ta.value.length;
+          ta.setSelectionRange(pos, pos);
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);

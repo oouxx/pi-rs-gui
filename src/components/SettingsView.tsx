@@ -464,6 +464,48 @@ function ExtensionsTab() {
   );
 }
 
+const KEYBINDINGS: { keys: string[]; action: string }[] = [
+  { keys: ["Enter"], action: "Send message" },
+  { keys: ["Shift+Enter"], action: "Insert new line" },
+  { keys: ["/"], action: "Open slash commands" },
+  { keys: ["@"], action: "Reference files in the workspace" },
+  { keys: ["Cmd/Ctrl+F"], action: "Find in chat" },
+  { keys: ["Cmd/Ctrl+K"], action: "Focus the composer" },
+  { keys: ["Cmd/Ctrl+N"], action: "Start a new thread" },
+  { keys: ["Cmd/Ctrl+,"], action: "Open / close Settings" },
+  { keys: ["Esc"], action: "Close dialogs and search" },
+];
+
+function KeybindingsTab() {
+  return (
+    <div className="space-y-6">
+      <p className="text-muted-foreground text-xs leading-relaxed">
+        Keyboard shortcuts available across the app.
+      </p>
+      <div className="flex flex-col gap-1">
+        {KEYBINDINGS.map((kb) => (
+          <div
+            key={kb.action}
+            className="flex items-center justify-between gap-6 py-1.5"
+          >
+            <span className="text-sm text-foreground">{kb.action}</span>
+            <span className="flex items-center gap-1">
+              {kb.keys.map((k) => (
+                <kbd
+                  key={k}
+                  className="bg-bg-hover border-hairline text-ink-muted rounded-md border px-1.5 py-0.5 font-mono text-[11px]"
+                >
+                  {k}
+                </kbd>
+              ))}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsView() {
   const [activeTab, setActiveTab] = useState("general");
   const active = settingsTabs.find((t) => t.id === activeTab);
@@ -514,6 +556,8 @@ export default function SettingsView() {
               <SkillsTab />
             ) : activeTab === "extensions" ? (
               <ExtensionsTab />
+            ) : activeTab === "keybindings" ? (
+              <KeybindingsTab />
             ) : activeTab === "about" ? (
               <AboutTab />
             ) : (
