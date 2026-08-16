@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import PiSidebar from "./PiSidebar"
 import ChatView from "./ChatView"
@@ -9,6 +9,14 @@ import SettingsView from "./SettingsView"
 import TerminalView from "./TerminalView"
 
 export type AppView = "chat" | "skills" | "extensions" | "terminal" | "settings"
+
+const VIEWS: Record<AppView, React.ReactNode> = {
+  chat: <ChatView />,
+  skills: <SkillsView />,
+  extensions: <ExtensionsView />,
+  terminal: <TerminalView />,
+  settings: <SettingsView />,
+};
 
 export default function AppShell() {
   const [mode, setMode] = useState<AppView>("chat")
@@ -29,29 +37,7 @@ export default function AppShell() {
     <TooltipProvider>
       <SidebarProvider defaultOpen>
         <PiSidebar mode={mode} onModeChange={setMode} />
-        <SidebarInset className="overflow-hidden">
-          {mode === "chat" ? (
-            <ChatView />
-          ) : mode === "skills" ? (
-            <SkillsView />
-          ) : mode === "extensions" ? (
-            <ExtensionsView />
-          ) : mode === "terminal" ? (
-            <TerminalView />
-          ) : mode === "settings" ? (
-            <SettingsView />
-          ) : (
-            <div className="flex h-full max-h-screen min-w-0 flex-1 flex-col">
-              <div className="border-hairline flex items-center gap-2 border-b px-3 py-2">
-                <SidebarTrigger />
-                <div className="text-muted-foreground text-xs">pi-gui</div>
-              </div>
-              <div className="flex h-full items-center justify-center text-muted-foreground">
-                {mode} view coming soon
-              </div>
-            </div>
-          )}
-        </SidebarInset>
+        <SidebarInset className="overflow-hidden">{VIEWS[mode]}</SidebarInset>
       </SidebarProvider>
     </TooltipProvider>
   )
