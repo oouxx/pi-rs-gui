@@ -10,9 +10,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { FolderOpen, Info } from "lucide-react";
+import { FolderOpen, FolderPlus, Info, Puzzle, Trash2, BookOpen } from "lucide-react";
 import ModelsSettings from "./ModelsSettings";
-import { getGeneralSettings, openPath, setGeneralSetting } from "@/api/commands";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import {
+  getGeneralSettings,
+  listExtensions,
+  listSkills,
+  openPath,
+  setGeneralSetting,
+} from "@/api/commands";
 
 const settingsTabs = [
   { id: "general", label: "General", desc: "Agent behavior and paths" },
@@ -37,6 +44,8 @@ interface GeneralSettings {
   shellPath: string | null;
   quietStartup: boolean;
   theme: string | null;
+  enableSkillCommands: boolean;
+  skillPaths: string[];
   paths?: {
     agentDir?: string;
     settingsPath?: string;
@@ -274,6 +283,187 @@ function AboutTab() {
 
 }
 
+function SkillsTab() {
+  const [settings, setSettings] = useState<GeneralSettings | null>(null);
+  const [skillCount, setSkillCount] = useState<number | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      setSettings((await getGeneralSettings()) as GeneralSettings);
+    } catch (e) {
+      console.error("getGeneralSettings failed", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    (async () => {
+      try {
+        setSkillCount(((await listSkills()) ?? []).length);
+      } catch {
+        setSkillCount(null);
+      }
+    })();
+  }, [refresh]);
+
+  const apply = useCallback(
+    async (key: keyof GeneralSettings, value: unknown) => {
+      try {
+        setSettings((await setGeneralSetting(key, value)) as GeneralSettings);
+      } catch (e) {
+        console.error(`set ${key} failed`, e);
+      }
+    },
+    [],
+  );
+
+  const addPath = useCallback(async () => {
+    const selected = await openDialog({ directory: true, multiple: false });
+    if (typeof selected !== "string" || !selected) return;
+    setAdding(true);
+    try {
+      const current = settings?.skillPaths ?? [];
+      if (!current.includes(selected)) {
+        await apply("skillPaths", [...current, selected]);
+      }
+    } finally {
+      setAdding(false);
+    }
+  }, [settings, apply]);
+
+  const removePath = useCallback(
+    async (path: string) => {
+      const current = settings?.skillPaths ?? [];
+      await apply(
+        "skillPaths",
+        current.filter((p) => p !== path),
+      );
+    },
+    [settings, apply],
+  );
+
+  if (!settings) {
+    return (
+      <div className="text-muted-foreground p-8 text-sm">Loading settings...</div>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      <section>
+        <h3 className="mb-1 text-sm font-medium text-foreground">Discovery</h3>
+        <Separator className="my-2" />
+        <ToggleRow
+          label="Skill slash commands"
+          hint="Enable /skill:name commands in the composer"
+          checked={settings.enableSkillCommands}
+          onChange={(v) => apply("enableSkillCommands", v)}
+        />
+        <Row
+          label="Discovered skills"
+          hint="Skills in the global and workspace directories"
+        >
+          <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+            <BookOpen className="size-3.5" />
+            {skillCount === null ? "—" : `${skillCount} skill${skillCount === 1 ? "" : "s"}`}
+          </span>
+        </Row>
+      </section>
+
+      <section>
+        <h3 className="mb-1 text-sm font-medium text-foreground">
+          Custom skill paths
+        </h3>
+        <Separator className="my-2" />
+        <p className="text-muted-foreground mb-3 text-xs leading-relaxed">
+          Additional directories scanned for SKILL.md files.
+        </p>
+        {settings.skillPaths.length === 0 ? (
+          <p className="text-muted-foreground text-xs">No custom paths configured.</p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {settings.skillPaths.map((path) => (
+              <div
+                key={path}
+                className="border-hairline bg-bg-surface flex items-center gap-2 rounded-md border px-3 py-2"
+              >
+                <span className="text-foreground/80 min-w-0 flex-1 truncate font-mono text-xs">
+                  {path}
+                </span>
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-destructive shrink-0 rounded p-1 transition-colors"
+                  onClick={() => removePath(path)}
+                  title="Remove path"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          disabled={adding}
+          className="text-accent hover:bg-accent/10 mt-3 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors disabled:opacity-50"
+          onClick={addPath}
+        >
+          <FolderPlus className="size-3.5" />
+          Add path…
+        </button>
+      </section>
+    </div>
+  );
+}
+
+function ExtensionsTab() {
+  const [extensions, setExtensions] = useState<
+    { name: string; location: string; tools: string[]; commands: { name: string }[] }[]
+  >([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        setExtensions(((await listExtensions()) ?? []) as typeof extensions);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <p className="text-muted-foreground text-xs leading-relaxed">
+        Extensions are compiled into pi-gui as Rust plugins and are always
+        available to the agent.
+      </p>
+      {extensions.length === 0 ? (
+        <p className="text-muted-foreground text-xs">No extensions registered.</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {extensions.map((e) => (
+            <div
+              key={e.name}
+              className="border-hairline bg-bg-surface flex items-center gap-2 rounded-md border px-3 py-2"
+            >
+              <Puzzle className="text-muted-foreground size-3.5 shrink-0" />
+              <span className="text-foreground font-mono text-sm">{e.name}</span>
+              <span className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-[10px] uppercase">
+                {e.location}
+              </span>
+              <span className="text-muted-foreground ml-auto text-xs">
+                {e.tools.length} tool{e.tools.length === 1 ? "" : "s"} ·{" "}
+                {e.commands.length} command{e.commands.length === 1 ? "" : "s"}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsView() {
   const [activeTab, setActiveTab] = useState("general");
   const active = settingsTabs.find((t) => t.id === activeTab);
@@ -320,6 +510,10 @@ export default function SettingsView() {
               <ModelsSettings />
             ) : activeTab === "general" ? (
               <GeneralTab />
+            ) : activeTab === "skills" ? (
+              <SkillsTab />
+            ) : activeTab === "extensions" ? (
+              <ExtensionsTab />
             ) : activeTab === "about" ? (
               <AboutTab />
             ) : (

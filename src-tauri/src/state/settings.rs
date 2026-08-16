@@ -33,6 +33,8 @@ pub fn get_general_settings() -> Value {
             "shellPath": s.shell_path.clone(),
             "quietStartup": mgr.get_quiet_startup(),
             "theme": mgr.get_theme().map(|t| t.to_string()),
+            "enableSkillCommands": mgr.get_enable_skill_commands(),
+            "skillPaths": mgr.get_skills(),
             "paths": {
                 "agentDir": config::get_agent_dir().to_string_lossy(),
                 "settingsPath": config::get_settings_path().to_string_lossy(),
@@ -73,8 +75,23 @@ pub fn set_general_setting(key: &str, value: Value) -> Result<(), String> {
             "theme" => {
                 mgr.set_theme(value.as_str().ok_or("theme must be a string")?);
             }
+            "enableSkillCommands" => {
+                mgr.set_enable_skill_commands(
+                    value.as_bool().ok_or("enableSkillCommands must be a bool")?,
+                );
+            }
+            "skillPaths" => {
+                let paths = value
+                    .as_array()
+                    .ok_or("skillPaths must be an array of strings")?
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<_>>();
+                mgr.set_skills(paths);
+            }
             _ => return Err(format!("unknown setting '{key}'")),
         }
         Ok(())
     })
 }
+
