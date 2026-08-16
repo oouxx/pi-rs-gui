@@ -56,12 +56,12 @@ export default function TerminalView() {
         sessionIdRef.current = id;
         setStatus("running");
         unsub = await tauriListen<any>("terminal-output", (evt: any) => {
-          if (evt.sessionId !== sessionIdRef.current) return;
+          if (disposed || evt.sessionId !== sessionIdRef.current) return;
           term.write(evt.data ?? "");
         });
       } catch (e) {
         console.error("[terminal start]", e);
-        setStatus("failed");
+        if (!disposed) setStatus("failed");
       }
     })();
 
