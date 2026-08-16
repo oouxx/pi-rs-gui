@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, Folder } from "lucide-react";
+import { Send, Folder, Search, ArrowUp, ArrowDown, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Components } from "react-markdown";
@@ -17,6 +17,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { useChat, type ContentBlock } from "@/hooks/useChat";
+import { useThreadSearch } from "@/hooks/use-thread-search";
 import ToolCallCard from "@/components/ToolCallCard";
 import ThinkingBlock from "@/components/ThinkingBlock";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -178,6 +179,21 @@ export default function ChatView() {
     });
   }, []);
 
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const threadSearch = useThreadSearch(timelineRef);
+
+  // Cmd/Ctrl+F opens in-chat search; Esc closes it (the hook handles cleanup)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        threadSearch.open();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [threadSearch]);
+
   // @ mention file search — live workspace lookup (debounced)
   useEffect(() => {
     if (!showMention) {
@@ -314,9 +330,63 @@ export default function ChatView() {
       <div className="flex min-h-0 flex-1 flex-col">
         <div
           key={activeSessionId}
-          ref={scrollRef}
-          className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-5"
+          ref={(el) => {
+            timelineRef.current = el;
+            scrollRef(el);
+          }}
+          className="timeline relative flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-5"
         >
+          {threadSearch.isOpen && (
+            <div className="bg-popover border-hairline absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-md">
+              <Search className="text-muted-foreground size-3.5" />
+              <input
+                ref={threadSearch.inputRef}
+                value={threadSearch.query}
+                onChange={(e) => threadSearch.search(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    threadSearch.goToMatch(e.shiftKey ? -1 : 1);
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    threadSearch.close();
+                  }
+                }}
+                placeholder="Find in chat…"
+                className="h-6 w-40 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+              />
+              <span className="text-muted-foreground min-w-[2.5rem] text-center font-mono text-[10px]">
+                {threadSearch.matchCount === 0
+                  ? "0/0"
+                  : `${threadSearch.activeIndex + 1}/${threadSearch.matchCount}`}
+              </span>
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground rounded p-0.5 transition-colors"
+                onClick={() => threadSearch.goToMatch(-1)}
+                title="Previous match (Shift+Enter)"
+              >
+                <ArrowUp className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground rounded p-0.5 transition-colors"
+                onClick={() => threadSearch.goToMatch(1)}
+                title="Next match (Enter)"
+              >
+                <ArrowDown className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground rounded p-0.5 transition-colors"
+                onClick={() => threadSearch.close()}
+                title="Close (Esc)"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          )}
           {isEmpty ? (
             <div className="flex flex-1 items-center justify-center">
               <div className="max-w-[500px] text-center">

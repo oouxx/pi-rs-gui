@@ -43,3 +43,17 @@
     color: var(--color-foreground, oklch(0.15 0.008 260));
   }
 }
+
+/* Thread search highlights (useThreadSearch) */
+mark.thread-find-match {
+  background: rgba(251, 191, 36, 0.4);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+mark.thread-find-active {
+  background: rgba(251, 191, 36, 0.85);
+  color: #1c1917;
+  border-radius: 2px;
+  padding: 0 1px;
+}
