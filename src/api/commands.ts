@@ -41,6 +41,12 @@ export function listCustomProviders() {
   return tauriInvoke<any[]>("list_custom_providers");
 }
 
+// ── Agent-session flow ──
+
+export function cancelCurrentRun() {
+  return tauriInvoke<DesktopAppState>("cancel_current_run");
+}
+
 // ── Model ──
 
 export function getDefaultModel() {

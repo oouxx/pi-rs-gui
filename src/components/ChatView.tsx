@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Cog,
   Scissors,
+  Square,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -38,6 +39,7 @@ import ToolCallCard from "@/components/ToolCallCard";
 import ThinkingBlock from "@/components/ThinkingBlock";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
+  cancelCurrentRun,
   getSessionTree,
   listSlashCommands,
   navigateSessionTree,
@@ -523,6 +525,14 @@ export default function ChatView() {
     await sendMessage(text);
   }, [input, streaming, sendMessage]);
 
+  const handleStop = useCallback(async () => {
+    try {
+      await cancelCurrentRun();
+    } catch (e) {
+      console.error("[cancelCurrentRun]", e);
+    }
+  }, []);
+
   const handlePickFolder = useCallback(async () => {
     if (!activeSessionId) return;
     const selected = await openDialog({ directory: true, multiple: false });
@@ -874,14 +884,27 @@ export default function ChatView() {
               className="max-h-[120px] min-h-[44px] resize-none pr-12 text-sm"
               rows={1}
             />
-            <Button
-              size="icon"
-              className="absolute right-1.5 bottom-1.5 size-8"
-              onClick={handleSend}
-              disabled={streaming || !input.trim()}
-            >
-              <Send className="size-4" />
-            </Button>
+            {streaming ? (
+              <Button
+                size="icon"
+                variant="secondary"
+                className="absolute right-1.5 bottom-1.5 size-8"
+                onClick={handleStop}
+                title="Stop generating"
+              >
+                <Square className="size-3.5 fill-current" />
+              </Button>
+            ) : (
+              <Button
+                size="icon"
+                className="absolute right-1.5 bottom-1.5 size-8"
+                onClick={handleSend}
+                disabled={!input.trim()}
+                title="Send"
+              >
+                <Send className="size-4" />
+              </Button>
+            )}
           </div>
         </div>
         </div>
