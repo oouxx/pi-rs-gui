@@ -83,6 +83,8 @@ function blocksToText(blocks: ContentBlock[]): string {
 interface StreamDelta {
   event_type: string;
   data: any;
+  /** Block offset of the assistant step within its merged message. */
+  offset?: number;
 }
 
 function ensureIndex(blocks: ContentBlock[], idx: number): void {
@@ -96,29 +98,32 @@ function applyDelta(prev: DisplayMessage[], d: StreamDelta): DisplayMessage[] {
   const last = prev[prev.length - 1];
   if (last.role !== "assistant") return prev;
   const { contentIndex, delta } = d.data ?? {};
+  // Steps of a tool-calling run are merged into one message; each step's
+  // deltas are offset by the block index where the step started.
+  const idx = (d.offset ?? 0) + (contentIndex ?? 0);
   const blocks = [...last.blocks];
 
   switch (d.event_type) {
     case "text_delta": {
       if (typeof delta !== "string" || !delta) return prev;
-      ensureIndex(blocks, contentIndex);
-      const b = blocks[contentIndex];
-      blocks[contentIndex] = { type: "text", text: (b.text ?? "") + delta };
+      ensureIndex(blocks, idx);
+      const b = blocks[idx];
+      blocks[idx] = { type: "text", text: (b.text ?? "") + delta };
       return [...prev.slice(0, -1), { ...last, blocks, content: blocksToText(blocks) }];
     }
     case "thinking_delta": {
       if (typeof delta !== "string" || !delta) return prev;
-      ensureIndex(blocks, contentIndex);
-      const b = blocks[contentIndex];
-      blocks[contentIndex] = { type: "thinking", thinking: (b.thinking ?? "") + delta };
+      ensureIndex(blocks, idx);
+      const b = blocks[idx];
+      blocks[idx] = { type: "thinking", thinking: (b.thinking ?? "") + delta };
       return [...prev.slice(0, -1), { ...last, blocks }];
     }
     case "toolcall_start": {
       const src = d.data?.partial?.content?.[contentIndex] ?? {};
-      ensureIndex(blocks, contentIndex);
-      blocks[contentIndex] = {
+      ensureIndex(blocks, idx);
+      blocks[idx] = {
         type: "toolCall",
-        id: src.id ?? `tc-${contentIndex}`,
+        id: src.id ?? `tc-${idx}`,
         name: src.name ?? "tool",
         arguments: "",
       };
@@ -126,20 +131,20 @@ function applyDelta(prev: DisplayMessage[], d: StreamDelta): DisplayMessage[] {
     }
     case "toolcall_delta": {
       if (typeof delta !== "string" || !delta) return prev;
-      const b = blocks[contentIndex];
+      const b = blocks[idx];
       if (!b || b.type !== "toolCall") return prev;
       const prevArgs =
         typeof b.arguments === "string" ? b.arguments : JSON.stringify(b.arguments ?? "");
-      blocks[contentIndex] = { ...b, arguments: prevArgs + delta };
+      blocks[idx] = { ...b, arguments: prevArgs + delta };
       return [...prev.slice(0, -1), { ...last, blocks }];
     }
     case "toolcall_end": {
       const toolCall = d.data?.toolCall;
       if (!toolCall) return prev;
-      ensureIndex(blocks, contentIndex);
-      blocks[contentIndex] = {
+      ensureIndex(blocks, idx);
+      blocks[idx] = {
         type: "toolCall",
-        id: toolCall.id ?? `tc-${contentIndex}`,
+        id: toolCall.id ?? `tc-${idx}`,
         name: toolCall.name ?? "tool",
         arguments: toolCall.arguments ?? {},
       };
@@ -169,6 +174,9 @@ export function useChat() {
   // multiple tokens within a frame trigger a single React render.
   const deltaQueueRef = useRef<StreamDelta[]>([]);
   const deltaRafRef = useRef<number | null>(null);
+  // Block offset of the current assistant step within its merged message
+  // (consecutive steps of a tool-calling run render as one bubble).
+  const stepOffsetRef = useRef(0);
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
@@ -228,7 +236,11 @@ export function useChat() {
       setMessages((prev) => applyDeltaBatch(prev, q));
     };
     const queueDelta = (event_type: string, data: any) => {
-      deltaQueueRef.current.push({ event_type, data });
+      deltaQueueRef.current.push({
+        event_type,
+        data,
+        offset: stepOffsetRef.current,
+      });
       if (deltaRafRef.current === null) {
         deltaRafRef.current = requestAnimationFrame(flushDeltas);
       }
@@ -241,12 +253,12 @@ export function useChat() {
         const et = evt.event_type;
 
         if (et === "message_start") {
-          // New assistant message with initial content blocks.
-          // NOTE: pi-rs also emits MessageStart for user prompts and tool
-          // results (agent_loop.rs), so we must only render assistant ones —
-          // otherwise the user's input gets echoed as an assistant bubble.
-          // User input is added optimistically on send; tool results are
-          // merged onto their toolCall block via tool_execution_* events.
+          // New assistant step. NOTE: pi-rs also emits MessageStart for user
+          // prompts and tool results (agent_loop.rs), so we must only render
+          // assistant ones — otherwise the user's input gets echoed as an
+          // assistant bubble. User input is added optimistically on send;
+          // tool results are merged onto their toolCall block via
+          // tool_execution_* events.
           const msg = evt.data?.message;
           if (!msg || msg.role !== "assistant") return;
           // A turn is starting for the active session — reflect streaming
@@ -256,14 +268,34 @@ export function useChat() {
           const rawBlocks = msg.content;
           const blocks = toBlocks(rawBlocks);
           const text = extractText(rawBlocks);
-          const newMsg: DisplayMessage = {
-            id: `msg-${Date.now()}`,
-            role: "assistant",
-            content: text,
-            blocks,
-            createdAt: new Date().toISOString(),
-          };
-          setMessages((prev) => [...prev, newMsg]);
+          setMessages((prev) => {
+            if (prev.length > 0) {
+              const last = prev[prev.length - 1];
+              if (last.role === "assistant") {
+                // Merge: consecutive steps of a tool-calling run render as one
+                // bubble (Claude Code style). Record the block offset so this
+                // step's deltas land at the right index.
+                stepOffsetRef.current = last.blocks.length;
+                return [
+                  ...prev.slice(0, -1),
+                  {
+                    ...last,
+                    blocks: [...last.blocks, ...blocks],
+                    content: last.content + text,
+                  },
+                ];
+              }
+            }
+            stepOffsetRef.current = 0;
+            const newMsg: DisplayMessage = {
+              id: `msg-${Date.now()}`,
+              role: "assistant",
+              content: text,
+              blocks,
+              createdAt: new Date().toISOString(),
+            };
+            return [...prev, newMsg];
+          });
 
         } else if (
           et === "text_delta" ||
@@ -276,38 +308,46 @@ export function useChat() {
           queueDelta(et, evt.data);
 
         } else if (et === "message_done") {
-          // Full message at stream end — self-heal (same as message_end).
+          // Full message at stream end — self-heal. With merged steps, only
+          // the current step's blocks (from the recorded offset) are replaced.
           const msg = evt.data?.message;
           if (!msg || msg.role !== "assistant") return;
           const rawBlocks = msg.content;
           if (!rawBlocks) return;
           const blocks = toBlocks(rawBlocks);
+          const offset = stepOffsetRef.current;
           setMessages((prev) => {
             if (prev.length === 0) return prev;
             const last = prev[prev.length - 1];
             if (last.role !== "assistant") return prev;
+            const merged = [...last.blocks];
+            merged.splice(offset, merged.length - offset, ...blocks);
             return [
               ...prev.slice(0, -1),
-              { ...last, blocks, content: blocksToText(blocks) },
+              { ...last, blocks: merged, content: blocksToText(merged) },
             ];
           });
 
         } else if (et === "message_end") {
-          // Finalize the last assistant message.
-          // As with message_start, ignore non-assistant messages (user prompts
-          // and tool results) — they would otherwise overwrite real content.
+          // Finalize the current assistant step. As with message_start, ignore
+          // non-assistant messages (user prompts and tool results) — they
+          // would otherwise overwrite real content. With merged steps, only
+          // the current step's blocks (from the recorded offset) are replaced.
           const msg = evt.data?.message;
           if (!msg || msg.role !== "assistant") return;
           const rawBlocks = msg.content;
           if (!rawBlocks) return;
           const blocks = toBlocks(rawBlocks);
+          const offset = stepOffsetRef.current;
           setMessages((prev) => {
             if (prev.length === 0) return prev;
             const last = prev[prev.length - 1];
             if (last.role !== "assistant") return prev;
+            const merged = [...last.blocks];
+            merged.splice(offset, merged.length - offset, ...blocks);
             return [
               ...prev.slice(0, -1),
-              { ...last, blocks, content: blocksToText(blocks) },
+              { ...last, blocks: merged, content: blocksToText(merged) },
             ];
           });
 

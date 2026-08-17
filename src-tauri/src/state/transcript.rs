@@ -222,7 +222,10 @@ pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value>
     }
 
     // Second pass: emit user/assistant messages with structured content blocks.
-    let mut out = Vec::new();
+    // Consecutive assistant messages (each step of a tool-calling run) are
+    // merged into a single message so one agent run renders as one bubble
+    // (Claude Code style), with text/thinking/toolCall blocks interleaved.
+    let mut out: Vec<serde_json::Value> = Vec::new();
     for msg in msgs {
         let (role, content, ts) = match msg {
             AgentMessage::User { content, timestamp } => ("user", content, *timestamp),
@@ -261,6 +264,28 @@ pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value>
                 }
             })
             .collect();
+
+        if role == "assistant" {
+            if let Some(last) = out.last_mut() {
+                if last.get("role").and_then(|r| r.as_str()) == Some("assistant") {
+                    // Merge: append this step's blocks to the last assistant
+                    // message and recompute the flattened text.
+                    if let Some(arr) = last.get_mut("content").and_then(|c| c.as_array_mut()) {
+                        if let Some(blocks) = blocks_val.as_array() {
+                            arr.extend(blocks.iter().cloned());
+                        }
+                    }
+                    if let Some(arr) = last.get("content").and_then(|c| c.as_array()) {
+                        let merged_text: String = arr
+                            .iter()
+                            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                            .collect();
+                        last["text"] = json!(merged_text);
+                    }
+                    continue;
+                }
+            }
+        }
 
         let ts_secs = ts as f64 / 1000.0;
         let created = chrono::DateTime::from_timestamp(ts_secs as i64, 0)

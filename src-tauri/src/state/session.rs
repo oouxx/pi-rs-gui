@@ -141,7 +141,9 @@ pub fn read_transcript_from_file(path: &str) -> Vec<serde_json::Value> {
     }
 
     // Second pass: emit user/assistant messages with structured content blocks.
-    let mut messages = Vec::new();
+    // Consecutive assistant messages (each step of a tool-calling run) are
+    // merged into one message (Claude Code style).
+    let mut messages: Vec<serde_json::Value> = Vec::new();
     for entry in &entries {
         if let SessionEntry::Message { message, .. } = entry {
             let role = message.get("role").and_then(|r| r.as_str()).unwrap_or("");
@@ -177,6 +179,28 @@ pub fn read_transcript_from_file(path: &str) -> Vec<serde_json::Value> {
                         .collect()
                 })
                 .unwrap_or_default();
+
+            if role == "assistant" {
+                if let Some(last) = messages.last_mut() {
+                    if last.get("role").and_then(|r| r.as_str()) == Some("assistant") {
+                        // Merge: append this step's blocks and recompute text.
+                        if let Some(arr) = last.get_mut("content").and_then(|c| c.as_array_mut()) {
+                            if let Some(blocks_arr) = blocks.as_array() {
+                                arr.extend(blocks_arr.iter().cloned());
+                            }
+                        }
+                        if let Some(arr) = last.get("content").and_then(|c| c.as_array()) {
+                            let merged_text: String = arr
+                                .iter()
+                                .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                                .collect();
+                            last["text"] = json!(merged_text);
+                        }
+                        continue;
+                    }
+                }
+            }
+
             let ts = message
                 .get("timestamp")
                 .and_then(|t| t.as_i64())
