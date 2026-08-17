@@ -47,6 +47,14 @@
     animation: reasoning-slide-up 200ms ease-out;
   }
 
+  /* --- sidebar session group collapsible --- */
+  .group-collapsible-content[data-state="open"] {
+    animation: group-slide-down 200ms ease-out;
+  }
+  .group-collapsible-content[data-state="closed"] {
+    animation: group-slide-up 200ms ease-out;
+  }
+
   /* --- Dialog --- */
   [data-slot="dialog-overlay"] {
     background: rgba(0, 0, 0, 0.4) !important;

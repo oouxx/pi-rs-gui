@@ -32,4 +32,26 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.4; }
   }
+
+  @keyframes group-slide-down {
+    from {
+      height: 0;
+      opacity: 0;
+    }
+    to {
+      height: var(--radix-collapsible-content-height);
+      opacity: 1;
+    }
+  }
+
+  @keyframes group-slide-up {
+    from {
+      height: var(--radix-collapsible-content-height);
+      opacity: 1;
+    }
+    to {
+      height: 0;
+      opacity: 0;
+    }
+  }
 }

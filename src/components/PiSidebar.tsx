@@ -17,6 +17,11 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "@/components/ui/collapsible";
+import {
   Search,
   Settings,
   Puzzle,
@@ -29,6 +34,7 @@ import {
   FileDown,
   FileJson,
   FolderOpen,
+  ChevronRight,
 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useChat } from "@/hooks/useChat";
@@ -67,6 +73,21 @@ function cwdBasename(cwd?: string | null): string {
   return cwd.split("/").filter(Boolean).pop() ?? cwd;
 }
 
+const COLLAPSED_GROUPS_KEY = "pi-gui:collapsed-groups";
+
+function loadCollapsedGroups(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_GROUPS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(
+      Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
 export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
   const {
     sessions,
@@ -81,6 +102,46 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
   const [renameValue, setRenameValue] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [collapsedGroups, setCollapsedGroups] =
+    useState<Set<string>>(loadCollapsedGroups);
+  const prevActiveIdRef = useRef<string | null>(null);
+
+  // Persist collapsed group state across reloads.
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        COLLAPSED_GROUPS_KEY,
+        JSON.stringify([...collapsedGroups]),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [collapsedGroups]);
+
+  const setGroupCollapsed = useCallback((key: string, collapsed: boolean) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (collapsed) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
+
+  // Auto-expand the group of the newly selected session.
+  useEffect(() => {
+    const prevId = prevActiveIdRef.current;
+    prevActiveIdRef.current = activeSessionId;
+    if (!activeSessionId || activeSessionId === prevId) return;
+    const active = sessions.find((s) => s.id === activeSessionId);
+    if (!active) return;
+    const key = active.cwd || "";
+    setCollapsedGroups((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  }, [activeSessionId, sessions]);
 
   // Clear any pending copy-feedback timer on unmount.
   useEffect(
@@ -354,21 +415,38 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 {search.trim() ? "No matching sessions" : "No sessions yet"}
               </div>
             ) : (
-              groups.map((g) => (
-                <div key={g.key} className="mb-2">
-                  <div
-                    className="text-muted-foreground group-data-[collapsible=icon]:hidden flex items-center gap-1.5 px-3 py-1 text-[10px] font-medium uppercase tracking-wide"
-                    title={g.path}
+              groups.map((g) => {
+                const isCollapsed =
+                  collapsedGroups.has(g.key) && !search.trim();
+                return (
+                  <Collapsible
+                    key={g.key}
+                    open={!isCollapsed}
+                    onOpenChange={(open) => setGroupCollapsed(g.key, !open)}
+                    className="mb-2"
                   >
-                    <FolderOpen className="size-3" />
-                    <span className="truncate">{g.label}</span>
-                    <span className="ml-auto text-[10px] opacity-70">
-                      {g.sessions.length}
-                    </span>
-                  </div>
-                  <SidebarMenu>{g.sessions.map(renderSessionItem)}</SidebarMenu>
-                </div>
-              ))
+                    <CollapsibleTrigger
+                      disabled={!!search.trim()}
+                      className="text-muted-foreground group-data-[collapsible=icon]:hidden flex w-full cursor-pointer items-center gap-1.5 px-3 py-1 text-[10px] font-medium uppercase tracking-wide select-none hover:text-foreground disabled:cursor-default"
+                      title={g.path}
+                    >
+                      <ChevronRight
+                        className={`size-3 shrink-0 transition-transform duration-200 ${isCollapsed ? "" : "rotate-90"}`}
+                      />
+                      <FolderOpen className="size-3 shrink-0" />
+                      <span className="truncate">{g.label}</span>
+                      <span className="ml-auto text-[10px] opacity-70">
+                        {g.sessions.length}
+                      </span>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="group-collapsible-content">
+                      <SidebarMenu>
+                        {g.sessions.map(renderSessionItem)}
+                      </SidebarMenu>
+                    </CollapsibleContent>
+                  </Collapsible>
+                );
+              })
             )}
           </SidebarMenu>
         </SidebarGroup>
