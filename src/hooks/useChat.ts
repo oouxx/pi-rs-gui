@@ -197,17 +197,27 @@ export function useChat() {
   }, []);
 
   useEffect(() => {
+    let disposed = false;
     let unsub: (() => void) | undefined;
     (async () => {
-      unsub = await tauriListen<any>("pi-gui:state-changed", () => refreshState());
+      const u = await tauriListen<any>("pi-gui:state-changed", () => refreshState());
+      if (disposed) {
+        u();
+        return;
+      }
+      unsub = u;
     })();
     refreshState();
-    return () => { unsub?.(); };
+    return () => {
+      disposed = true;
+      unsub?.();
+    };
   }, [refreshState]);
 
   // ── Streaming: listen for agent events ──────────────────────
   useEffect(() => {
     if (!activeSessionId) return;
+    let disposed = false;
     let unsub: (() => void) | undefined;
 
     const flushDeltas = () => {
@@ -225,7 +235,8 @@ export function useChat() {
     };
 
     (async () => {
-      unsub = await tauriListen<any>("agent-event", (evt: any) => {
+      const u = await tauriListen<any>("agent-event", (evt: any) => {
+        if (disposed) return;
         if (evt.session_id !== activeSessionIdRef.current) return;
         const et = evt.event_type;
 
@@ -360,6 +371,11 @@ export function useChat() {
           // Turn complete — transcript event will follow
         }
       });
+      if (disposed) {
+        u();
+        return;
+      }
+      unsub = u;
     })();
     return () => {
       // Cancel any pending delta batch and drop queued deltas (the transcript
@@ -367,6 +383,7 @@ export function useChat() {
       if (deltaRafRef.current !== null) cancelAnimationFrame(deltaRafRef.current);
       deltaRafRef.current = null;
       deltaQueueRef.current = [];
+      disposed = true;
       unsub?.();
     };
   }, [activeSessionId]);
@@ -383,9 +400,11 @@ export function useChat() {
       }
     });
 
+    let disposed = false;
     let unsub: (() => void) | undefined;
     (async () => {
-      unsub = await tauriListen<any>("pi-gui:selected-transcript-changed", (t: any) => {
+      const u = await tauriListen<any>("pi-gui:selected-transcript-changed", (t: any) => {
+        if (disposed) return;
         if (gen !== transcriptGenRef.current) return;
         // Ignore transcripts for other sessions (a stale send_message task can
         // emit a transcript for a session that is no longer selected).
@@ -396,8 +415,16 @@ export function useChat() {
         setStreaming(false);
         streamingRef.current = false;
       });
+      if (disposed) {
+        u();
+        return;
+      }
+      unsub = u;
     })();
-    return () => { unsub?.(); };
+    return () => {
+      disposed = true;
+      unsub?.();
+    };
   }, [activeSessionId]);
 
   const selectSession = useCallback(async (sessionId: string) => {

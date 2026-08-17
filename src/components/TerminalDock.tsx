@@ -169,14 +169,24 @@ export default function TerminalDock({
   const autoCreatedRef = useRef(false);
 
   // One global listener routes output to the bus (log + subscriber).
+  // The `disposed` flag guards against React StrictMode's double effect: the
+  // async tauriListen may resolve AFTER the first cleanup, which would leave
+  // two live listeners and double every output chunk (typing shows twice).
   useEffect(() => {
+    let disposed = false;
     let unsub: (() => void) | undefined;
     (async () => {
-      unsub = await tauriListen<any>("terminal-output", (evt: any) => {
+      const u = await tauriListen<any>("terminal-output", (evt: any) => {
         routeTerminalOutput(evt.sessionId, evt.data ?? "");
       });
+      if (disposed) {
+        u();
+        return;
+      }
+      unsub = u;
     })();
     return () => {
+      disposed = true;
       unsub?.();
     };
   }, []);

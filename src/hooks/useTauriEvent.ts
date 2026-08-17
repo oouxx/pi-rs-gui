@@ -10,8 +10,18 @@ export function useTauriEvent<T>(
   handler: (payload: T) => void,
 ): void {
   useEffect(() => {
+    let disposed = false;
     let unlisten: (() => void) | undefined;
-    tauriListen<T>(event, handler).then((unsub) => { unlisten = unsub; });
-    return () => { unlisten?.(); };
+    tauriListen<T>(event, handler).then((unsub) => {
+      if (disposed) {
+        unsub();
+        return;
+      }
+      unlisten = unsub;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, [event, handler]);
 }
