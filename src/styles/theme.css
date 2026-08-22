@@ -29,6 +29,25 @@
   --color-tag-bg: rgba(0, 0, 0, 0.04);
   --color-header-bg: #ffffff;
 
+  /* ── Codex CLI palette ──
+   * The chat view is rendered as an always-dark terminal (pixel-faithful
+   * to OpenAI Codex CLI): pure black canvas, neutral panels, mono type,
+   * OpenAI-green accent. Independent of app light/dark mode. */
+  --color-codex-bg: #000000;
+  --color-codex-inset: #0d0d0d;
+  --color-codex-panel: #171717;
+  --color-codex-panel-2: #1f1f1f;
+  --color-codex-panel-3: #2a2a2a;
+  --color-codex-border: rgb(255 255 255 / 0.09);
+  --color-codex-border-strong: rgb(255 255 255 / 0.16);
+  --color-codex-text: #e8e8e8;
+  --color-codex-dim: #9d9d9d;
+  --color-codex-faint: #6b6b6b;
+  --color-codex-green: #10a37f;
+  --color-codex-green-bright: #34d399;
+  --color-codex-amber: #fbbf24;
+  --color-codex-red: #f87171;
+
   /* shadcn CSS 变量 - OKLCH 空格格式 */
   --background: 0.975 0.003 260;
   --foreground: 0.15 0.008 260;
@@ -60,6 +79,22 @@
 }
 
 @theme {
+  /* ── Codex CLI palette (chat view, always-dark terminal) ── */
+  --color-codex-bg: #000000;
+  --color-codex-inset: #0d0d0d;
+  --color-codex-panel: #171717;
+  --color-codex-panel-2: #1f1f1f;
+  --color-codex-panel-3: #2a2a2a;
+  --color-codex-border: rgb(255 255 255 / 0.09);
+  --color-codex-border-strong: rgb(255 255 255 / 0.16);
+  --color-codex-text: #e8e8e8;
+  --color-codex-dim: #9d9d9d;
+  --color-codex-faint: #6b6b6b;
+  --color-codex-green: #10a37f;
+  --color-codex-green-bright: #34d399;
+  --color-codex-amber: #fbbf24;
+  --color-codex-red: #f87171;
+
   /* Background / Surface */
   --color-background: oklch(0.975 0.003 260);
   --color-foreground: oklch(0.15 0.008 260);

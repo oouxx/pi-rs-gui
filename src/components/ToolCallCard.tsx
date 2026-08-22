@@ -22,7 +22,7 @@ interface ToolCallCardProps {
   isError?: boolean;
 }
 
-// ── Per-tool metadata (icon + human label), matching Claude Code / Codex ──
+// ── Per-tool metadata (icon + human label), matching Codex CLI ──
 const TOOL_META: Record<string, { icon: ReactNode; label: string }> = {
   bash: { icon: <Terminal className="size-3.5" />, label: "Run command" },
   read: { icon: <FileText className="size-3.5" />, label: "Read file" },
@@ -45,7 +45,7 @@ function summarizeArgs(name: string, args: any): string {
     try {
       obj = JSON.parse(args);
     } catch {
-      return args.length > 120 ? args.slice(0, 120) + "…" : args;
+      return args.length > 200 ? args.slice(0, 200) + "…" : args;
     }
   }
   if (typeof obj !== "object") return String(obj);
@@ -72,15 +72,33 @@ function summarizeArgs(name: string, args: any): string {
       return obj.path ?? "";
     default: {
       const s = JSON.stringify(obj);
-      return s.length > 120 ? s.slice(0, 120) + "…" : s;
+      return s.length > 200 ? s.slice(0, 200) + "…" : s;
     }
   }
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  running: "Running",
-  success: "Done",
-  error: "Failed",
+const STATUS_META: Record<string, { label: string; icon: ReactNode; color: string }> = {
+  running: {
+    label: "running",
+    icon: <Loader2 className="size-3 animate-spin" />,
+    color: "text-codex-amber",
+  },
+  success: {
+    label: "done",
+    icon: <CheckCircle2 className="size-3" />,
+    color: "text-codex-green-bright",
+  },
+  error: {
+    label: "failed",
+    icon: <XCircle className="size-3" />,
+    color: "text-codex-red",
+  },
+};
+
+const IDLE_META = {
+  label: "pending",
+  icon: <Loader2 className="size-3 animate-spin" />,
+  color: "text-codex-faint",
 };
 
 export default function ToolCallCard({
@@ -98,115 +116,136 @@ export default function ToolCallCard({
       ? args
       : JSON.stringify(args, null, 2)
     : "";
+  const st = STATUS_META[status ?? ""] ?? IDLE_META;
+  const effError = isError || status === "error";
+
   const resultPreview = result
-    ? result.length > 120
-      ? result.slice(0, 120) + "…"
+    ? result.length > 240
+      ? result.slice(0, 240) + "…"
       : result
     : "";
 
-  const statusIcon = () => {
-    switch (status) {
-      case "running":
-        return <Loader2 className="size-3.5 animate-spin text-amber-500" />;
-      case "success":
-        return <CheckCircle2 className="size-3.5 text-emerald-500" />;
-      case "error":
-        return <XCircle className="size-3.5 text-red-500" />;
-      default:
-        return <Loader2 className="size-3.5 text-muted-foreground" />;
-    }
-  };
-
   return (
-    <div className="border-hairline bg-bg-surface my-2 overflow-hidden rounded-lg border text-xs">
-      {/* Header: icon + tool name + status */}
-      <div className="flex items-center gap-2 px-3 py-2">
-        <span
-          title={meta.label}
-          className={`shrink-0 ${
-            status === "error"
-              ? "text-red-500"
-              : status === "success"
-                ? "text-emerald-500"
-                : status === "running"
-                  ? "text-amber-500"
-                  : "text-muted-foreground"
-          }`}
-        >
-          {meta.icon}
+    <div className="my-1.5 font-mono">
+      {/* Header: icon + tool name + status (Codex CLI style) */}
+      <div className="flex items-center gap-2 text-xs">
+        <span className={`shrink-0 ${st.color}`}>{meta.icon}</span>
+        <span className="text-codex-dim font-medium">{name}</span>
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          <span className={st.color}>{st.icon}</span>
+          <span className="text-codex-faint text-[10px]">{st.label}</span>
         </span>
-        <span className="font-medium text-foreground">{name}</span>
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          {statusIcon()}
-          <span className="text-muted-foreground text-[10px] capitalize">
-            {STATUS_LABEL[status ?? ""] ?? "Pending"}
-          </span>
-        </div>
       </div>
 
-      {/* Key argument summary (always visible, human-readable) */}
-      {summary && (
-        <div className="border-t border-border/50 px-3 py-1.5">
-          <span
-            className="text-muted-foreground block truncate font-mono text-[11px]"
-            title={summary}
-          >
-            {summary}
-          </span>
-        </div>
-      )}
-
-      {/* Result preview (visible while collapsed) */}
-      {resultPreview && !showDetails && (
-        <div className="border-t border-border/50 px-3 py-1.5">
-          <span
-            className={`block truncate font-mono text-[11px] ${
-              isError ? "text-red-400" : "text-muted-foreground/80"
-            }`}
-            title={result}
-          >
-            {isError ? "✗ " : ""}
-            {resultPreview}
-          </span>
-        </div>
-      )}
-
-      {/* Details (collapsible: full args + result) */}
-      {(argsStr || result) && (
-        <button
-          type="button"
-          onClick={() => setShowDetails((v) => !v)}
-          className="hover:bg-bg-hover flex w-full items-center gap-1.5 border-t border-border/50 px-3 py-1.5 text-left transition-colors"
-        >
-          {showDetails ? (
-            <ChevronDown className="size-3" />
-          ) : (
-            <ChevronRight className="size-3" />
-          )}
-          <span className="text-muted-foreground font-mono text-[10px]">
-            Details
-          </span>
-        </button>
-      )}
-      {showDetails && (
-        <div className="border-t border-border/50">
-          {argsStr && (
-            <pre className="bg-bg-hover overflow-x-auto px-3 py-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
-              {argsStr}
-            </pre>
-          )}
-          {result && (
-            <pre
-              className={`overflow-x-auto px-3 py-2 font-mono text-[10px] leading-relaxed ${
-                isError
-                  ? "bg-red-950/20 text-red-400"
-                  : "bg-bg-hover text-muted-foreground"
-              }`}
+      {name === "bash" ? (
+        /* bash: terminal-style block with `$` prompt */
+        <div className="mt-1 overflow-hidden rounded-md border border-codex-border bg-codex-bg">
+          <div className="px-3 py-2 text-xs leading-relaxed">
+            {summary && (
+              <div className="text-codex-text break-words whitespace-pre-wrap">
+                <span className="text-codex-green select-none">$ </span>
+                {summary}
+              </div>
+            )}
+            {resultPreview && !showDetails && (
+              <div
+                className={`mt-1 break-words whitespace-pre-wrap ${
+                  effError ? "text-codex-red" : "text-codex-faint"
+                }`}
+              >
+                {effError ? "✗ " : ""}
+                {resultPreview}
+              </div>
+            )}
+          </div>
+          {(argsStr || result) && (
+            <button
+              type="button"
+              onClick={() => setShowDetails((v) => !v)}
+              className="hover:text-codex-dim flex w-full items-center gap-1 border-t border-codex-border/60 px-3 py-1 text-left font-mono text-[10px] text-codex-faint transition-colors"
             >
-              {result}
-            </pre>
+              {showDetails ? (
+                <ChevronDown className="size-3" />
+              ) : (
+                <ChevronRight className="size-3" />
+              )}
+              details
+            </button>
+          )}
+          {showDetails && (
+            <div className="border-t border-codex-border/60">
+              {argsStr && (
+                <pre className="text-codex-dim overflow-x-auto px-3 py-2 font-mono text-[11px] leading-relaxed">
+                  {argsStr}
+                </pre>
+              )}
+              {result && (
+                <pre
+                  className={`overflow-x-auto px-3 py-2 font-mono text-[11px] leading-relaxed ${
+                    effError ? "text-codex-red" : "text-codex-faint"
+                  }`}
+                >
+                  {result}
+                </pre>
+              )}
+            </div>
           )}
         </div>
+      ) : (
+        <>
+          {/* Non-bash tools: dimmed one-line summary */}
+          {summary && (
+            <div
+              className="text-codex-dim mt-1 truncate font-mono text-[11px]"
+              title={summary}
+            >
+              {summary}
+            </div>
+          )}
+          {resultPreview && !showDetails && (
+            <div
+              className={`mt-0.5 truncate font-mono text-[11px] ${
+                effError ? "text-codex-red" : "text-codex-faint"
+              }`}
+              title={result}
+            >
+              {effError ? "✗ " : ""}
+              {resultPreview}
+            </div>
+          )}
+          {(argsStr || result) && (
+            <button
+              type="button"
+              onClick={() => setShowDetails((v) => !v)}
+              className="hover:text-codex-dim mt-0.5 flex items-center gap-1 font-mono text-[10px] text-codex-faint transition-colors"
+            >
+              {showDetails ? (
+                <ChevronDown className="size-3" />
+              ) : (
+                <ChevronRight className="size-3" />
+              )}
+              details
+            </button>
+          )}
+          {showDetails && (
+            <div className="mt-1 overflow-hidden rounded-md border border-codex-border bg-codex-bg">
+              {argsStr && (
+                <pre className="text-codex-dim overflow-x-auto px-3 py-2 font-mono text-[11px] leading-relaxed">
+                  {argsStr}
+                </pre>
+              )}
+              {result && (
+                <pre
+                  className={`overflow-x-auto px-3 py-2 font-mono text-[11px] leading-relaxed ${
+                    effError ? "text-codex-red" : "text-codex-faint"
+                  }`}
+                >
+                  {result}
+                </pre>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

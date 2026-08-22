@@ -240,7 +240,7 @@ const mdComponents: Components = {
     if (isInline) {
       return (
         <code
-          className="bg-bg-hover text-ink rounded px-1 py-0.5 font-mono text-xs"
+          className="text-codex-text rounded bg-white/10 px-1 py-0.5 font-mono text-xs"
           {...props}
         >
           {children}
@@ -255,12 +255,12 @@ const mdComponents: Components = {
   },
   pre: ({ children }) => (
     <div className="group/code relative my-2">
-      <pre className="rounded-card border-hairline bg-bg-hover text-ink-muted overflow-x-auto border p-3 pr-10 font-mono text-xs leading-relaxed">
+      <pre className="text-codex-dim border-codex-border overflow-x-auto rounded-md border bg-codex-bg p-3 pr-10 font-mono text-xs leading-relaxed">
         {children}
       </pre>
       <CopyButton
         text={nodeText(children)}
-        className="text-muted-foreground hover:text-foreground absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover/code:opacity-100"
+        className="text-codex-faint hover:text-codex-text absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover/code:opacity-100"
       />
     </div>
   ),
@@ -272,19 +272,19 @@ const mdComponents: Components = {
     </div>
   ),
   th: ({ children }) => (
-    <th className="border-hairline bg-bg-hover text-ink-muted border-b px-3 py-2 text-left font-medium">
+    <th className="text-codex-dim border-codex-border border-b bg-white/5 px-3 py-2 text-left font-medium">
       {children}
     </th>
   ),
   td: ({ children }) => (
-    <td className="border-hairline text-ink-muted border-b px-3 py-2">
+    <td className="text-codex-dim border-codex-border border-b px-3 py-2">
       {children}
     </td>
   ),
   a: ({ children, href }) => (
     <a
       href={href}
-      className="text-ai hover:underline"
+      className="text-codex-green-bright hover:underline"
       target="_blank"
       rel="noreferrer"
     >
@@ -297,7 +297,14 @@ const mdComponents: Components = {
   ol: ({ children }) => (
     <ol className="my-1 list-decimal space-y-1 pl-5">{children}</ol>
   ),
-  hr: () => <hr className="border-hairline my-3" />,
+  h1: ({ children }) => <h1 className="mt-3 mb-1 text-base font-semibold">{children}</h1>,
+  h2: ({ children }) => <h2 className="mt-3 mb-1 text-sm font-semibold">{children}</h2>,
+  h3: ({ children }) => <h3 className="mt-2 mb-1 text-sm font-medium">{children}</h3>,
+  h4: ({ children }) => <h4 className="mt-2 mb-1 text-sm font-medium">{children}</h4>,
+  h5: ({ children }) => <h5 className="mt-1 text-xs font-medium">{children}</h5>,
+  h6: ({ children }) => <h6 className="mt-1 text-xs font-medium">{children}</h6>,
+  p: ({ children }) => <p className="my-1.5">{children}</p>,
+  hr: () => <hr className="border-codex-border my-3" />,
 };
 
 
@@ -308,7 +315,7 @@ const KIND_ICON: Record<string, { icon: React.ReactNode; className: string }> = 
   thinking_level_change: { icon: <Cog className="size-3" />, className: "text-purple-500" },
   compaction: { icon: <Scissors className="size-3" />, className: "text-amber-500" },
   branch_summary: { icon: <GitBranch className="size-3" />, className: "text-emerald-500" },
-  session_info: { icon: <MessageSquare className="size-3" />, className: "text-muted-foreground" },
+  session_info: { icon: <MessageSquare className="size-3" />, className: "text-codex-faint" },
 };
 
 function TreeNode({
@@ -333,10 +340,10 @@ function TreeNode({
   return (
     <div>
       <div
-        className={`group flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors ${
+        className={`group flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left font-mono text-xs transition-colors ${
           node.current
-            ? "bg-accent/10 text-accent font-medium"
-            : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            ? "bg-codex-green/15 text-codex-green-bright font-medium"
+            : "text-codex-faint hover:bg-codex-panel-2 hover:text-codex-dim"
         }`}
         style={{ paddingLeft: `${8 + depth * 14}px` }}
         onClick={() => onNavigate(node.id)}
@@ -349,7 +356,7 @@ function TreeNode({
                 e.stopPropagation();
                 onToggle(node.id);
               }}
-              className="rounded p-0.5 hover:bg-muted"
+              className="hover:bg-codex-panel-3 rounded p-0.5"
             >
               {isCollapsed ? (
                 <ChevronRight className="size-3" />
@@ -362,9 +369,11 @@ function TreeNode({
           )}
         </span>
         <span className={`shrink-0 ${meta.className}`}>{meta.icon}</span>
-        <span className="min-w-0 flex-1 truncate">{node.label}</span>
+        <span className="text-codex-dim min-w-0 flex-1 truncate">
+          {node.label}
+        </span>
         {node.current && (
-          <span className="bg-accent text-accent-foreground shrink-0 rounded-full px-1.5 text-[9px]">
+          <span className="bg-codex-green text-black shrink-0 rounded-full px-1.5 text-[9px]">
             here
           </span>
         )}
@@ -375,7 +384,7 @@ function TreeNode({
             e.stopPropagation();
             onFork(node.id);
           }}
-          className="text-muted-foreground hover:text-accent shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+          className="text-codex-faint hover:text-codex-green-bright shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100"
         >
           <GitBranch className="size-3" />
         </button>
@@ -441,16 +450,16 @@ function TimelinePanel({
   );
 
   return (
-    <div className="border-hairline bg-bg-surface flex w-72 shrink-0 flex-col border-l">
-      <div className="border-hairline flex items-center gap-2 border-b px-3 py-2">
-        <GitBranch className="text-muted-foreground size-3.5" />
-        <span className="text-foreground flex-1 text-xs font-medium">
+    <div className="border-codex-border bg-codex-panel flex w-72 shrink-0 flex-col border-l">
+      <div className="border-codex-border flex items-center gap-2 border-b px-3 py-2 font-mono">
+        <GitBranch className="text-codex-faint size-3.5" />
+        <span className="text-codex-text flex-1 text-xs font-medium">
           Timeline
         </span>
         <button
           type="button"
           onClick={onClose}
-          className="text-muted-foreground hover:text-foreground rounded p-0.5 transition-colors"
+          className="text-codex-faint hover:text-codex-dim rounded p-0.5 transition-colors"
           title="Close timeline"
         >
           <X className="size-3.5" />
@@ -458,7 +467,7 @@ function TimelinePanel({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {tree.length === 0 ? (
-          <p className="text-muted-foreground px-2 py-4 text-center text-xs">
+          <p className="text-codex-faint px-2 py-4 text-center font-mono text-xs">
             No timeline yet
           </p>
         ) : (
@@ -474,7 +483,7 @@ function TimelinePanel({
             />
           ))
         )}
-        <div className="text-muted-foreground mt-2 flex items-center gap-1.5 px-2 text-[10px]">
+        <div className="text-codex-faint mt-2 flex items-center gap-1.5 px-2 font-mono text-[10px]">
           <CornerUpLeft className="size-3" />
           Click a node to jump to that branch point
         </div>
@@ -519,7 +528,7 @@ const BlockRenderer = memo(function BlockRenderer({
           <img
             src={imageDataUrl(block)}
             alt=""
-            className="max-h-64 rounded-lg border"
+            className="border-codex-border max-h-64 rounded-md border"
           />
         </div>
       );
@@ -545,67 +554,50 @@ const MessageItem = memo(function MessageItem({
   return (
     <div
       {...(isLast ? { "data-msg-last": "true" } : {})}
-      className={`group flex max-w-[820px] gap-3 ${msg.role === "user" ? "flex-row-reverse self-end" : ""}`}
+      className="group w-full max-w-[860px]"
     >
-      <span
-        className={`flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
-          msg.role === "user"
-            ? "bg-ai text-white"
-            : "bg-bg-hover text-foreground"
-        }`}
-      >
-        {msg.role === "user" ? "U" : "AI"}
-      </span>
-      <div
-        className={`relative rounded-xl px-4 py-3 text-sm leading-relaxed ${
-          msg.role === "user"
-            ? "bg-ink-dim max-w-[70%] rounded-tr-sm text-foreground"
-            : "border-hairline bg-bg-surface rounded-tl-sm border text-foreground/80"
-        }`}
-      >
-        <CopyButton
-          text={msg.content}
-          className="text-muted-foreground hover:text-foreground absolute -top-1 right-1 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
-        />
-        {msg.role === "user" ? (
-          <>
-            {msg.content}
-            {msg.blocks
-              .filter((b) => b.type === "image")
-              .map((b, bi) => (
-                <img
-                  key={`${msg.id}-img${bi}`}
-                  src={imageDataUrl(b)}
-                  alt=""
-                  className="mt-2 max-h-48 rounded-lg border"
-                />
-              ))}
-          </>
-        ) : msg.errorMessage ? (
-          <div className="flex items-start gap-2">
-            <AlertCircle className="text-red-500 mt-0.5 size-4 shrink-0" />
-            <div className="text-red-500/90 min-w-0 break-words whitespace-pre-wrap font-mono text-xs">
-              {msg.errorMessage}
-            </div>
+      {msg.role === "user" ? (
+        /* Codex: user prompt in a subtle panel, full width, mono */
+        <div className="border-codex-border bg-codex-panel relative rounded-md border px-4 py-3 font-mono text-sm leading-relaxed text-codex-text">
+          <CopyButton
+            text={msg.content}
+            className="text-codex-faint hover:text-codex-dim absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+          />
+          <div className="break-words whitespace-pre-wrap">{msg.content}</div>
+          {msg.blocks
+            .filter((b) => b.type === "image")
+            .map((b, bi) => (
+              <img
+                key={`${msg.id}-img${bi}`}
+                src={imageDataUrl(b)}
+                alt=""
+                className="border-codex-border mt-2 max-h-48 rounded-md border"
+              />
+            ))}
+        </div>
+      ) : msg.errorMessage ? (
+        <div className="border-codex-red/30 bg-codex-red/10 relative flex items-start gap-2 rounded-md border px-4 py-3 font-mono text-xs text-codex-red">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <div className="min-w-0 break-words whitespace-pre-wrap">
+            {msg.errorMessage}
           </div>
-        ) : msg.blocks.length > 0 ? (
-          msg.blocks.map((block, bi) => (
-            <BlockRenderer key={`${msg.id}-b${bi}`} block={block} />
-          ))
-        ) : streaming && isLastAi ? (
-          <div className="flex gap-1 py-1">
-            <span className="bg-muted-foreground size-1.5 animate-pulse rounded-full" />
-            <span
-              className="bg-muted-foreground size-1.5 animate-pulse rounded-full"
-              style={{ animationDelay: "0.2s" }}
-            />
-            <span
-              className="bg-muted-foreground size-1.5 animate-pulse rounded-full"
-              style={{ animationDelay: "0.4s" }}
-            />
-          </div>
-        ) : null}
-      </div>
+        </div>
+      ) : (
+        /* Codex CLI: assistant answers are plain terminal text, no bubble */
+        <div className="text-codex-text relative font-mono text-sm leading-relaxed">
+          <CopyButton
+            text={msg.content}
+            className="text-codex-faint hover:text-codex-dim absolute -top-1 right-1 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+          />
+          {msg.blocks.length > 0 ? (
+            msg.blocks.map((block, bi) => (
+              <BlockRenderer key={`${msg.id}-b${bi}`} block={block} />
+            ))
+          ) : streaming && isLastAi ? (
+            <span className="text-codex-dim inline-block animate-pulse">▍</span>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 });
@@ -1425,15 +1417,15 @@ export default function ChatView({
 
   return (
     <div className="flex size-full flex-col">
-      {/* Header */}
-      <div className="border-hairline bg-bg-surface flex shrink-0 items-center gap-3 border-b px-4 py-1.5">
+      {/* Header — Codex CLI: minimal, hairline, mono */}
+      <div className="border-codex-border bg-codex-bg flex shrink-0 items-center gap-3 border-b px-4 py-1.5 font-mono">
         <SidebarTrigger className="shrink-0" />
-        <div className="text-ink-muted flex min-w-0 shrink items-center gap-1.5 text-xs whitespace-nowrap">
-          <span className="font-medium text-foreground">
-            {activeTitle || "pi-gui"}
+        <div className="text-codex-faint flex min-w-0 shrink items-center gap-1.5 text-xs whitespace-nowrap">
+          <span className="text-codex-text font-medium">
+            {activeTitle || "pi"}
           </span>
           {activeSessionCwd && (
-            <span className="text-muted-foreground hidden truncate font-mono text-[11px] md:inline">
+            <span className="text-codex-faint hidden truncate text-[11px] md:inline">
               · {activeSessionCwd.split("/").filter(Boolean).pop()}
             </span>
           )}
@@ -1443,7 +1435,7 @@ export default function ChatView({
             <button
               type="button"
               disabled={!activeSessionId}
-              className="text-muted-foreground hover:text-foreground inline-flex max-w-[220px] items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[11px] transition-colors disabled:opacity-40"
+              className="text-codex-faint hover:text-codex-dim inline-flex max-w-[220px] items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[11px] transition-colors disabled:opacity-40"
               title="Select model"
             >
               <span className="truncate">
@@ -1469,7 +1461,7 @@ export default function ChatView({
               type="button"
               disabled={!activeSessionId}
               onClick={toggleInfo}
-              className="text-muted-foreground hover:text-foreground rounded-md p-1 transition-colors disabled:opacity-40"
+              className="text-codex-faint hover:text-codex-dim rounded-md p-1 transition-colors disabled:opacity-40"
               title="Session info"
             >
               <Info className="size-3.5" />
@@ -1534,10 +1526,10 @@ export default function ChatView({
           type="button"
           onClick={toggleTimeline}
           disabled={!activeSessionId}
-          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors disabled:opacity-40 ${
+          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs transition-colors disabled:opacity-40 ${
             showTimeline
-              ? "bg-accent/10 text-accent"
-              : "text-muted-foreground hover:text-foreground"
+              ? "bg-codex-green/15 text-codex-green-bright"
+              : "text-codex-faint hover:text-codex-dim"
           }`}
           title="Toggle session timeline"
         >
@@ -1547,16 +1539,16 @@ export default function ChatView({
       </div>
 
       {/* Messages or empty state */}
-      <div className="flex min-h-0 flex-1">
+      <div className="bg-codex-bg flex min-h-0 flex-1">
         <div className="flex min-h-0 flex-1 flex-col">
           <div
             key={activeSessionId}
             ref={timelineRef}
-            className="timeline relative flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-5"
+            className="timeline custom-scroll bg-codex-bg relative flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5 font-mono"
           >
           {threadSearch.isOpen && (
-            <div className="bg-popover border-hairline absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-md">
-              <Search className="text-muted-foreground size-3.5" />
+            <div className="border-codex-border bg-codex-panel absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-md border px-2 py-1.5 shadow-lg">
+              <Search className="text-codex-faint size-3.5" />
               <input
                 ref={threadSearch.inputRef}
                 value={threadSearch.query}
@@ -1572,16 +1564,16 @@ export default function ChatView({
                   }
                 }}
                 placeholder="Find in chat…"
-                className="h-6 w-40 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+                className="text-codex-text h-6 w-40 bg-transparent font-mono text-xs outline-none placeholder:text-codex-faint"
               />
-              <span className="text-muted-foreground min-w-[2.5rem] text-center font-mono text-[10px]">
+              <span className="text-codex-faint min-w-[2.5rem] text-center font-mono text-[10px]">
                 {threadSearch.matchCount === 0
                   ? "0/0"
                   : `${threadSearch.activeIndex + 1}/${threadSearch.matchCount}`}
               </span>
               <button
                 type="button"
-                className="text-muted-foreground hover:text-foreground rounded p-0.5 transition-colors"
+                className="text-codex-faint hover:text-codex-dim rounded p-0.5 transition-colors"
                 onClick={() => threadSearch.goToMatch(-1)}
                 title="Previous match (Shift+Enter)"
               >
@@ -1589,7 +1581,7 @@ export default function ChatView({
               </button>
               <button
                 type="button"
-                className="text-muted-foreground hover:text-foreground rounded p-0.5 transition-colors"
+                className="text-codex-faint hover:text-codex-dim rounded p-0.5 transition-colors"
                 onClick={() => threadSearch.goToMatch(1)}
                 title="Next match (Enter)"
               >
@@ -1597,7 +1589,7 @@ export default function ChatView({
               </button>
               <button
                 type="button"
-                className="text-muted-foreground hover:text-foreground rounded p-0.5 transition-colors"
+                className="text-codex-faint hover:text-codex-dim rounded p-0.5 transition-colors"
                 onClick={() => threadSearch.close()}
                 title="Close (Esc)"
               >
@@ -1607,32 +1599,33 @@ export default function ChatView({
           )}
           {isEmpty ? (
             <div className="flex flex-1 items-center justify-center">
-              <div className="max-w-[500px] text-center">
-                <h2 className="mb-2 text-2xl font-medium text-foreground">
+              <div className="max-w-[520px] text-center font-mono">
+                <div className="text-codex-green-bright mb-3 text-lg">❯</div>
+                <h2 className="text-codex-text mb-2 text-xl font-medium">
                   AI 编程助手
                 </h2>
-                <p className="text-muted-foreground mb-6 text-sm leading-relaxed">
+                <p className="text-codex-faint mb-6 text-xs leading-relaxed">
                   Start a conversation with your AI coding assistant. Ask
                   questions, request code reviews, or discuss architecture.
                 </p>
-                <div className="border-hairline bg-bg-surface mx-auto inline-flex flex-col items-start gap-1.5 rounded-lg border px-4 py-3 text-left text-xs text-muted-foreground">
-                  <span className="text-foreground text-xs font-medium">
+                <div className="border-codex-border bg-codex-panel mx-auto inline-flex flex-col items-start gap-1.5 rounded-md border px-4 py-3 text-left text-xs text-codex-dim">
+                  <span className="text-codex-text text-xs font-medium">
                     Quick tips
                   </span>
                   <span>
-                    <kbd className="bg-bg-hover rounded px-1 font-mono">/</kbd>{" "}
+                    <kbd className="border-codex-border bg-codex-inset rounded px-1 font-mono">/</kbd>{" "}
                     Slash commands for specific tasks
                   </span>
                   <span>
-                    <kbd className="bg-bg-hover rounded px-1 font-mono">@</kbd>{" "}
+                    <kbd className="border-codex-border bg-codex-inset rounded px-1 font-mono">@</kbd>{" "}
                     Reference files in your workspace
                   </span>
                   <span>
-                    <kbd className="bg-bg-hover rounded px-1 font-mono">
+                    <kbd className="border-codex-border bg-codex-inset rounded px-1 font-mono">
                       Enter
                     </kbd>{" "}
                     Send ·{" "}
-                    <kbd className="bg-bg-hover rounded px-1 font-mono">
+                    <kbd className="border-codex-border bg-codex-inset rounded px-1 font-mono">
                       Shift+Enter
                     </kbd>{" "}
                     New line
@@ -1718,12 +1711,12 @@ export default function ChatView({
         )}
 
         {/* Working directory picker + terminal toggle */}
-        <div className="border-hairline bg-bg-surface flex shrink-0 items-center gap-1 border-t px-4 pt-2">
+        <div className="border-codex-border bg-codex-bg flex shrink-0 items-center gap-1 border-t px-4 pt-2 font-mono">
           <button
             type="button"
             onClick={handlePickFolder}
             disabled={!activeSessionId}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-50"
+            className="text-codex-faint hover:text-codex-dim inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-50"
             title={activeSessionCwd ?? "选择工作目录"}
           >
             <Folder className="size-3.5" />
@@ -1739,8 +1732,8 @@ export default function ChatView({
             onClick={() => setTerminalOpen((o) => !o)}
             className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors ${
               terminalOpen
-                ? "bg-accent/10 text-accent"
-                : "text-muted-foreground hover:text-foreground"
+                ? "bg-codex-green/15 text-codex-green-bright"
+                : "text-codex-faint hover:text-codex-dim"
             }`}
             title="Toggle terminal panel (⌘J)"
           >
@@ -1748,29 +1741,29 @@ export default function ChatView({
             Terminal
           </button>
         </div>
-        {/* Composer */}
-        <div className="border-hairline bg-bg-surface shrink-0 border-t px-4 py-2">
-          <div className="relative mx-auto max-w-[820px]">
+        {/* Composer — Codex CLI terminal input */}
+        <div className="border-codex-border bg-codex-bg shrink-0 border-t px-4 py-2">
+          <div className="relative mx-auto max-w-[860px]">
             {/* @ mention / file completion popover */}
             {showMention && (
-              <div className="bg-popover border-hairline absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-md">
+              <div className="border-codex-border bg-codex-panel absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-md border p-1 shadow-lg">
                 {mentionFiles.length === 0 ? (
-                  <div className="text-muted-foreground px-3 py-2 text-xs">
+                  <div className="text-codex-dim px-3 py-2 font-mono text-xs">
                     No files found
                   </div>
                 ) : (
                   mentionFiles.map((f) => (
                     <button
                       key={f.path}
-                      className="hover:bg-muted flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors"
+                      className="hover:bg-codex-panel-2 text-codex-dim flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left font-mono text-xs transition-colors"
                       onClick={() => handleMentionSelect(f)}
                       onMouseDown={(e) => e.preventDefault()}
                     >
                       {f.isDir ? (
-                        <Folder className="text-ai size-3.5 shrink-0" />
+                        <Folder className="text-codex-green-bright size-3.5 shrink-0" />
                       ) : (
                         <svg
-                          className="text-muted-foreground size-3 shrink-0"
+                          className="text-codex-faint size-3 shrink-0"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
@@ -1780,11 +1773,11 @@ export default function ChatView({
                           <polyline points="14 2 14 8 20 8" />
                         </svg>
                       )}
-                      <span className="min-w-0 flex-1 truncate">
+                      <span className="text-codex-text min-w-0 flex-1 truncate">
                         {f.name}
                         {f.isDir ? "/" : ""}
                       </span>
-                      <span className="text-muted-foreground/70 max-w-[50%] truncate font-mono text-[10px]">
+                      <span className="text-codex-faint/70 max-w-[50%] truncate text-[10px]">
                         {f.path}
                       </span>
                     </button>
@@ -1795,23 +1788,23 @@ export default function ChatView({
 
             {/* /command argument completion popover */}
             {showArgMenu && (
-              <div className="bg-popover border-hairline absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-md">
+              <div className="border-codex-border bg-codex-panel absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-md border p-1 shadow-lg">
                 {argItems.length === 0 ? (
-                  <div className="text-muted-foreground px-3 py-2 text-xs">
+                  <div className="text-codex-dim px-3 py-2 font-mono text-xs">
                     No matching {argCmd === "model" ? "models" : "providers"}
                   </div>
                 ) : (
                   argItems.map((item) => (
                     <button
                       key={item.value}
-                      className="hover:bg-muted flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors"
+                      className="hover:bg-codex-panel-2 text-codex-dim flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left font-mono text-xs transition-colors"
                       onClick={() => handleArgSelect(item.value)}
                       onMouseDown={(e) => e.preventDefault()}
                     >
-                      <span className="min-w-0 flex-1 truncate font-mono">
+                      <span className="text-codex-text min-w-0 flex-1 truncate">
                         {item.label}
                       </span>
-                      <span className="text-muted-foreground/70 truncate text-[10px]">
+                      <span className="text-codex-faint/70 truncate text-[10px]">
                         {item.description}
                       </span>
                     </button>
@@ -1831,7 +1824,7 @@ export default function ChatView({
                 {attachments.map((a, idx) => (
                   <div
                     key={`${a.data.slice(0, 24)}-${idx}`}
-                    className="border-hairline bg-bg-hover group/att relative h-14 w-14 overflow-hidden rounded-lg border"
+                    className="border-codex-border bg-codex-panel group/att relative h-14 w-14 overflow-hidden rounded-md border"
                     title={attachmentNames[idx] ?? ""}
                   >
                     <img
@@ -1859,7 +1852,7 @@ export default function ChatView({
               onPaste={handlePaste}
               placeholder="Ask anything...  (/ for commands, @ to reference files, paste or drop images)"
               disabled={loading}
-              className="max-h-[120px] min-h-[44px] resize-none pr-12 pl-9 text-sm"
+              className="border-codex-border focus:border-codex-border-strong bg-codex-panel text-codex-text placeholder:text-codex-faint max-h-[120px] min-h-[44px] resize-none rounded-md border pl-9 pr-12 font-mono text-sm shadow-none"
               rows={1}
             />
             <input
@@ -1873,7 +1866,7 @@ export default function ChatView({
             <Button
               size="icon"
               variant="ghost"
-              className="absolute bottom-1.5 left-1.5 size-8 text-muted-foreground hover:text-foreground"
+              className="text-codex-faint hover:text-codex-dim absolute bottom-1.5 left-1.5 size-8"
               onClick={handleAttachClick}
               disabled={loading || streaming}
               title="Attach image"
@@ -1884,7 +1877,7 @@ export default function ChatView({
               <Button
                 size="icon"
                 variant="secondary"
-                className="absolute right-1.5 bottom-1.5 size-8"
+                className="bg-codex-panel-2 text-codex-dim absolute right-1.5 bottom-1.5 size-8 hover:bg-codex-panel-3"
                 onClick={stop}
                 title="Stop generating"
               >
@@ -1893,7 +1886,7 @@ export default function ChatView({
             ) : (
               <Button
                 size="icon"
-                className="absolute right-1.5 bottom-1.5 size-8"
+                className="bg-codex-green text-white absolute right-1.5 bottom-1.5 size-8 hover:bg-codex-green-bright"
                 onClick={handleSend}
                 disabled={!input.trim() && attachments.length === 0}
                 title="Send"
@@ -1901,6 +1894,31 @@ export default function ChatView({
                 <Send className="size-4" />
               </Button>
             )}
+            </div>
+            {/* Status line — Codex CLI bottom bar */}
+            <div className="text-codex-faint mt-1.5 flex items-center justify-between font-mono text-[10px]">
+              <span className="flex items-center gap-1.5">
+                <span
+                  className={`size-1.5 rounded-full ${
+                    currentProvider && currentModel
+                      ? "bg-codex-green-bright"
+                      : "bg-codex-faint"
+                  }`}
+                />
+                <span>
+                  {currentProvider && currentModel
+                    ? `${currentProvider}/${currentModel}`
+                    : "select model"}
+                </span>
+                {streaming && <span className="animate-pulse">running…</span>}
+              </span>
+              <span className="hidden items-center gap-2 md:flex">
+                <span>enter send</span>
+                <span>·</span>
+                <span>shift+enter newline</span>
+                <span>·</span>
+                <span>/ commands</span>
+              </span>
             </div>
           </div>
         </div>

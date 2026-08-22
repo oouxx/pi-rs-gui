@@ -234,10 +234,10 @@ export default function TerminalDock({
   );
 
   return (
-    <div className="border-hairline bg-bg-surface flex h-56 shrink-0 flex-col border-t">
+    <div className="border-codex-border bg-codex-panel flex h-56 shrink-0 flex-col border-t">
       {/* Tab bar */}
-      <div className="flex items-center border-b border-border/50 px-1.5 pt-1">
-        <TerminalSquare className="text-muted-foreground mx-1.5 size-3.5 shrink-0" />
+      <div className="border-codex-border/60 flex items-center border-b px-1.5 pt-1">
+        <TerminalSquare className="text-codex-faint mx-1.5 size-3.5 shrink-0" />
         <div className="flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto">
           {tabs.map((t) => {
             const active = t.id === activeId;
@@ -245,10 +245,10 @@ export default function TerminalDock({
               <div
                 key={t.id}
                 onClick={() => setActiveId(t.id)}
-                className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md border border-b-0 px-3 py-1 text-[11px] transition-colors ${
+                className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md border border-b-0 px-3 py-1 font-mono text-[11px] transition-colors ${
                   active
-                    ? "border-border bg-[#0d1117] text-zinc-100"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
+                    ? "border-codex-border bg-codex-bg text-codex-text"
+                    : "text-codex-faint hover:text-codex-dim border-transparent"
                 }`}
                 title={`${t.title} — ${cwd ?? ""}`}
               >
@@ -259,7 +259,7 @@ export default function TerminalDock({
                     e.stopPropagation();
                     closeTab(t.id);
                   }}
-                  className="hover:bg-muted rounded p-0.5"
+                  className="hover:bg-codex-panel-3 rounded p-0.5"
                   title="Close terminal"
                 >
                   <X className="size-3" />
@@ -270,7 +270,7 @@ export default function TerminalDock({
           <button
             type="button"
             onClick={addTab}
-            className="text-muted-foreground hover:text-foreground mb-1 ml-1 rounded p-1"
+            className="text-codex-faint hover:text-codex-dim mb-1 ml-1 rounded p-1"
             title="New terminal"
           >
             <Plus className="size-3.5" />
@@ -279,7 +279,7 @@ export default function TerminalDock({
         <button
           type="button"
           onClick={onClose}
-          className="text-muted-foreground hover:text-foreground ml-1 rounded p-1.5"
+          className="text-codex-faint hover:text-codex-dim ml-1 rounded p-1.5"
           title="Close terminal panel"
         >
           <ChevronDown className="size-3.5" />
