@@ -2587,7 +2587,6 @@ dependencies = [
  "pi-agent-core",
  "pi-ai",
  "pi-coding-agent",
- "pi-extensions",
  "portable-pty",
  "serde",
  "serde_json",

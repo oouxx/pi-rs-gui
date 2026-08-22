@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -101,6 +101,17 @@ const IDLE_META = {
   color: "text-codex-faint",
 };
 
+/** Format elapsed ms like the TS original's `formatDuration`: seconds with
+ *  one decimal, switching to m/s past a minute so a hung command stays
+ *  readable (e.g. `12.3s`, `2m 05s`). */
+function formatElapsed(ms: number): string {
+  const totalSecs = ms / 1000;
+  if (totalSecs < 60) return `${totalSecs.toFixed(1)}s`;
+  const m = Math.floor(totalSecs / 60);
+  const s = Math.floor(totalSecs % 60);
+  return `${m}m ${String(s).padStart(2, "0")}s`;
+}
+
 export default function ToolCallCard({
   name,
   args,
@@ -109,6 +120,30 @@ export default function ToolCallCard({
   isError,
 }: ToolCallCardProps) {
   const [showDetails, setShowDetails] = useState(false);
+  // Elapsed timer — the TS original's TUI re-renders every second while a
+  // tool runs (`renderResult` setInterval + `Elapsed X.Xs`), so the status
+  // line keeps moving even when a command produces no output (e.g. a hung
+  // `git clone`). The ACP layer sends no heartbeats (pi-acp doesn't either),
+  // so the client clocks it locally.
+  const [elapsedMs, setElapsedMs] = useState<number | null>(null);
+  const startedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (status === "running") {
+      startedAtRef.current ??= Date.now();
+      setElapsedMs(0);
+      const id = setInterval(() => {
+        setElapsedMs(Date.now() - (startedAtRef.current ?? Date.now()));
+      }, 100);
+      return () => clearInterval(id);
+    }
+    if (startedAtRef.current !== null) {
+      // Done/failed: freeze the total duration (TS original's `Took X.Xs`).
+      setElapsedMs(Date.now() - startedAtRef.current);
+    }
+    return undefined;
+  }, [status]);
+
   const meta = TOOL_META[name] ?? DEFAULT_META;
   const summary = summarizeArgs(name, args);
   const argsStr = args
@@ -134,6 +169,11 @@ export default function ToolCallCard({
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <span className={st.color}>{st.icon}</span>
           <span className="text-codex-faint text-xs">{st.label}</span>
+          {elapsedMs !== null && (
+            <span className="text-codex-faint tabular-nums text-xs">
+              {formatElapsed(elapsedMs)}
+            </span>
+          )}
         </span>
       </div>
 

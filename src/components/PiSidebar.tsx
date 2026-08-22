@@ -379,7 +379,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 onModeChange("chat");
               }}
               tooltip="New conversation"
-              className="bg-codex-text text-white hover:bg-neutral-800 data-[active=true]:bg-codex-text data-[active=true]:text-white"
+              className="bg-codex-green text-white hover:bg-codex-green-bright data-[active=true]:bg-codex-green data-[active=true]:text-white"
             >
               <Plus />
               <span>New conversation</span>

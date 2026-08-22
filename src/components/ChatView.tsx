@@ -45,7 +45,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
   Command,
-  CommandDialog,
   CommandEmpty,
   CommandGroup,
   CommandInput,
@@ -665,6 +664,29 @@ export default function ChatView({
     refreshSlashCommands();
   }, [refreshSlashCommands]);
 
+  // Focus the slash menu's search field when it opens so cmdk handles
+  // type-to-filter and arrow navigation (matches Codex's floating picker).
+  useEffect(() => {
+    if (showSlash) {
+      requestAnimationFrame(() => slashInputRef.current?.focus());
+    }
+  }, [showSlash]);
+
+  // Close the slash picker when clicking anywhere outside it.
+  useEffect(() => {
+    if (!showSlash) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (
+        slashMenuRef.current &&
+        !slashMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowSlash(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [showSlash]);
+
   const refreshModelPicker = useCallback(async () => {
     try {
       const [prov, mods, cur] = await Promise.all([
@@ -756,6 +778,8 @@ export default function ChatView({
   const [argPrefix, setArgPrefix] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const slashInputRef = useRef<HTMLInputElement>(null);
+  const slashMenuRef = useRef<HTMLDivElement>(null);
 
   // ── Attachments (images) ──
   const addFiles = useCallback(
@@ -1347,10 +1371,14 @@ export default function ChatView({
 
   const handleSlashSelect = useCallback(
     (cmd: SlashCommand) => {
-      insertAtCursor(`/${cmd.name} `);
+      // Replace any partial `/query` already typed with the full command
+      // (the composer holds just `/` while the picker is open).
+      const space = input.indexOf(" ");
+      const end = space === -1 ? input.length : space;
+      insertAtCursor(`/${cmd.name} `, 0, end);
       setShowSlash(false);
     },
-    [insertAtCursor],
+    [input, insertAtCursor],
   );
 
   const argItems = useMemo(() => {
@@ -1645,63 +1673,6 @@ export default function ChatView({
           )}
         </div>
 
-        {/* Slash command dialog */}
-        <CommandDialog
-          open={showSlash}
-          onOpenChange={(open) => {
-            if (!open) {
-              setShowSlash(false);
-              requestAnimationFrame(() => textareaRef.current?.focus());
-            }
-          }}
-        >
-          <Command>
-            <CommandInput placeholder="Search commands..." />
-            <CommandList>
-              <CommandEmpty>No matching commands</CommandEmpty>
-              {(["builtin", "extension", "prompt", "skill"] as const).map(
-                (source) => {
-                  const group = slashCommands.filter((c) => c.source === source);
-                  if (group.length === 0) return null;
-                  return (
-                    <CommandGroup
-                      key={source}
-                      heading={
-                        source === "builtin"
-                          ? "Builtin"
-                          : source === "extension"
-                            ? "Extensions"
-                            : source === "prompt"
-                              ? "Prompts"
-                              : "Skills"
-                      }
-                    >
-                      {group.map((cmd) => (
-                        <CommandItem
-                          key={`${source}:${cmd.name}`}
-                          onSelect={() => handleSlashSelect(cmd)}
-                        >
-                          <span className="flex-1 truncate font-medium">
-                            /{cmd.name}
-                          </span>
-                          {cmd.argumentHint && (
-                            <span className="text-muted-foreground font-mono text-[10px]">
-                              {cmd.argumentHint}
-                            </span>
-                          )}
-                          <span className="text-muted-foreground ml-auto max-w-[220px] truncate text-[10px]">
-                            {cmd.description}
-                          </span>
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  );
-                },
-              )}
-            </CommandList>
-          </Command>
-        </CommandDialog>
-
         {/* Terminal dock — between the messages and the composer */}
         {terminalOpen && (
           <TerminalDock
@@ -1744,6 +1715,81 @@ export default function ChatView({
         {/* Composer — Codex desktop input */}
         <div className="border-codex-border bg-codex-bg shrink-0 border-t px-4 py-3">
           <div className="relative mx-auto max-w-[820px]">
+            {/* Slash command picker — bottom-anchored popover above the composer (Codex-style) */}
+            {showSlash && (
+              <div
+                ref={slashMenuRef}
+                className="border-codex-border bg-codex-bg absolute bottom-full left-0 right-0 z-50 mb-1.5 overflow-hidden rounded-xl border shadow-lg"
+              >
+                <Command className="bg-codex-bg p-0">
+                  <div className="border-codex-border border-b px-3 pt-2 pb-1.5">
+                    <CommandInput
+                      ref={slashInputRef}
+                      placeholder="Search commands"
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setShowSlash(false);
+                          requestAnimationFrame(() => textareaRef.current?.focus());
+                        }
+                      }}
+                    />
+                  </div>
+                  <CommandList className="max-h-[300px] p-1">
+                    <CommandEmpty className="text-codex-faint py-6 text-center text-sm">
+                      No matching commands
+                    </CommandEmpty>
+                    {(["builtin", "extension", "prompt", "skill"] as const).map(
+                      (source) => {
+                        const group = slashCommands.filter(
+                          (c) => c.source === source,
+                        );
+                        if (group.length === 0) return null;
+                        return (
+                          <CommandGroup
+                            key={source}
+                            heading={
+                              source === "builtin"
+                                ? "Commands"
+                                : source === "extension"
+                                  ? "Extensions"
+                                  : source === "prompt"
+                                    ? "Prompts"
+                                    : "Skills"
+                            }
+                          >
+                            {group.map((cmd) => (
+                              <CommandItem
+                                key={`${source}:${cmd.name}`}
+                                value={`/${cmd.name} ${cmd.description ?? ""}`}
+                                onSelect={() => handleSlashSelect(cmd)}
+                                className="data-selected:bg-codex-panel-2 data-selected:text-codex-text flex items-baseline gap-2 rounded-md px-3 py-2"
+                              >
+                                <span className="text-codex-text font-mono text-sm font-medium">
+                                  /{cmd.name}
+                                </span>
+                                {cmd.argumentHint && (
+                                  <span className="text-codex-faint font-mono text-[11px]">
+                                    {cmd.argumentHint}
+                                  </span>
+                                )}
+                                <span className="text-codex-faint min-w-0 flex-1 truncate text-left text-xs">
+                                  {cmd.description}
+                                </span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        );
+                      },
+                    )}
+                  </CommandList>
+                  <div className="border-codex-border bg-codex-inset px-3 py-1.5 text-[11px] text-codex-faint">
+                    ↑↓ navigate · ↵ select · Esc close
+                  </div>
+                </Command>
+              </div>
+            )}
+
             {/* @ mention / file completion popover */}
             {showMention && (
               <div className="border-codex-border bg-white absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-lg">

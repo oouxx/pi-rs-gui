@@ -44,7 +44,7 @@
   --color-codex-dim: #525252;
   --color-codex-faint: #a3a3a3;
   --color-codex-green: #10a37f;
-  --color-codex-green-bright: #10a37f;
+  --color-codex-green-bright: #19b28d;
   --color-codex-amber: #f59e0b;
   --color-codex-red: #dc2626;
 
@@ -91,7 +91,7 @@
   --color-codex-dim: #525252;
   --color-codex-faint: #a3a3a3;
   --color-codex-green: #10a37f;
-  --color-codex-green-bright: #10a37f;
+  --color-codex-green-bright: #19b28d;
   --color-codex-amber: #f59e0b;
   --color-codex-red: #dc2626;
 
@@ -138,8 +138,8 @@
   --color-bg: oklch(0.975 0.003 260);
   --color-bg-surface: oklch(1 0 0);
   --color-bg-hover: oklch(0.955 0.004 260);
-  --color-white: oklch(0.15 0.008 260);
-  --color-black: oklch(0.975 0.003 260);
+  --color-white: oklch(0.975 0.003 260);
+  --color-black: oklch(0.15 0.008 260);
   --color-canvas: oklch(0.975 0.003 260);
   --color-canvas-parchment: oklch(1 0 0);
   --color-surface-dark: oklch(1 0 0);
