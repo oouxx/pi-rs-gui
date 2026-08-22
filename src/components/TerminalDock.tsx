@@ -234,7 +234,7 @@ export default function TerminalDock({
   );
 
   return (
-    <div className="border-codex-border bg-codex-panel flex h-56 shrink-0 flex-col border-t">
+    <div className="border-codex-border bg-white flex h-56 shrink-0 flex-col border-t">
       {/* Tab bar */}
       <div className="border-codex-border/60 flex items-center border-b px-1.5 pt-1">
         <TerminalSquare className="text-codex-faint mx-1.5 size-3.5 shrink-0" />
@@ -245,9 +245,9 @@ export default function TerminalDock({
               <div
                 key={t.id}
                 onClick={() => setActiveId(t.id)}
-                className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md border border-b-0 px-3 py-1 font-mono text-[11px] transition-colors ${
+                className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md border border-b-0 px-3 py-1 text-[11px] transition-colors ${
                   active
-                    ? "border-codex-border bg-codex-bg text-codex-text"
+                    ? "border-codex-border bg-codex-inset text-codex-text"
                     : "text-codex-faint hover:text-codex-dim border-transparent"
                 }`}
                 title={`${t.title} — ${cwd ?? ""}`}

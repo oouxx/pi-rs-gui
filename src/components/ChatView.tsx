@@ -240,7 +240,7 @@ const mdComponents: Components = {
     if (isInline) {
       return (
         <code
-          className="text-codex-text rounded bg-white/10 px-1 py-0.5 font-mono text-xs"
+          className="bg-codex-inset text-codex-text rounded-md px-1.5 py-0.5 font-mono text-[12px]"
           {...props}
         >
           {children}
@@ -255,12 +255,12 @@ const mdComponents: Components = {
   },
   pre: ({ children }) => (
     <div className="group/code relative my-2">
-      <pre className="text-codex-dim border-codex-border overflow-x-auto rounded-md border bg-codex-bg p-3 pr-10 font-mono text-xs leading-relaxed">
+      <pre className="text-codex-dim border-codex-border bg-codex-inset overflow-x-auto rounded-lg border p-3 pr-10 font-mono text-xs leading-relaxed">
         {children}
       </pre>
       <CopyButton
         text={nodeText(children)}
-        className="text-codex-faint hover:text-codex-text absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover/code:opacity-100"
+        className="text-codex-faint hover:text-codex-dim absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover/code:opacity-100"
       />
     </div>
   ),
@@ -272,7 +272,7 @@ const mdComponents: Components = {
     </div>
   ),
   th: ({ children }) => (
-    <th className="text-codex-dim border-codex-border border-b bg-white/5 px-3 py-2 text-left font-medium">
+    <th className="text-codex-dim border-codex-border border-b bg-codex-inset px-3 py-2 text-left font-medium">
       {children}
     </th>
   ),
@@ -284,7 +284,7 @@ const mdComponents: Components = {
   a: ({ children, href }) => (
     <a
       href={href}
-      className="text-codex-green-bright hover:underline"
+      className="text-codex-green hover:underline"
       target="_blank"
       rel="noreferrer"
     >
@@ -340,9 +340,9 @@ function TreeNode({
   return (
     <div>
       <div
-        className={`group flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left font-mono text-xs transition-colors ${
+        className={`group flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs transition-colors ${
           node.current
-            ? "bg-codex-green/15 text-codex-green-bright font-medium"
+            ? "bg-codex-green/10 text-codex-green font-medium"
             : "text-codex-faint hover:bg-codex-panel-2 hover:text-codex-dim"
         }`}
         style={{ paddingLeft: `${8 + depth * 14}px` }}
@@ -373,7 +373,7 @@ function TreeNode({
           {node.label}
         </span>
         {node.current && (
-          <span className="bg-codex-green text-black shrink-0 rounded-full px-1.5 text-[9px]">
+          <span className="bg-codex-green text-white shrink-0 rounded-full px-1.5 text-[9px]">
             here
           </span>
         )}
@@ -384,7 +384,7 @@ function TreeNode({
             e.stopPropagation();
             onFork(node.id);
           }}
-          className="text-codex-faint hover:text-codex-green-bright shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+          className="text-codex-faint hover:text-codex-green shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100"
         >
           <GitBranch className="size-3" />
         </button>
@@ -450,8 +450,8 @@ function TimelinePanel({
   );
 
   return (
-    <div className="border-codex-border bg-codex-panel flex w-72 shrink-0 flex-col border-l">
-      <div className="border-codex-border flex items-center gap-2 border-b px-3 py-2 font-mono">
+    <div className="border-codex-border bg-white flex w-72 shrink-0 flex-col border-l">
+      <div className="border-codex-border flex items-center gap-2 border-b px-3 py-2">
         <GitBranch className="text-codex-faint size-3.5" />
         <span className="text-codex-text flex-1 text-xs font-medium">
           Timeline
@@ -467,7 +467,7 @@ function TimelinePanel({
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {tree.length === 0 ? (
-          <p className="text-codex-faint px-2 py-4 text-center font-mono text-xs">
+          <p className="text-codex-faint px-2 py-4 text-center text-xs">
             No timeline yet
           </p>
         ) : (
@@ -483,7 +483,7 @@ function TimelinePanel({
             />
           ))
         )}
-        <div className="text-codex-faint mt-2 flex items-center gap-1.5 px-2 font-mono text-[10px]">
+        <div className="text-codex-faint mt-2 flex items-center gap-1.5 px-2 text-[10px]">
           <CornerUpLeft className="size-3" />
           Click a node to jump to that branch point
         </div>
@@ -554,11 +554,11 @@ const MessageItem = memo(function MessageItem({
   return (
     <div
       {...(isLast ? { "data-msg-last": "true" } : {})}
-      className="group w-full max-w-[860px]"
+      className="group w-full max-w-[820px]"
     >
       {msg.role === "user" ? (
-        /* Codex: user prompt in a subtle panel, full width, mono */
-        <div className="border-codex-border bg-codex-panel relative rounded-md border px-4 py-3 font-mono text-sm leading-relaxed text-codex-text">
+        /* Codex desktop: user prompt in a subtle neutral box, full width */
+        <div className="border-codex-border bg-codex-panel relative rounded-lg border px-4 py-3 text-[15px] leading-relaxed text-codex-text">
           <CopyButton
             text={msg.content}
             className="text-codex-faint hover:text-codex-dim absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
@@ -571,20 +571,20 @@ const MessageItem = memo(function MessageItem({
                 key={`${msg.id}-img${bi}`}
                 src={imageDataUrl(b)}
                 alt=""
-                className="border-codex-border mt-2 max-h-48 rounded-md border"
+                className="border-codex-border mt-2 max-h-48 rounded-lg border"
               />
             ))}
         </div>
       ) : msg.errorMessage ? (
-        <div className="border-codex-red/30 bg-codex-red/10 relative flex items-start gap-2 rounded-md border px-4 py-3 font-mono text-xs text-codex-red">
+        <div className="border-red-200 bg-red-50 relative flex items-start gap-2 rounded-lg border px-4 py-3 text-sm text-red-600">
           <AlertCircle className="mt-0.5 size-4 shrink-0" />
           <div className="min-w-0 break-words whitespace-pre-wrap">
             {msg.errorMessage}
           </div>
         </div>
       ) : (
-        /* Codex CLI: assistant answers are plain terminal text, no bubble */
-        <div className="text-codex-text relative font-mono text-sm leading-relaxed">
+        /* Codex web: assistant answers are plain markdown, no bubble */
+        <div className="text-codex-text relative text-[15px] leading-relaxed">
           <CopyButton
             text={msg.content}
             className="text-codex-faint hover:text-codex-dim absolute -top-1 right-1 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
@@ -594,7 +594,7 @@ const MessageItem = memo(function MessageItem({
               <BlockRenderer key={`${msg.id}-b${bi}`} block={block} />
             ))
           ) : streaming && isLastAi ? (
-            <span className="text-codex-dim inline-block animate-pulse">▍</span>
+            <span className="text-codex-faint inline-block animate-pulse">▍</span>
           ) : null}
         </div>
       )}
@@ -1417,15 +1417,15 @@ export default function ChatView({
 
   return (
     <div className="flex size-full flex-col">
-      {/* Header — Codex CLI: minimal, hairline, mono */}
-      <div className="border-codex-border bg-codex-bg flex shrink-0 items-center gap-3 border-b px-4 py-1.5 font-mono">
+      {/* Header — Codex desktop: minimal, hairline */}
+      <div className="border-codex-border bg-codex-bg flex shrink-0 items-center gap-3 border-b px-4 py-2">
         <SidebarTrigger className="shrink-0" />
-        <div className="text-codex-faint flex min-w-0 shrink items-center gap-1.5 text-xs whitespace-nowrap">
+        <div className="text-codex-faint flex min-w-0 shrink items-center gap-1.5 text-sm whitespace-nowrap">
           <span className="text-codex-text font-medium">
-            {activeTitle || "pi"}
+            {activeTitle || "New conversation"}
           </span>
           {activeSessionCwd && (
-            <span className="text-codex-faint hidden truncate text-[11px] md:inline">
+            <span className="text-codex-faint hidden truncate text-xs md:inline">
               · {activeSessionCwd.split("/").filter(Boolean).pop()}
             </span>
           )}
@@ -1435,7 +1435,7 @@ export default function ChatView({
             <button
               type="button"
               disabled={!activeSessionId}
-              className="text-codex-faint hover:text-codex-dim inline-flex max-w-[220px] items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[11px] transition-colors disabled:opacity-40"
+              className="text-codex-faint hover:text-codex-dim inline-flex max-w-[220px] items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-40"
               title="Select model"
             >
               <span className="truncate">
@@ -1526,9 +1526,9 @@ export default function ChatView({
           type="button"
           onClick={toggleTimeline}
           disabled={!activeSessionId}
-          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 font-mono text-xs transition-colors disabled:opacity-40 ${
+          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors disabled:opacity-40 ${
             showTimeline
-              ? "bg-codex-green/15 text-codex-green-bright"
+              ? "bg-codex-green/10 text-codex-green"
               : "text-codex-faint hover:text-codex-dim"
           }`}
           title="Toggle session timeline"
@@ -1544,10 +1544,10 @@ export default function ChatView({
           <div
             key={activeSessionId}
             ref={timelineRef}
-            className="timeline custom-scroll bg-codex-bg relative flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5 font-mono"
+            className="timeline custom-scroll bg-codex-bg relative flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-6"
           >
           {threadSearch.isOpen && (
-            <div className="border-codex-border bg-codex-panel absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-md border px-2 py-1.5 shadow-lg">
+            <div className="border-codex-border bg-white absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-lg">
               <Search className="text-codex-faint size-3.5" />
               <input
                 ref={threadSearch.inputRef}
@@ -1564,9 +1564,9 @@ export default function ChatView({
                   }
                 }}
                 placeholder="Find in chat…"
-                className="text-codex-text h-6 w-40 bg-transparent font-mono text-xs outline-none placeholder:text-codex-faint"
+                className="text-codex-text h-6 w-40 bg-transparent text-xs outline-none placeholder:text-codex-faint"
               />
-              <span className="text-codex-faint min-w-[2.5rem] text-center font-mono text-[10px]">
+              <span className="text-codex-faint min-w-[2.5rem] text-center text-[10px]">
                 {threadSearch.matchCount === 0
                   ? "0/0"
                   : `${threadSearch.activeIndex + 1}/${threadSearch.matchCount}`}
@@ -1599,33 +1599,33 @@ export default function ChatView({
           )}
           {isEmpty ? (
             <div className="flex flex-1 items-center justify-center">
-              <div className="max-w-[520px] text-center font-mono">
-                <div className="text-codex-green-bright mb-3 text-lg">❯</div>
-                <h2 className="text-codex-text mb-2 text-xl font-medium">
+              <div className="max-w-[520px] text-center">
+                <div className="text-codex-green mb-4 text-2xl">✦</div>
+                <h2 className="text-codex-text mb-2 text-2xl font-medium">
                   AI 编程助手
                 </h2>
-                <p className="text-codex-faint mb-6 text-xs leading-relaxed">
+                <p className="text-codex-faint mb-6 text-sm leading-relaxed">
                   Start a conversation with your AI coding assistant. Ask
                   questions, request code reviews, or discuss architecture.
                 </p>
-                <div className="border-codex-border bg-codex-panel mx-auto inline-flex flex-col items-start gap-1.5 rounded-md border px-4 py-3 text-left text-xs text-codex-dim">
+                <div className="border-codex-border bg-codex-inset mx-auto inline-flex flex-col items-start gap-1.5 rounded-lg border px-4 py-3 text-left text-xs text-codex-dim">
                   <span className="text-codex-text text-xs font-medium">
                     Quick tips
                   </span>
                   <span>
-                    <kbd className="border-codex-border bg-codex-inset rounded px-1 font-mono">/</kbd>{" "}
+                    <kbd className="border-codex-border bg-white rounded px-1 font-mono">/</kbd>{" "}
                     Slash commands for specific tasks
                   </span>
                   <span>
-                    <kbd className="border-codex-border bg-codex-inset rounded px-1 font-mono">@</kbd>{" "}
+                    <kbd className="border-codex-border bg-white rounded px-1 font-mono">@</kbd>{" "}
                     Reference files in your workspace
                   </span>
                   <span>
-                    <kbd className="border-codex-border bg-codex-inset rounded px-1 font-mono">
+                    <kbd className="border-codex-border bg-white rounded px-1 font-mono">
                       Enter
                     </kbd>{" "}
                     Send ·{" "}
-                    <kbd className="border-codex-border bg-codex-inset rounded px-1 font-mono">
+                    <kbd className="border-codex-border bg-white rounded px-1 font-mono">
                       Shift+Enter
                     </kbd>{" "}
                     New line
@@ -1711,7 +1711,7 @@ export default function ChatView({
         )}
 
         {/* Working directory picker + terminal toggle */}
-        <div className="border-codex-border bg-codex-bg flex shrink-0 items-center gap-1 border-t px-4 pt-2 font-mono">
+        <div className="border-codex-border bg-codex-bg flex shrink-0 items-center gap-1 border-t px-4 pt-2">
           <button
             type="button"
             onClick={handlePickFolder}
@@ -1732,7 +1732,7 @@ export default function ChatView({
             onClick={() => setTerminalOpen((o) => !o)}
             className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors ${
               terminalOpen
-                ? "bg-codex-green/15 text-codex-green-bright"
+                ? "bg-codex-green/10 text-codex-green"
                 : "text-codex-faint hover:text-codex-dim"
             }`}
             title="Toggle terminal panel (⌘J)"
@@ -1741,12 +1741,12 @@ export default function ChatView({
             Terminal
           </button>
         </div>
-        {/* Composer — Codex CLI terminal input */}
-        <div className="border-codex-border bg-codex-bg shrink-0 border-t px-4 py-2">
-          <div className="relative mx-auto max-w-[860px]">
+        {/* Composer — Codex desktop input */}
+        <div className="border-codex-border bg-codex-bg shrink-0 border-t px-4 py-3">
+          <div className="relative mx-auto max-w-[820px]">
             {/* @ mention / file completion popover */}
             {showMention && (
-              <div className="border-codex-border bg-codex-panel absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-md border p-1 shadow-lg">
+              <div className="border-codex-border bg-white absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-lg">
                 {mentionFiles.length === 0 ? (
                   <div className="text-codex-dim px-3 py-2 font-mono text-xs">
                     No files found
@@ -1755,7 +1755,7 @@ export default function ChatView({
                   mentionFiles.map((f) => (
                     <button
                       key={f.path}
-                      className="hover:bg-codex-panel-2 text-codex-dim flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left font-mono text-xs transition-colors"
+                      className="hover:bg-codex-panel-2 text-codex-dim flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors"
                       onClick={() => handleMentionSelect(f)}
                       onMouseDown={(e) => e.preventDefault()}
                     >
@@ -1788,7 +1788,7 @@ export default function ChatView({
 
             {/* /command argument completion popover */}
             {showArgMenu && (
-              <div className="border-codex-border bg-codex-panel absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-md border p-1 shadow-lg">
+              <div className="border-codex-border bg-white absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-lg">
                 {argItems.length === 0 ? (
                   <div className="text-codex-dim px-3 py-2 font-mono text-xs">
                     No matching {argCmd === "model" ? "models" : "providers"}
@@ -1797,7 +1797,7 @@ export default function ChatView({
                   argItems.map((item) => (
                     <button
                       key={item.value}
-                      className="hover:bg-codex-panel-2 text-codex-dim flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left font-mono text-xs transition-colors"
+                      className="hover:bg-codex-panel-2 text-codex-dim flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors"
                       onClick={() => handleArgSelect(item.value)}
                       onMouseDown={(e) => e.preventDefault()}
                     >
@@ -1824,7 +1824,7 @@ export default function ChatView({
                 {attachments.map((a, idx) => (
                   <div
                     key={`${a.data.slice(0, 24)}-${idx}`}
-                    className="border-codex-border bg-codex-panel group/att relative h-14 w-14 overflow-hidden rounded-md border"
+                    className="border-codex-border bg-codex-inset group/att relative h-14 w-14 overflow-hidden rounded-lg border"
                     title={attachmentNames[idx] ?? ""}
                   >
                     <img
@@ -1834,7 +1834,7 @@ export default function ChatView({
                     />
                     <button
                       type="button"
-                      className="bg-black/60 text-white absolute top-0.5 right-0.5 rounded p-0.5 opacity-0 transition-opacity group-hover/att:opacity-100"
+                      className="bg-black/50 text-white absolute top-0.5 right-0.5 rounded p-0.5 opacity-0 transition-opacity group-hover/att:opacity-100"
                       onClick={() => removeAttachment(idx)}
                       title="Remove attachment"
                     >
@@ -1852,7 +1852,7 @@ export default function ChatView({
               onPaste={handlePaste}
               placeholder="Ask anything...  (/ for commands, @ to reference files, paste or drop images)"
               disabled={loading}
-              className="border-codex-border focus:border-codex-border-strong bg-codex-panel text-codex-text placeholder:text-codex-faint max-h-[120px] min-h-[44px] resize-none rounded-md border pl-9 pr-12 font-mono text-sm shadow-none"
+              className="border-codex-border focus:border-codex-border-strong bg-codex-bg text-codex-text placeholder:text-codex-faint max-h-[120px] min-h-[44px] resize-none rounded-xl border pl-10 pr-14 text-[15px] shadow-sm"
               rows={1}
             />
             <input
@@ -1886,7 +1886,7 @@ export default function ChatView({
             ) : (
               <Button
                 size="icon"
-                className="bg-codex-green text-white absolute right-1.5 bottom-1.5 size-8 hover:bg-codex-green-bright"
+                className="bg-black text-white absolute right-1.5 bottom-1.5 size-8 hover:bg-neutral-800"
                 onClick={handleSend}
                 disabled={!input.trim() && attachments.length === 0}
                 title="Send"
@@ -1895,29 +1895,27 @@ export default function ChatView({
               </Button>
             )}
             </div>
-            {/* Status line — Codex CLI bottom bar */}
-            <div className="text-codex-faint mt-1.5 flex items-center justify-between font-mono text-[10px]">
-              <span className="flex items-center gap-1.5">
+            {/* Status line — Codex desktop composer footer */}
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <span className="border-codex-border bg-codex-inset text-codex-dim inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs">
                 <span
                   className={`size-1.5 rounded-full ${
                     currentProvider && currentModel
-                      ? "bg-codex-green-bright"
+                      ? "bg-codex-green"
                       : "bg-codex-faint"
                   }`}
                 />
-                <span>
+                <span className="font-medium">
                   {currentProvider && currentModel
-                    ? `${currentProvider}/${currentModel}`
-                    : "select model"}
+                    ? currentModel
+                    : "Select model"}
                 </span>
-                {streaming && <span className="animate-pulse">running…</span>}
               </span>
-              <span className="hidden items-center gap-2 md:flex">
-                <span>enter send</span>
+              <span className="text-codex-faint hidden items-center gap-2 text-[11px] md:flex">
+                {streaming ? <span className="animate-pulse">running…</span> : null}
+                <span>Enter to send</span>
                 <span>·</span>
-                <span>shift+enter newline</span>
-                <span>·</span>
-                <span>/ commands</span>
+                <span>Shift+Enter newline</span>
               </span>
             </div>
           </div>

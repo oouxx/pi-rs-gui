@@ -79,24 +79,24 @@ function summarizeArgs(name: string, args: any): string {
 
 const STATUS_META: Record<string, { label: string; icon: ReactNode; color: string }> = {
   running: {
-    label: "running",
+    label: "Running",
     icon: <Loader2 className="size-3 animate-spin" />,
     color: "text-codex-amber",
   },
   success: {
-    label: "done",
+    label: "Done",
     icon: <CheckCircle2 className="size-3" />,
-    color: "text-codex-green-bright",
+    color: "text-codex-green",
   },
   error: {
-    label: "failed",
+    label: "Failed",
     icon: <XCircle className="size-3" />,
     color: "text-codex-red",
   },
 };
 
 const IDLE_META = {
-  label: "pending",
+  label: "Pending",
   icon: <Loader2 className="size-3 animate-spin" />,
   color: "text-codex-faint",
 };
@@ -126,21 +126,21 @@ export default function ToolCallCard({
     : "";
 
   return (
-    <div className="my-1.5 font-mono">
-      {/* Header: icon + tool name + status (Codex CLI style) */}
-      <div className="flex items-center gap-2 text-xs">
+    <div className="my-2">
+      {/* Header: icon + tool name + status (Codex desktop card) */}
+      <div className="flex items-center gap-2 text-sm">
         <span className={`shrink-0 ${st.color}`}>{meta.icon}</span>
         <span className="text-codex-dim font-medium">{name}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <span className={st.color}>{st.icon}</span>
-          <span className="text-codex-faint text-[10px]">{st.label}</span>
+          <span className="text-codex-faint text-xs">{st.label}</span>
         </span>
       </div>
 
       {name === "bash" ? (
         /* bash: terminal-style block with `$` prompt */
-        <div className="mt-1 overflow-hidden rounded-md border border-codex-border bg-codex-bg">
-          <div className="px-3 py-2 text-xs leading-relaxed">
+        <div className="border-codex-border bg-codex-inset mt-1 overflow-hidden rounded-lg border">
+          <div className="px-3 py-2 font-mono text-[13px] leading-relaxed">
             {summary && (
               <div className="text-codex-text break-words whitespace-pre-wrap">
                 <span className="text-codex-green select-none">$ </span>
@@ -162,7 +162,7 @@ export default function ToolCallCard({
             <button
               type="button"
               onClick={() => setShowDetails((v) => !v)}
-              className="hover:text-codex-dim flex w-full items-center gap-1 border-t border-codex-border/60 px-3 py-1 text-left font-mono text-[10px] text-codex-faint transition-colors"
+              className="hover:text-codex-dim flex w-full items-center gap-1 border-t border-codex-border px-3 py-1.5 text-left text-xs text-codex-faint transition-colors"
             >
               {showDetails ? (
                 <ChevronDown className="size-3" />
@@ -173,16 +173,16 @@ export default function ToolCallCard({
             </button>
           )}
           {showDetails && (
-            <div className="border-t border-codex-border/60">
+            <div className="border-t border-codex-border">
               {argsStr && (
-                <pre className="text-codex-dim overflow-x-auto px-3 py-2 font-mono text-[11px] leading-relaxed">
+                <pre className="text-codex-dim bg-codex-bg overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed">
                   {argsStr}
                 </pre>
               )}
               {result && (
                 <pre
-                  className={`overflow-x-auto px-3 py-2 font-mono text-[11px] leading-relaxed ${
-                    effError ? "text-codex-red" : "text-codex-faint"
+                  className={`bg-codex-bg overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed ${
+                    effError ? "text-codex-red" : "text-codex-dim"
                   }`}
                 >
                   {result}
@@ -196,7 +196,7 @@ export default function ToolCallCard({
           {/* Non-bash tools: dimmed one-line summary */}
           {summary && (
             <div
-              className="text-codex-dim mt-1 truncate font-mono text-[11px]"
+              className="text-codex-dim mt-1 truncate text-xs"
               title={summary}
             >
               {summary}
@@ -204,7 +204,7 @@ export default function ToolCallCard({
           )}
           {resultPreview && !showDetails && (
             <div
-              className={`mt-0.5 truncate font-mono text-[11px] ${
+              className={`mt-0.5 truncate text-xs ${
                 effError ? "text-codex-red" : "text-codex-faint"
               }`}
               title={result}
@@ -217,7 +217,7 @@ export default function ToolCallCard({
             <button
               type="button"
               onClick={() => setShowDetails((v) => !v)}
-              className="hover:text-codex-dim mt-0.5 flex items-center gap-1 font-mono text-[10px] text-codex-faint transition-colors"
+              className="hover:text-codex-dim mt-1 flex items-center gap-1 text-xs text-codex-faint transition-colors"
             >
               {showDetails ? (
                 <ChevronDown className="size-3" />
@@ -228,16 +228,16 @@ export default function ToolCallCard({
             </button>
           )}
           {showDetails && (
-            <div className="mt-1 overflow-hidden rounded-md border border-codex-border bg-codex-bg">
+            <div className="border-codex-border bg-codex-inset mt-1 overflow-hidden rounded-lg border">
               {argsStr && (
-                <pre className="text-codex-dim overflow-x-auto px-3 py-2 font-mono text-[11px] leading-relaxed">
+                <pre className="text-codex-dim bg-codex-bg overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed">
                   {argsStr}
                 </pre>
               )}
               {result && (
                 <pre
-                  className={`overflow-x-auto px-3 py-2 font-mono text-[11px] leading-relaxed ${
-                    effError ? "text-codex-red" : "text-codex-faint"
+                  className={`bg-codex-bg overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed ${
+                    effError ? "text-codex-red" : "text-codex-dim"
                   }`}
                 >
                   {result}

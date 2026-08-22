@@ -301,15 +301,16 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                   });
                 }}
                 tooltip={s.title}
+                className="data-[active=true]:bg-codex-panel-2 data-[active=true]:text-codex-text hover:bg-codex-inset hover:text-codex-text"
               >
                 <span
-                  className={`size-1.5 shrink-0 rounded-full ${activeSessionId === s.id ? "bg-accent" : "bg-muted-foreground"}`}
+                  className={`size-1.5 shrink-0 rounded-full ${activeSessionId === s.id ? "bg-codex-green" : "bg-codex-faint"}`}
                 />
                 <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
                   <span className="w-full truncate leading-tight">
                     {s.title}
                   </span>
-                  <span className="text-muted-foreground w-full truncate text-[10px] leading-none">
+                  <span className="text-codex-faint w-full truncate text-[11px] leading-none">
                     {s.preview
                       ? `${s.preview} · ${s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}${relativeTime(s.updatedAt)}`
                       : `${s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}${relativeTime(s.updatedAt)}`}
@@ -361,15 +362,27 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
+            {/* Codex-style brand header */}
+            <div className="flex items-center gap-2 px-2 py-1 group-data-[collapsible=icon]:justify-center">
+              <span className="bg-codex-green flex size-5 shrink-0 items-center justify-center rounded-md text-[11px] font-bold text-white">
+                p
+              </span>
+              <span className="text-codex-text text-sm font-semibold group-data-[collapsible=icon]:hidden">
+                pi
+              </span>
+            </div>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
             <SidebarMenuButton
               onClick={async () => {
                 await createSession();
                 onModeChange("chat");
               }}
-              tooltip="New thread"
+              tooltip="New conversation"
+              className="bg-codex-text text-white hover:bg-neutral-800 data-[active=true]:bg-codex-text data-[active=true]:text-white"
             >
               <Plus />
-              <span>New thread</span>
+              <span>New conversation</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
