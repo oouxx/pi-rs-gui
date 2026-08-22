@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use pi_agent_core::pi_ai_types::ContentBlock;
 use pi_agent_core::types::AgentMessage;
 use pi_coding_agent::core::agent_session::AgentSessionEvent;
 use pi_coding_agent::core::agent_session_runtime::{
@@ -654,6 +655,18 @@ impl Store {
         Ok(self.refresh_after_session_swap(app, &sid, &new_id).await)
     }
 
+    /// Duplicate the current session at its current position (`/clone`).
+    pub async fn clone_session(self: &Arc<Self>, app: &AppHandle) -> Result<DesktopState, String> {
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() {
+            return Err("No session".to_string());
+        }
+        let new_id = self
+            .send_cmd(&sid, |reply| SessionCommand::Clone { reply })
+            .await??;
+        Ok(self.refresh_after_session_swap(app, &sid, &new_id).await)
+    }
+
     /// Import a session from a JSONL file (matches TS `/import`).
     pub async fn import_session(
         self: &Arc<Self>,
@@ -733,7 +746,12 @@ impl Store {
         Ok(self.state.lock().await.clone())
     }
 
-    pub async fn send_message(self: &Arc<Self>, app: &AppHandle, text: &str) -> Result<(), String> {
+    pub async fn send_message(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        text: &str,
+        images: Option<Vec<ContentBlock>>,
+    ) -> Result<(), String> {
         let sid = self.state.lock().await.selected_session_id.clone();
         if sid.is_empty() {
             return Err("No session".to_string());
@@ -746,12 +764,17 @@ impl Store {
             FrontendEvent {
                 event_type: "user_message".into(),
                 session_id: sid.clone(),
-                data: json!({"text": text, "timestamp": chrono::Utc::now().timestamp_millis()}),
+                data: json!({
+                    "text": text,
+                    "images": images,
+                    "timestamp": chrono::Utc::now().timestamp_millis()
+                }),
             },
         );
 
         self.send_cmd(&sid, |reply| SessionCommand::SendMessage {
             text: text.to_string(),
+            images: images.unwrap_or_default(),
             reply,
         })
         .await??;

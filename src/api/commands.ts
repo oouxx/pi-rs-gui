@@ -34,8 +34,25 @@ export async function getActiveSessionCwd(): Promise<string | undefined> {
     return undefined;
   }
 }
-export function submitComposer(text: string) {
-  return tauriInvoke<DesktopAppState>("submit_composer", { text });
+export interface ComposerImage {
+  /** Raw base64 (no `data:` prefix). */
+  data: string;
+  mimeType: string;
+}
+
+export function submitComposer(text: string, images?: ComposerImage[]) {
+  return tauriInvoke<DesktopAppState>("submit_composer", {
+    text,
+    options: images && images.length > 0 ? { images } : undefined,
+  });
+}
+
+export function cloneSession() {
+  return tauriInvoke<DesktopAppState>("clone_session");
+}
+
+export function shareSession() {
+  return tauriInvoke<string>("share_session");
 }
 export function listCustomProviders() {
   return tauriInvoke<any[]>("list_custom_providers");

@@ -227,11 +227,14 @@ pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value>
     // (Claude Code style), with text/thinking/toolCall blocks interleaved.
     let mut out: Vec<serde_json::Value> = Vec::new();
     for msg in msgs {
-        let (role, content, ts) = match msg {
-            AgentMessage::User { content, timestamp } => ("user", content, *timestamp),
+        let (role, content, ts, error_message) = match msg {
+            AgentMessage::User { content, timestamp } => ("user", content, *timestamp, None),
             AgentMessage::Assistant {
-                content, timestamp, ..
-            } => ("assistant", content, *timestamp),
+                content,
+                timestamp,
+                error_message,
+                ..
+            } => ("assistant", content, *timestamp, error_message.clone()),
             _ => continue,
         };
 
@@ -282,6 +285,12 @@ pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value>
                             .collect();
                         last["text"] = json!(merged_text);
                     }
+                    // Propagate an error marker onto the merged bubble.
+                    if let Some(err) = error_message {
+                        if !err.is_empty() {
+                            last["errorMessage"] = json!(err);
+                        }
+                    }
                     continue;
                 }
             }
@@ -294,14 +303,20 @@ pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value>
                 chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
             });
 
-        out.push(json!({
+        let mut item = json!({
             "id": format!("msg-{}", ts),
             "kind": "message",
             "role": role,
             "text": text,
             "content": blocks_val,
             "createdAt": created,
-        }));
+        });
+        if let Some(err) = error_message {
+            if !err.is_empty() {
+                item["errorMessage"] = json!(err);
+            }
+        }
+        out.push(item);
     }
     out
 }

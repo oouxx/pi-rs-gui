@@ -13,13 +13,16 @@
 
 use std::sync::Arc;
 
+use pi_agent_core::pi_ai_types::ContentBlock;
 use pi_agent_core::types::AgentMessage;
+use pi_coding_agent::core::agent_session::PromptOptions;
 use pi_coding_agent::core::agent_session_runtime::AgentSessionRuntime;
 use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, oneshot};
 
 use super::transcript::build_display_transcript;
+use super::types::FrontendEvent;
 use super::Store;
 
 pub type SessionCommandSender = mpsc::UnboundedSender<SessionCommand>;
@@ -34,6 +37,7 @@ pub enum SessionCommand {
     /// Run an LLM turn. Replies immediately (ack); streaming is event-driven.
     SendMessage {
         text: String,
+        images: Vec<ContentBlock>,
         reply: oneshot::Sender<Result<(), String>>,
     },
     /// Abort the current run (if any). Works concurrently with a turn.
@@ -61,6 +65,9 @@ pub enum SessionCommand {
         entry_id: String,
         reply: oneshot::Sender<Result<String, String>>,
     },
+    /// Duplicate the session at the current position (`/clone`). Same as
+    /// ForkAt but always targets the current leaf.
+    Clone { reply: oneshot::Sender<Result<String, String>> },
     /// Switch the session to a different session file (matches TS `/import`).
     Import {
         path: String,
@@ -149,9 +156,9 @@ impl SessionActor {
 
     async fn handle(&mut self, cmd: SessionCommand) {
         match cmd {
-            SessionCommand::SendMessage { text, reply } => {
+            SessionCommand::SendMessage { text, images, reply } => {
                 let _ = reply.send(Ok(()));
-                self.start_turn(text).await;
+                self.start_turn(text, images).await;
             }
             SessionCommand::Abort { reply } => {
                 self.session.abort().await;
@@ -206,6 +213,24 @@ impl SessionActor {
                     .await
                     .map(|_| ())
                     .map_err(|e| e.to_string());
+                let result = self.finish_swap(result).await;
+                let _ = reply.send(result);
+            }
+            SessionCommand::Clone { reply } => {
+                let result = (|| async {
+                    let leaf = {
+                        let mgr = self.session.get_session_manager();
+                        mgr.get_leaf_id()
+                            .ok_or_else(|| "Nothing to clone yet".to_string())?
+                            .to_string()
+                    };
+                    self.session
+                        .session_mgr_fork(&leaf)
+                        .await
+                        .map(|_| ())
+                        .map_err(|e| e.to_string())
+                })()
+                .await;
                 let result = self.finish_swap(result).await;
                 let _ = reply.send(result);
             }
@@ -272,21 +297,62 @@ impl SessionActor {
 
     /// Run an LLM turn as a separate task sharing `Arc<AgentSession>`.
     /// Streaming events flow through the session's event subscription; on
-    /// completion the final transcript is emitted.
-    async fn start_turn(&mut self, text: String) {
+    /// completion the final transcript is emitted. Turn failures (timeout,
+    /// agent-loop errors) are surfaced to the frontend via a `run_error`
+    /// agent-event so the UI never silently stalls.
+    async fn start_turn(&mut self, text: String, images: Vec<ContentBlock>) {
         let session = Arc::clone(&self.session);
         let app = self.app.clone();
         let sid = self.session_id.clone();
         tokio::spawn(async move {
             let result = tokio::time::timeout(
                 std::time::Duration::from_secs(300),
-                session.add_user_text(&text),
+                async {
+                    if images.is_empty() {
+                        session.add_user_text(&text).await;
+                        Ok(())
+                    } else {
+                        session
+                            .prompt(
+                                &text,
+                                Some(PromptOptions {
+                                    // Skip skill/template expansion for raw
+                                    // attachment messages (mirrors
+                                    // `send_user_message`); `/commands` are
+                                    // still routed by the frontend.
+                                    expand_prompt_templates: Some(false),
+                                    images: Some(images),
+                                    ..Default::default()
+                                }),
+                            )
+                            .await
+                    }
+                },
             )
             .await;
             if result.is_err() {
                 eprintln!("[LLM] turn timed out after 300s");
+                let _ = app.emit(
+                    "agent-event",
+                    FrontendEvent {
+                        event_type: "run_error".into(),
+                        session_id: sid.clone(),
+                        data: json!({
+                            "message": "Turn timed out after 300s. The run was abandoned.",
+                            "timeout": true,
+                        }),
+                    },
+                );
             } else if let Err(ref e) = result {
                 eprintln!("[LLM] turn error: {e}");
+                let _ = app.emit(
+                    "agent-event",
+                    FrontendEvent {
+                        event_type: "run_error".into(),
+                        session_id: sid.clone(),
+                        data: json!({"message": e.to_string()}),
+                    },
+                );
             }
             // Emit the transcript so the frontend reflects the final state
             // (also after aborts, whose transcript may be partial).

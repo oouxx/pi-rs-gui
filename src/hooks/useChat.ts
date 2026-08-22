@@ -7,8 +7,10 @@ import {
   archiveSession as apiArchiveSession,
   deleteSession as apiDeleteSession,
   renameSession as apiRenameSession,
+  type ComposerImage,
 } from "../api/commands";
 import { tauriListen } from "../api/events";
+import { useToast } from "../components/ui/toast";
 
 // ── Content block types (mirrors pi-ai ContentBlock) ──────────
 
@@ -19,6 +21,9 @@ export interface ContentBlock {
   id?: string;          // toolCall.id
   name?: string;        // toolCall.name
   arguments?: any;      // toolCall.arguments
+  // Image blocks: raw base64 data + mime type
+  data?: string;
+  mimeType?: string;
   // Frontend-only: execution state (set by tool_execution_* events)
   status?: "running" | "success" | "error";
   result?: string;
@@ -31,6 +36,7 @@ export interface DisplayMessage {
   content: string;       // flattened text (backward compat)
   blocks: ContentBlock[]; // structured content blocks
   createdAt: string;
+  errorMessage?: string; // assistant run failure (LLM error, timeout)
 }
 
 interface SessionItem {
@@ -60,6 +66,8 @@ function toBlocks(raw: any[] | undefined | null): ContentBlock[] {
     if (b.id !== undefined) block.id = b.id;
     if (b.name !== undefined) block.name = b.name;
     if (b.arguments !== undefined) block.arguments = b.arguments;
+    if (b.data !== undefined) block.data = b.data;
+    if (b.mimeType !== undefined) block.mimeType = b.mimeType;
     // Frontend-only execution state (present in transcript reloads where the
     // backend merges tool results onto toolCall blocks).
     if (b.status !== undefined) block.status = b.status;
@@ -162,6 +170,7 @@ function applyDeltaBatch(prev: DisplayMessage[], deltas: StreamDelta[]): Display
 }
 
 export function useChat() {
+  const { toast } = useToast();
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -268,6 +277,10 @@ export function useChat() {
           const rawBlocks = msg.content;
           const blocks = toBlocks(rawBlocks);
           const text = extractText(rawBlocks);
+          const errorMessage =
+            typeof msg.error_message === "string" && msg.error_message
+              ? msg.error_message
+              : undefined;
           setMessages((prev) => {
             if (prev.length > 0) {
               const last = prev[prev.length - 1];
@@ -282,6 +295,7 @@ export function useChat() {
                     ...last,
                     blocks: [...last.blocks, ...blocks],
                     content: last.content + text,
+                    errorMessage: errorMessage ?? last.errorMessage,
                   },
                 ];
               }
@@ -293,6 +307,7 @@ export function useChat() {
               content: text,
               blocks,
               createdAt: new Date().toISOString(),
+              errorMessage,
             };
             return [...prev, newMsg];
           });
@@ -316,6 +331,10 @@ export function useChat() {
           if (!rawBlocks) return;
           const blocks = toBlocks(rawBlocks);
           const offset = stepOffsetRef.current;
+          const errorMessage =
+            typeof msg.error_message === "string" && msg.error_message
+              ? msg.error_message
+              : undefined;
           setMessages((prev) => {
             if (prev.length === 0) return prev;
             const last = prev[prev.length - 1];
@@ -324,7 +343,12 @@ export function useChat() {
             merged.splice(offset, merged.length - offset, ...blocks);
             return [
               ...prev.slice(0, -1),
-              { ...last, blocks: merged, content: blocksToText(merged) },
+              {
+                ...last,
+                blocks: merged,
+                content: blocksToText(merged),
+                errorMessage: errorMessage ?? last.errorMessage,
+              },
             ];
           });
 
@@ -339,6 +363,10 @@ export function useChat() {
           if (!rawBlocks) return;
           const blocks = toBlocks(rawBlocks);
           const offset = stepOffsetRef.current;
+          const errorMessage =
+            typeof msg.error_message === "string" && msg.error_message
+              ? msg.error_message
+              : undefined;
           setMessages((prev) => {
             if (prev.length === 0) return prev;
             const last = prev[prev.length - 1];
@@ -347,8 +375,37 @@ export function useChat() {
             merged.splice(offset, merged.length - offset, ...blocks);
             return [
               ...prev.slice(0, -1),
-              { ...last, blocks: merged, content: blocksToText(merged) },
+              {
+                ...last,
+                blocks: merged,
+                content: blocksToText(merged),
+                errorMessage: errorMessage ?? last.errorMessage,
+              },
             ];
+          });
+
+        } else if (et === "run_error") {
+          // Turn-level failure (timeout / agent-loop error) with no message
+          // payload — surface it as an error bubble + toast.
+          const errMsg = evt.data?.message;
+          const text = errMsg ? String(errMsg) : "Unknown error";
+          setStreaming(false);
+          streamingRef.current = false;
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `msg-err-${Date.now()}`,
+              role: "assistant",
+              content: "",
+              blocks: [],
+              createdAt: new Date().toISOString(),
+              errorMessage: text,
+            },
+          ]);
+          toast({
+            variant: "error",
+            title: "Run failed",
+            description: text,
           });
 
         } else if (et === "tool_execution_start") {
@@ -536,43 +593,63 @@ export function useChat() {
     streamingRef.current = false;
   }, []);
 
-  const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || streamingRef.current) return;
+  const sendMessage = useCallback(
+    async (text: string, attachments?: ComposerImage[]) => {
+      if ((!text.trim() && (!attachments || attachments.length === 0)) || streamingRef.current)
+        return;
 
-    // Auto-title: rename "New thread" sessions based on the first message
-    const currentSid = activeSessionIdRef.current;
-    const currentSession = currentSid ? sessions.find((s) => s.id === currentSid) : null;
-    if (currentSession && currentSession.title === "New thread" && text.trim()) {
-      const autoTitle = text.trim().slice(0, 60);
-      apiRenameSession(currentSession.id, autoTitle).catch(() => {});
-    }
+      // Auto-title: rename "New thread" sessions based on the first message
+      const currentSid = activeSessionIdRef.current;
+      const currentSession = currentSid ? sessions.find((s) => s.id === currentSid) : null;
+      if (currentSession && currentSession.title === "New thread" && text.trim()) {
+        const autoTitle = text.trim().slice(0, 60);
+        apiRenameSession(currentSession.id, autoTitle).catch(() => {});
+      }
 
-    // Optimistically add user message
-    const userMsg: DisplayMessage = {
-      id: `msg-opt-${Date.now()}`,
-      role: "user",
-      content: text,
-      blocks: [{ type: "text", text }],
-      createdAt: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    setStreaming(true);
-    streamingRef.current = true;
-    try {
-      await submitComposer(text);
-      // Safety net matching the backend's 300s add_user_text timeout. The
-      // transcript event normally clears streaming when the turn ends.
-      setTimeout(() => {
-        if (streamingRef.current) {
-          setStreaming(false);
-          streamingRef.current = false;
+      // Optimistically add user message (text + attachment thumbnails)
+      const blocks: ContentBlock[] = [{ type: "text", text }];
+      if (attachments && attachments.length > 0) {
+        for (const a of attachments) {
+          blocks.push({
+            type: "image",
+            data: a.data,
+            mimeType: a.mimeType,
+            text: `data:${a.mimeType};base64,${a.data}`,
+          });
         }
-      }, 300_000);
-    } catch {
-      setStreaming(false);
-      streamingRef.current = false;
-    }
-  }, [sessions]);
+      }
+      const userMsg: DisplayMessage = {
+        id: `msg-opt-${Date.now()}`,
+        role: "user",
+        content: text,
+        blocks,
+        createdAt: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, userMsg]);
+      setStreaming(true);
+      streamingRef.current = true;
+      try {
+        await submitComposer(text, attachments);
+        // Safety net matching the backend's 300s add_user_text timeout. The
+        // transcript event normally clears streaming when the turn ends.
+        setTimeout(() => {
+          if (streamingRef.current) {
+            setStreaming(false);
+            streamingRef.current = false;
+          }
+        }, 300_000);
+      } catch (e) {
+        setStreaming(false);
+        streamingRef.current = false;
+        toast({
+          variant: "error",
+          title: "Send failed",
+          description: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
+    [sessions, toast],
+  );
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const activeSessionCwd = activeSession?.cwd ?? null;
@@ -609,6 +686,10 @@ function transcriptToDisplay(transcript: readonly any[]): DisplayMessage[] {
         content: t.text ?? blocksToText(blocks) ?? "",
         blocks,
         createdAt: t.createdAt ?? "",
+        errorMessage:
+          typeof t.errorMessage === "string" && t.errorMessage
+            ? t.errorMessage
+            : undefined,
       };
     });
 }

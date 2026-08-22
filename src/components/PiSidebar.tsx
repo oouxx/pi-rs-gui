@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/components/ui/toast";
 import {
   Sidebar,
   SidebarContent,
@@ -89,6 +90,7 @@ function loadCollapsedGroups(): Set<string> {
 }
 
 export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
+  const { toast } = useToast();
   const {
     sessions,
     activeSessionId,
@@ -249,9 +251,14 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
         await exportSession(session.id, format, path);
       } catch (e) {
         console.error(`[export ${format}]`, e);
+        toast({
+          variant: "error",
+          title: "Export failed",
+          description: e instanceof Error ? e.message : String(e),
+        });
       }
     },
-    [],
+    [toast],
   );
 
   const renderSessionItem = (s: SessionItem) => (
@@ -284,9 +291,14 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 isActive={activeSessionId === s.id}
                 onClick={() => {
                   onModeChange("chat");
-                  selectSession(s.id).catch((e) =>
-                    console.error("[selectSession]", e),
-                  );
+                  selectSession(s.id).catch((e) => {
+                    console.error("[selectSession]", e);
+                    toast({
+                      variant: "error",
+                      title: "Failed to open session",
+                      description: e instanceof Error ? e.message : String(e),
+                    });
+                  });
                 }}
                 tooltip={s.title}
               >

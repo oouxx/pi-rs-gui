@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use pi_agent_core::pi_ai_types::ContentBlock;
 use crate::state::*;
 use crate::state::{model, providers, session, settings};
 use crate::state::actor::SessionCommand;
@@ -131,10 +132,34 @@ pub async fn submit_composer(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     text: String,
-    _options: Option<serde_json::Value>,
+    options: Option<serde_json::Value>,
 ) -> Result<DesktopState, String> {
+    // options: { images: [{ data: <raw base64>, mimeType: "image/png" }] }
+    let images: Option<Vec<ContentBlock>> = options
+        .and_then(|o| o.get("images").and_then(|v| v.as_array()).cloned())
+        .map(|arr| {
+            arr.into_iter()
+                .filter_map(|v| {
+                    let data = v.get("data").and_then(|d| d.as_str())?;
+                    if data.is_empty() {
+                        return None;
+                    }
+                    let mime = v
+                        .get("mimeType")
+                        .and_then(|m| m.as_str())
+                        .filter(|m| !m.is_empty())
+                        .unwrap_or("image/png")
+                        .to_string();
+                    Some(ContentBlock::Image {
+                        data: data.to_string(),
+                        mime_type: mime,
+                    })
+                })
+                .collect()
+        })
+        .filter(|v: &Vec<ContentBlock>| !v.is_empty());
     store
-        .send_message(&app, &text)
+        .send_message(&app, &text, images)
         .await
         .map_err(|e| e.to_string())?;
     Ok(store.state.lock().await.clone())
@@ -477,6 +502,81 @@ pub async fn export_session(
     crate::state::export::export_session(&session_file, &format, &target_path)
 }
 
+// ── Session share (/share via GitHub CLI) ──
+
+/// Share the selected session as a secret GitHub gist. Requires the `gh` CLI
+/// to be installed and logged in (`gh auth login`), mirroring TS `/share`.
+/// Returns the gist URL.
+#[tauri::command]
+pub async fn share_session(
+    store: State<'_, Arc<Store>>,
+) -> Result<String, String> {
+    use std::path::PathBuf;
+    use std::process::Stdio;
+
+    // 1. gh must exist and be logged in.
+    let auth = tokio::process::Command::new("gh")
+        .args(["auth", "status"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .map_err(|_| "GitHub CLI (gh) is not installed. Install it from https://cli.github.com/".to_string())?;
+    if !auth.success() {
+        return Err("GitHub CLI is not logged in. Run 'gh auth login' first.".to_string());
+    }
+
+    // 2. Resolve the selected session's file.
+    let sid = store.state.lock().await.selected_session_id.clone();
+    if sid.is_empty() {
+        return Err("No session selected".to_string());
+    }
+    let session_file = {
+        let state = store.state.lock().await;
+        state
+            .sessions
+            .iter()
+            .find(|s| s.id == sid)
+            .and_then(|s| s.session_file.as_ref())
+            .filter(|f| !f.is_empty())
+            .cloned()
+            .ok_or_else(|| "session has no session file".to_string())?
+    };
+
+    // 3. Export to a temp HTML file.
+    let tmp = PathBuf::from(std::env::temp_dir()).join("pi-gui-share.html");
+    crate::state::export::export_session(&session_file, "html", &tmp.to_string_lossy())?;
+
+    // 4. Create a secret gist and extract the URL from the output.
+    let out = tokio::process::Command::new("gh")
+        .args(["gist", "create", "--public=false", &tmp.to_string_lossy().to_string()])
+        .output()
+        .await
+        .map_err(|e| format!("failed to run gh: {e}"))?;
+    let _ = std::fs::remove_file(&tmp);
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(if err.is_empty() {
+            "gh gist create failed".to_string()
+        } else {
+            err
+        });
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let url = stdout
+        .lines()
+        .find_map(|l| {
+            let t = l.trim();
+            if t.starts_with("https://gist.github.com/") {
+                Some(t.to_string())
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| format!("could not parse gist URL from: {stdout}"))?;
+    Ok(url)
+}
+
 // ── Session tree (timeline) ──
 
 #[tauri::command]
@@ -605,6 +705,11 @@ pub async fn fork_session_at(
     entry_id: String,
 ) -> Result<DesktopState, String> {
     store.fork_session_at(&app, &entry_id).await
+}
+
+#[tauri::command]
+pub async fn clone_session(app: AppHandle, store: State<'_, Arc<Store>>) -> Result<DesktopState, String> {
+    store.clone_session(&app).await
 }
 
 #[tauri::command]

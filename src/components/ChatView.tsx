@@ -20,6 +20,8 @@ import {
   ShieldCheck,
   ShieldX,
   TerminalSquare,
+  Paperclip,
+  AlertCircle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -52,6 +54,8 @@ import {
 } from "@/components/ui/command";
 import { useChat, type ContentBlock, type DisplayMessage } from "@/hooks/useChat";
 import { useThreadSearch } from "@/hooks/use-thread-search";
+import { useToast } from "@/components/ui/toast";
+import type { ComposerImage } from "@/api/commands";
 import ToolCallCard from "@/components/ToolCallCard";
 import PickModel from "@/components/PickModel";
 import TerminalDock from "@/components/TerminalDock";
@@ -78,9 +82,45 @@ import {
   navigateSessionTree,
   renameSession,
   setSessionCwd,
+  cloneSession,
+  shareSession,
   type SessionInfo,
   type SessionTreeNode,
 } from "@/api/commands";
+
+// ── Attachment helpers ────────────────────────────────────────
+
+const MAX_ATTACHMENTS = 4;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+/** Read a File into a ComposerImage (raw base64 + mimeType). */
+function fileToComposerImage(file: File): Promise<ComposerImage> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      // result is `data:<mime>;base64,<data>` — strip the prefix.
+      const comma = result.indexOf(",");
+      const data = comma >= 0 ? result.slice(comma + 1) : result;
+      const mimeMatch = result.match(/^data:([^;,]+)/);
+      resolve({
+        data,
+        mimeType: file.type || mimeMatch?.[1] || "image/png",
+      });
+    };
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function imageDataUrl(block: ContentBlock): string {
+  if (block.data) {
+    return block.data.startsWith("data:")
+      ? block.data
+      : `data:${block.mimeType || "image/png"};base64,${block.data}`;
+  }
+  return block.text ?? block.arguments?.data ?? "";
+}
 
 // ── @ path autocomplete helpers (port of TS autocomplete.ts) ──
 const PATH_DELIMITERS = new Set([" ", "\t", '"', "'", "="]);
@@ -477,7 +517,7 @@ const BlockRenderer = memo(function BlockRenderer({
       return (
         <div className="my-2">
           <img
-            src={block.text ?? block.arguments?.data ?? ""}
+            src={imageDataUrl(block)}
             alt=""
             className="max-h-64 rounded-lg border"
           />
@@ -527,27 +567,44 @@ const MessageItem = memo(function MessageItem({
           text={msg.content}
           className="text-muted-foreground hover:text-foreground absolute -top-1 right-1 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
         />
-        {msg.role === "assistant" ? (
-          msg.blocks.length > 0 ? (
-            msg.blocks.map((block, bi) => (
-              <BlockRenderer key={`${msg.id}-b${bi}`} block={block} />
-            ))
-          ) : streaming && isLastAi ? (
-            <div className="flex gap-1 py-1">
-              <span className="bg-muted-foreground size-1.5 animate-pulse rounded-full" />
-              <span
-                className="bg-muted-foreground size-1.5 animate-pulse rounded-full"
-                style={{ animationDelay: "0.2s" }}
-              />
-              <span
-                className="bg-muted-foreground size-1.5 animate-pulse rounded-full"
-                style={{ animationDelay: "0.4s" }}
-              />
+        {msg.role === "user" ? (
+          <>
+            {msg.content}
+            {msg.blocks
+              .filter((b) => b.type === "image")
+              .map((b, bi) => (
+                <img
+                  key={`${msg.id}-img${bi}`}
+                  src={imageDataUrl(b)}
+                  alt=""
+                  className="mt-2 max-h-48 rounded-lg border"
+                />
+              ))}
+          </>
+        ) : msg.errorMessage ? (
+          <div className="flex items-start gap-2">
+            <AlertCircle className="text-red-500 mt-0.5 size-4 shrink-0" />
+            <div className="text-red-500/90 min-w-0 break-words whitespace-pre-wrap font-mono text-xs">
+              {msg.errorMessage}
             </div>
-          ) : null
-        ) : (
-          msg.content
-        )}
+          </div>
+        ) : msg.blocks.length > 0 ? (
+          msg.blocks.map((block, bi) => (
+            <BlockRenderer key={`${msg.id}-b${bi}`} block={block} />
+          ))
+        ) : streaming && isLastAi ? (
+          <div className="flex gap-1 py-1">
+            <span className="bg-muted-foreground size-1.5 animate-pulse rounded-full" />
+            <span
+              className="bg-muted-foreground size-1.5 animate-pulse rounded-full"
+              style={{ animationDelay: "0.2s" }}
+            />
+            <span
+              className="bg-muted-foreground size-1.5 animate-pulse rounded-full"
+              style={{ animationDelay: "0.4s" }}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -570,7 +627,10 @@ export default function ChatView({
     activeSessionId,
     activeSessionCwd,
   } = useChat();
+  const { toast } = useToast();
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<ComposerImage[]>([]);
+  const [attachmentNames, setAttachmentNames] = useState<string[]>([]);
   const [showSlash, setShowSlash] = useState(false);
   const [showMention, setShowMention] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
@@ -703,6 +763,98 @@ export default function ChatView({
   const [argStart, setArgStart] = useState(0);
   const [argPrefix, setArgPrefix] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Attachments (images) ──
+  const addFiles = useCallback(
+    async (files: FileList | File[]) => {
+      const all = Array.from(files);
+      const images = all.filter((f) => f.type.startsWith("image/"));
+      if (all.length > 0 && images.length === 0) {
+        toast({ variant: "error", title: "Only images can be attached" });
+        return;
+      }
+      const room = MAX_ATTACHMENTS - attachments.length;
+      if (images.length > room) {
+        toast({
+          variant: "error",
+          title: "Too many attachments",
+          description: `At most ${MAX_ATTACHMENTS} images can be attached`,
+        });
+      }
+      const picked = images.slice(0, Math.max(0, room));
+      const tooBig = picked.filter((f) => f.size > MAX_ATTACHMENT_BYTES);
+      if (tooBig.length > 0) {
+        toast({
+          variant: "error",
+          title: "File too large",
+          description: "Images must be smaller than 10 MB",
+        });
+      }
+      const ok = picked.filter((f) => f.size <= MAX_ATTACHMENT_BYTES);
+      if (ok.length === 0) return;
+      try {
+        const converted = await Promise.all(ok.map(fileToComposerImage));
+        setAttachments((prev) => [...prev, ...converted].slice(0, MAX_ATTACHMENTS));
+        setAttachmentNames((prev) =>
+          [...prev, ...ok.map((f) => f.name)].slice(0, MAX_ATTACHMENTS),
+        );
+      } catch {
+        toast({ variant: "error", title: "Failed to read image" });
+      }
+    },
+    [attachments.length, toast],
+  );
+
+  const handleAttachClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files) {
+        addFiles(files).catch(() => {});
+        e.target.value = "";
+      }
+    },
+    [addFiles],
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const files = e.dataTransfer?.files;
+      if (files && files.length > 0) {
+        addFiles(files).catch(() => {});
+      }
+    },
+    [addFiles],
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      const images: File[] = [];
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          const f = item.getAsFile();
+          if (f) images.push(f);
+        }
+      }
+      if (images.length > 0) {
+        e.preventDefault();
+        addFiles(images).catch(() => {});
+      }
+    },
+    [addFiles],
+  );
+
+  const removeAttachment = useCallback((idx: number) => {
+    setAttachments((prev) => prev.filter((_, i) => i !== idx));
+    setAttachmentNames((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
   const prevInputRef = useRef("");
 
   const timelineRef = useRef<HTMLDivElement | null>(null);
@@ -904,9 +1056,14 @@ export default function ChatView({
         setShowTimeline(false);
       } catch (e) {
         console.error("[fork]", e);
+        toast({
+          variant: "error",
+          title: "Fork failed",
+          description: e instanceof Error ? e.message : String(e),
+        });
       }
     },
-    [],
+    [toast],
   );
 
   const exportActiveSession = useCallback(async () => {
@@ -923,9 +1080,14 @@ export default function ChatView({
       await exportSession(activeSessionId, "jsonl", path);
     } catch (e) {
       console.error("[export]", e);
+      toast({
+        variant: "error",
+        title: "Export failed",
+        description: e instanceof Error ? e.message : String(e),
+      });
     }
     return true;
-  }, [activeSessionId, sessions]);
+  }, [activeSessionId, sessions, toast]);
 
   // Route builtin slash commands to real actions (TS interactive mode does
   // the same; unhandled commands fall through to the LLM as plain text).
@@ -944,7 +1106,44 @@ export default function ChatView({
           }
           return true;
         case "/compact":
-          await compactSession(arg || undefined).catch((e) => console.error(e));
+          await compactSession(arg || undefined).catch((e) => {
+            console.error(e);
+            toast({
+              variant: "error",
+              title: "Compact failed",
+              description: e instanceof Error ? e.message : String(e),
+            });
+          });
+          return true;
+        case "/clone":
+          try {
+            await cloneSession();
+            setShowTimeline(false);
+            toast({ variant: "success", title: "Session cloned" });
+          } catch (e) {
+            toast({
+              variant: "error",
+              title: "Clone failed",
+              description: e instanceof Error ? e.message : String(e),
+            });
+          }
+          return true;
+        case "/share":
+          try {
+            const url = await shareSession();
+            navigator.clipboard?.writeText(url).catch(() => {});
+            toast({
+              variant: "success",
+              title: "Session shared",
+              description: url,
+            });
+          } catch (e) {
+            toast({
+              variant: "error",
+              title: "Share failed",
+              description: e instanceof Error ? e.message : String(e),
+            });
+          }
           return true;
         case "/export":
           await exportActiveSession();
@@ -1063,23 +1262,27 @@ export default function ChatView({
       toggleInfo,
       onOpenSettings,
       exportActiveSession,
+      toast,
     ],
   );
 
   const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || streaming) return;
-    if (await tryHandleSlash(text)) {
+    if ((!text && attachments.length === 0) || streaming) return;
+    if (tryHandleSlash && text.startsWith("/") && (await tryHandleSlash(text))) {
       setInput("");
       prevInputRef.current = "";
       saveDraft(activeSessionId, "");
       return;
     }
+    const imgs = attachments;
     setInput("");
     prevInputRef.current = "";
+    setAttachments([]);
+    setAttachmentNames([]);
     saveDraft(activeSessionId, "");
-    await sendMessage(text);
-  }, [input, streaming, sendMessage, activeSessionId, saveDraft, tryHandleSlash]);
+    await sendMessage(text, imgs.length > 0 ? imgs : undefined);
+  }, [input, attachments, streaming, sendMessage, activeSessionId, saveDraft, tryHandleSlash]);
 
   const handlePickFolder = useCallback(async () => {
     if (!activeSessionId) return;
@@ -1089,8 +1292,13 @@ export default function ChatView({
       await setSessionCwd(activeSessionId, selected);
     } catch (e) {
       console.error("[setSessionCwd]", e);
+      toast({
+        variant: "error",
+        title: "Failed to set working directory",
+        description: e instanceof Error ? e.message : String(e),
+      });
     }
-  }, [activeSessionId]);
+  }, [activeSessionId, toast]);
 
   const onInputKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1612,16 +1820,66 @@ export default function ChatView({
               </div>
             )}
 
+            <div
+              className="relative"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleDrop}
+            >
+            {/* Attachment preview chips */}
+            {attachments.length > 0 && (
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                {attachments.map((a, idx) => (
+                  <div
+                    key={`${a.data.slice(0, 24)}-${idx}`}
+                    className="border-hairline bg-bg-hover group/att relative h-14 w-14 overflow-hidden rounded-lg border"
+                    title={attachmentNames[idx] ?? ""}
+                  >
+                    <img
+                      src={`data:${a.mimeType};base64,${a.data}`}
+                      alt=""
+                      className="size-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      className="bg-black/60 text-white absolute top-0.5 right-0.5 rounded p-0.5 opacity-0 transition-opacity group-hover/att:opacity-100"
+                      onClick={() => removeAttachment(idx)}
+                      title="Remove attachment"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <Textarea
               ref={textareaRef}
               value={input}
               onChange={onInputChange}
               onKeyDown={onInputKeyDown}
-              placeholder="Ask anything...  (/ for commands, @ to reference files)"
+              onPaste={handlePaste}
+              placeholder="Ask anything...  (/ for commands, @ to reference files, paste or drop images)"
               disabled={loading}
-              className="max-h-[120px] min-h-[44px] resize-none pr-12 text-sm"
+              className="max-h-[120px] min-h-[44px] resize-none pr-12 pl-9 text-sm"
               rows={1}
             />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handleFileChange}
+            />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="absolute bottom-1.5 left-1.5 size-8 text-muted-foreground hover:text-foreground"
+              onClick={handleAttachClick}
+              disabled={loading || streaming}
+              title="Attach image"
+            >
+              <Paperclip className="size-4" />
+            </Button>
             {streaming ? (
               <Button
                 size="icon"
@@ -1637,12 +1895,13 @@ export default function ChatView({
                 size="icon"
                 className="absolute right-1.5 bottom-1.5 size-8"
                 onClick={handleSend}
-                disabled={!input.trim()}
+                disabled={!input.trim() && attachments.length === 0}
                 title="Send"
               >
                 <Send className="size-4" />
               </Button>
             )}
+            </div>
           </div>
         </div>
         </div>
