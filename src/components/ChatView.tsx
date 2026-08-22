@@ -601,6 +601,17 @@ const MessageItem = memo(function MessageItem({
   );
 });
 
+// Codex desktop shows a row of example prompts under the composer on a fresh
+// chat. Clicking one fills the composer so the user can edit before sending.
+const STARTER_PROMPTS = [
+  "Review my changes",
+  "Explain this codebase",
+  "Fix a failing test",
+  "Add tests for this module",
+  "Refactor for clarity",
+  "Document the main API",
+];
+
 export default function ChatView({
   onOpenSettings,
 }: {
@@ -671,6 +682,13 @@ export default function ChatView({
       requestAnimationFrame(() => slashInputRef.current?.focus());
     }
   }, [showSlash]);
+
+  // Insert a starter prompt into the composer so the user can edit before
+  // sending (matches Codex desktop's new-chat suggestion row).
+  const useStarterPrompt = useCallback((text: string) => {
+    setInput(text);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, []);
 
   // Close the slash picker when clicking anywhere outside it.
   useEffect(() => {
@@ -1627,38 +1645,20 @@ export default function ChatView({
           )}
           {isEmpty ? (
             <div className="flex flex-1 items-center justify-center">
-              <div className="max-w-[520px] text-center">
-                <div className="text-codex-green mb-4 text-2xl">✦</div>
-                <h2 className="text-codex-text mb-2 text-2xl font-medium">
-                  AI 编程助手
-                </h2>
-                <p className="text-codex-faint mb-6 text-sm leading-relaxed">
-                  Start a conversation with your AI coding assistant. Ask
-                  questions, request code reviews, or discuss architecture.
-                </p>
-                <div className="border-codex-border bg-codex-inset mx-auto inline-flex flex-col items-start gap-1.5 rounded-lg border px-4 py-3 text-left text-xs text-codex-dim">
-                  <span className="text-codex-text text-xs font-medium">
-                    Quick tips
-                  </span>
-                  <span>
-                    <kbd className="border-codex-border bg-white rounded px-1 font-mono">/</kbd>{" "}
-                    Slash commands for specific tasks
-                  </span>
-                  <span>
-                    <kbd className="border-codex-border bg-white rounded px-1 font-mono">@</kbd>{" "}
-                    Reference files in your workspace
-                  </span>
-                  <span>
-                    <kbd className="border-codex-border bg-white rounded px-1 font-mono">
-                      Enter
-                    </kbd>{" "}
-                    Send ·{" "}
-                    <kbd className="border-codex-border bg-white rounded px-1 font-mono">
-                      Shift+Enter
-                    </kbd>{" "}
-                    New line
+              <div className="max-w-[560px] px-6 text-center">
+                <div className="mb-5 flex items-center justify-center">
+                  <span className="bg-codex-green flex size-10 items-center justify-center rounded-xl text-xl font-bold text-white shadow">
+                    p
                   </span>
                 </div>
+                <h1 className="bg-gradient-to-br from-codex-text via-codex-text to-codex-faint bg-clip-text text-3xl font-semibold tracking-tight text-transparent">
+                  What can I help you build?
+                </h1>
+                <p className="text-codex-dim mt-3 text-sm leading-relaxed">
+                  Ask pi to refactor code, explain a codebase, debug a problem,
+                  or carry a task from idea to shipped change — right here in
+                  your project.
+                </p>
               </div>
             </div>
           ) : (
@@ -1941,6 +1941,21 @@ export default function ChatView({
               </Button>
             )}
             </div>
+            {/* Starter prompts — Codex desktop: suggestion row under the composer on a new chat */}
+            {isEmpty && (
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                {STARTER_PROMPTS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => useStarterPrompt(p)}
+                    className="border-codex-border hover:border-codex-border-strong bg-codex-inset hover:bg-codex-panel-2 text-codex-dim hover:text-codex-text rounded-full border px-3 py-1.5 text-xs transition-colors"
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            )}
             {/* Status line — Codex desktop composer footer */}
             <div className="mt-2 flex items-center justify-between gap-2">
               <span className="border-codex-border bg-codex-inset text-codex-dim inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs">
