@@ -466,8 +466,12 @@ pub async fn set_general_setting(
 
 #[tauri::command]
 pub async fn list_slash_commands(
+    app: AppHandle,
     store: State<'_, Arc<Store>>,
 ) -> Result<Vec<serde_json::Value>, String> {
+    // The selected session's actor may not exist yet (e.g. right after a
+    // fresh launch). Spawn it so the command list isn't empty.
+    store.ensure_selected_actor(&app).await.ok();
     Ok(store.list_slash_commands().await)
 }
 

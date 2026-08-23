@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use tauri::Manager;
+
 mod commands;
 mod state;
 
@@ -7,6 +10,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(state::Store::new_with_runtime())
+        .setup(|app| {
+            // Spawn the restored selected session's actor at startup so
+            // actor-backed queries (e.g. slash commands, session info) work
+            // before the user sends a first message.
+            let store = app.state::<Arc<state::Store>>().inner().clone();
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = store.ensure_selected_actor(&handle).await;
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::ping,
             commands::get_state,

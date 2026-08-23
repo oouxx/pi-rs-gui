@@ -662,7 +662,7 @@ export default function ChatView({
 
   useEffect(() => {
     refreshSlashCommands();
-  }, [refreshSlashCommands]);
+  }, [refreshSlashCommands, activeSessionId]);
 
   // Focus the slash menu's search field when it opens so cmdk handles
   // type-to-filter and arrow navigation (matches Codex's floating picker).
