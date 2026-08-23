@@ -553,7 +553,7 @@ const MessageItem = memo(function MessageItem({
   return (
     <div
       {...(isLast ? { "data-msg-last": "true" } : {})}
-      className="group w-full max-w-[820px]"
+      className="group mx-auto w-full max-w-[820px]"
     >
       {msg.role === "user" ? (
         /* Codex desktop: user prompt in a subtle neutral box, full width */
