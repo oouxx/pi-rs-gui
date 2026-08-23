@@ -186,10 +186,33 @@ export function useChat() {
   // Block offset of the current assistant step within its merged message
   // (consecutive steps of a tool-calling run render as one bubble).
   const stepOffsetRef = useRef(0);
+  // Track per-session status to detect when a *background* session finishes
+  // (running → idle/error) so we can surface a light notification without the
+  // user having to switch to it (Codex-style).
+  const prevStatusRef = useRef<Record<string, string>>({});
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
+
+  // Notify when a non-active (background) session finishes its run.
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    for (const s of sessions) {
+      const before = prev[s.id];
+      const after = s.status;
+      if (before === "running" && after !== "running" && after !== undefined) {
+        if (s.id !== activeSessionIdRef.current) {
+          toast({
+            title: after === "error" ? "Session failed" : "Session finished",
+            description: s.title || "Untitled",
+            variant: after === "error" ? "error" : "default",
+          });
+        }
+      }
+      prev[s.id] = after;
+    }
+  }, [sessions, toast]);
 
   const refreshState = useCallback(async () => {
     try {

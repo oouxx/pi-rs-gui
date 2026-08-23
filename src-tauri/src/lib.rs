@@ -32,6 +32,7 @@ pub fn run() {
             commands::set_session_cwd,
             commands::submit_composer,
             commands::cancel_current_run,
+            commands::abort_session,
             commands::get_default_model,
             commands::get_models,
             commands::get_providers,

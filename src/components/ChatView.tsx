@@ -22,6 +22,7 @@ import {
   TerminalSquare,
   Paperclip,
   AlertCircle,
+  Loader2,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -1452,6 +1453,9 @@ export default function ChatView({
           <span className="text-codex-text font-medium">
             {activeTitle || "New conversation"}
           </span>
+          {streaming && (
+            <Loader2 className="text-codex-green size-3.5 shrink-0 animate-spin" />
+          )}
           {activeSessionCwd && (
             <span className="text-codex-faint hidden truncate text-xs md:inline">
               · {activeSessionCwd.split("/").filter(Boolean).pop()}

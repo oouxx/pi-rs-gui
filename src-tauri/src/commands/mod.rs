@@ -182,6 +182,21 @@ pub async fn cancel_current_run(
         .await)
 }
 
+/// Abort a specific session's run (sidebar Stop for a background session).
+#[tauri::command]
+pub async fn abort_session(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    session_id: String,
+) -> Result<DesktopState, String> {
+    store.abort_session(&session_id).await;
+    Ok(store
+        .mutate(&app, |s| {
+            crate::state::set_sess_status(s, &session_id, "idle");
+        })
+        .await)
+}
+
 // ── Model ──
 
 #[tauri::command]

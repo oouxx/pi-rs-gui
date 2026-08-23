@@ -64,6 +64,11 @@ export function cancelCurrentRun() {
   return tauriInvoke<DesktopAppState>("cancel_current_run");
 }
 
+/** Abort a specific session's run (sidebar Stop for a background session). */
+export function abortSession(sessionId: string) {
+  return tauriInvoke<DesktopAppState>("abort_session", { sessionId });
+}
+
 // ── Model ──
 
 export function getDefaultModel() {

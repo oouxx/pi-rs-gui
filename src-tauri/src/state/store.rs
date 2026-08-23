@@ -794,6 +794,15 @@ impl Store {
             .await;
     }
 
+    /// Abort a specific session's in-flight run (used to stop a background
+    /// session from the sidebar without switching to it first). No-op if the
+    /// session has no actor.
+    pub async fn abort_session(&self, session_id: &str) {
+        let _ = self
+            .send_cmd(session_id, |reply| SessionCommand::Abort { reply })
+            .await;
+    }
+
     /// Set the working directory for a session. If the session is already
     /// initialized (has a session file with history), fork a new session with
     /// the new cwd (history is copied by pi-rs via `fork_from`). The original

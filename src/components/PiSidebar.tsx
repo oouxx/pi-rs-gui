@@ -37,11 +37,13 @@ import {
   FolderOpen,
   ChevronRight,
   ChevronDown,
+  Loader2,
+  Square,
   MessageSquare,
 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useChat } from "@/hooks/useChat";
-import { exportSession, renameSession } from "@/api/commands";
+import { exportSession, renameSession, abortSession } from "@/api/commands";
 import type { AppView } from "./AppShell";
 
 interface PiSidebarProps {
@@ -74,6 +76,15 @@ function relativeTime(iso: string): string {
 function cwdBasename(cwd?: string | null): string {
   if (!cwd) return "";
   return cwd.split("/").filter(Boolean).pop() ?? cwd;
+}
+
+// Sort sessions: running ones float to the top (Codex keeps active threads
+// visible), then most-recent-first.
+function byRunningThenRecent(a: SessionItem, b: SessionItem): number {
+  const aRun = a.status === "running" ? 0 : 1;
+  const bRun = b.status === "running" ? 0 : 1;
+  if (aRun !== bRun) return aRun - bRun;
+  return a.updatedAt < b.updatedAt ? 1 : -1;
 }
 
 const COLLAPSED_GROUPS_KEY = "pi-gui:collapsed-groups";
@@ -222,10 +233,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
 
   // Flat, most-recent-first list for the single-project view.
   const projectSessions = useMemo(
-    () =>
-      [...visibleSessions].sort((a, b) =>
-        a.updatedAt < b.updatedAt ? 1 : -1,
-      ),
+    () => [...visibleSessions].sort(byRunningThenRecent),
     [visibleSessions],
   );
 
@@ -250,9 +258,16 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     }
     const arr = [...map.values()];
     for (const g of arr) {
-      g.sessions.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+      g.sessions.sort(byRunningThenRecent);
     }
-    arr.sort((a, b) => (a.sessions[0].updatedAt < b.sessions[0].updatedAt ? 1 : -1));
+    arr.sort((a, b) => {
+      // Groups with a running session float to the top so in-flight work stays
+      // glanceable after switching away (Codex keeps active threads visible).
+      const aRun = a.sessions.some((s) => s.status === "running") ? 0 : 1;
+      const bRun = b.sessions.some((s) => s.status === "running") ? 0 : 1;
+      if (aRun !== bRun) return aRun - bRun;
+      return a.sessions[0].updatedAt < b.sessions[0].updatedAt ? 1 : -1;
+    });
     return arr;
   }, [visibleSessions]);
 
@@ -292,6 +307,14 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     },
     [deleteSession],
   );
+
+  const handleStop = useCallback(async (sessionId: string) => {
+    try {
+      await abortSession(sessionId);
+    } catch (e) {
+      console.error("[abortSession]", e);
+    }
+  }, []);
 
   const commitRename = useCallback(
     (id: string, value: string, original: string) => {
@@ -398,31 +421,54 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                   className={`size-1.5 shrink-0 rounded-full ${activeSessionId === s.id ? "bg-codex-green" : "bg-codex-faint"}`}
                 />
                 <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-                  <span className="w-full truncate leading-tight">
-                    {s.title}
+                  <span className="flex w-full min-w-0 items-center gap-1.5">
+                    <span className="truncate leading-tight">{s.title}</span>
+                    {s.status === "running" && (
+                      <Loader2 className="text-codex-green size-3 shrink-0 animate-spin" />
+                    )}
                   </span>
                   <span className="text-codex-faint w-full truncate text-[11px] leading-none">
-                    {s.preview
-                      ? `${s.preview} · ${s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}${relativeTime(s.updatedAt)}`
-                      : `${s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}${relativeTime(s.updatedAt)}`}
+                    {s.preview ? `${s.preview} · ` : ""}
+                    {s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}
+                    {s.status === "running" ? "Running…" : relativeTime(s.updatedAt)}
                   </span>
                 </span>
               </SidebarMenuButton>
             )}
-            <button
-              className="text-muted-foreground hover:text-destructive absolute top-1/2 right-1.5 z-10 -translate-y-1/2 opacity-0 transition-opacity group-hover/item:opacity-100"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDelete(s.id);
-              }}
-              title="Delete permanently"
-              style={{ display: renamingId === s.id ? "none" : undefined }}
-            >
-              <Trash2 className="size-3" />
-            </button>
+            <div className="absolute top-1/2 right-1.5 z-10 flex -translate-y-1/2 items-center gap-0.5">
+              {s.status === "running" && (
+                <button
+                  className="text-codex-green hover:text-destructive rounded p-1 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleStop(s.id);
+                  }}
+                  title="Stop running"
+                >
+                  <Square className="size-3 fill-current" />
+                </button>
+              )}
+              <button
+                className="text-muted-foreground hover:text-destructive rounded p-1 opacity-0 transition-opacity group-hover/item:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete(s.id);
+                }}
+                title="Delete permanently"
+                style={{ display: renamingId === s.id ? "none" : undefined }}
+              >
+                <Trash2 className="size-3" />
+              </button>
+            </div>
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
+          {s.status === "running" && (
+            <ContextMenuItem onSelect={() => handleStop(s.id)}>
+              <Square className="text-codex-green size-3.5 fill-current" />
+              Stop running
+            </ContextMenuItem>
+          )}
           <ContextMenuItem onSelect={() => handleStartRename(s.id, s.title)}>
             <Pencil className="size-3.5" />
             Rename
