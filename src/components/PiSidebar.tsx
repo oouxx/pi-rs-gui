@@ -36,6 +36,8 @@ import {
   FileJson,
   FolderOpen,
   ChevronRight,
+  ChevronDown,
+  MessageSquare,
 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useChat } from "@/hooks/useChat";
@@ -75,6 +77,7 @@ function cwdBasename(cwd?: string | null): string {
 }
 
 const COLLAPSED_GROUPS_KEY = "pi-gui:collapsed-groups";
+const CURRENT_PROJECT_KEY = "pi-gui:current-project";
 
 function loadCollapsedGroups(): Set<string> {
   try {
@@ -107,6 +110,45 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
   const [collapsedGroups, setCollapsedGroups] =
     useState<Set<string>>(loadCollapsedGroups);
   const prevActiveIdRef = useRef<string | null>(null);
+
+  // Codex-style project/workspace switcher. The currently selected project is
+  // a cwd path (""/"null" = "All conversations"). Persisted across reloads.
+  const [currentProject, setCurrentProjectState] = useState<string | null>(
+    () => {
+      try {
+        return localStorage.getItem(CURRENT_PROJECT_KEY) || null;
+      } catch {
+        return null;
+      }
+    },
+  );
+  const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false);
+  const projectSwitcherRef = useRef<HTMLDivElement>(null);
+
+  const setCurrentProject = useCallback((key: string | null) => {
+    setCurrentProjectState(key);
+    try {
+      if (key) localStorage.setItem(CURRENT_PROJECT_KEY, key);
+      else localStorage.removeItem(CURRENT_PROJECT_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // Close the project switcher dropdown when clicking anywhere outside it.
+  useEffect(() => {
+    if (!projectSwitcherOpen) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (
+        projectSwitcherRef.current &&
+        !projectSwitcherRef.current.contains(e.target as Node)
+      ) {
+        setProjectSwitcherOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [projectSwitcherOpen]);
 
   // Persist collapsed group state across reloads.
   useEffect(() => {
@@ -171,6 +213,20 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
 
   const filteredSessions = sessions.filter(matches);
 
+  // When a specific project is selected, show only its sessions.
+  const visibleSessions = currentProject
+    ? filteredSessions.filter((s) => s.cwd === currentProject)
+    : filteredSessions;
+
+  // Flat, most-recent-first list for the single-project view.
+  const projectSessions = useMemo(
+    () =>
+      [...visibleSessions].sort((a, b) =>
+        a.updatedAt < b.updatedAt ? 1 : -1,
+      ),
+    [visibleSessions],
+  );
+
   // Group sessions by workspace (cwd); groups sorted by most recent session.
   interface SessionGroup {
     key: string;
@@ -180,7 +236,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
   }
   const groups = useMemo<SessionGroup[]>(() => {
     const map = new Map<string, SessionGroup>();
-    for (const s of filteredSessions) {
+    for (const s of visibleSessions) {
       const key = s.cwd || "";
       const label = s.cwd ? cwdBasename(s.cwd) : "未设置目录";
       let g = map.get(key);
@@ -196,7 +252,37 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     }
     arr.sort((a, b) => (a.sessions[0].updatedAt < b.sessions[0].updatedAt ? 1 : -1));
     return arr;
-  }, [filteredSessions]);
+  }, [visibleSessions]);
+
+  // Project catalog for the switcher (one entry per distinct cwd), sorted by
+  // the most recently active session in that project.
+  const projects = useMemo(() => {
+    const map = new Map<
+      string,
+      { label: string; path: string; count: number; last: string }
+    >();
+    for (const s of sessions) {
+      const key = s.cwd || "";
+      const e = map.get(key) ?? {
+        label: key ? cwdBasename(key) : "未设置目录",
+        path: key,
+        count: 0,
+        last: s.updatedAt,
+      };
+      e.count++;
+      if (s.updatedAt > e.last) e.last = s.updatedAt;
+      map.set(key, e);
+    }
+    return [...map.values()].sort((a, b) => (a.last < b.last ? 1 : -1));
+  }, [sessions]);
+
+  const activeProject = currentProject
+    ? projects.find((p) => p.path === currentProject) ?? {
+        label: cwdBasename(currentProject),
+        path: currentProject,
+        count: 0,
+      }
+    : null;
 
   const handleDelete = useCallback(
     async (sessionId: string) => {
@@ -291,6 +377,9 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 isActive={activeSessionId === s.id}
                 onClick={() => {
                   onModeChange("chat");
+                  // Codex behaviour: opening a thread switches the sidebar to
+                  // that thread's project/workspace.
+                  setCurrentProject(s.cwd || null);
                   selectSession(s.id).catch((e) => {
                     console.error("[selectSession]", e);
                     toast({
@@ -372,6 +461,77 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
               </span>
             </div>
           </SidebarMenuItem>
+          {/* Project/workspace switcher — Codex desktop: current project with
+              a dropdown to switch between projects / all conversations */}
+          <SidebarMenuItem>
+            <div
+              ref={projectSwitcherRef}
+              className="relative group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center"
+            >
+              <button
+                type="button"
+                onClick={() => setProjectSwitcherOpen((o) => !o)}
+                className="text-codex-text hover:bg-codex-inset flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors"
+                title={activeProject?.path ?? "All conversations"}
+              >
+                <FolderOpen className="text-codex-faint size-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-left group-data-[collapsible=icon]:hidden">
+                  {activeProject ? activeProject.label : "All conversations"}
+                </span>
+                <ChevronDown
+                  className={`size-3 shrink-0 transition-transform group-data-[collapsible=icon]:hidden ${
+                    projectSwitcherOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+              {projectSwitcherOpen && (
+                <div className="border-hairline bg-popover text-popover-foreground absolute top-full left-0 z-50 mt-1 max-h-80 w-64 overflow-y-auto rounded-lg border p-1 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentProject(null);
+                      setProjectSwitcherOpen(false);
+                    }}
+                    className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
+                      !activeProject
+                        ? "bg-codex-green/10 text-codex-green"
+                        : "text-codex-dim hover:bg-codex-inset"
+                    }`}
+                  >
+                    <MessageSquare className="size-3.5 shrink-0" />
+                    <span className="flex-1 truncate">All conversations</span>
+                  </button>
+                  <div className="bg-border my-1 h-px" />
+                  {projects.map((p) => (
+                    <button
+                      type="button"
+                      key={p.path}
+                      onClick={() => {
+                        setCurrentProject(p.path || null);
+                        setProjectSwitcherOpen(false);
+                      }}
+                      className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
+                        activeProject?.path === p.path
+                          ? "bg-codex-green/10 text-codex-green"
+                          : "text-codex-dim hover:bg-codex-inset"
+                      }`}
+                    >
+                      <FolderOpen className="size-3.5 shrink-0" />
+                      <span className="min-w-0 flex-1 truncate">
+                        <span className="block truncate">{p.label}</span>
+                        <span className="text-codex-faint block truncate text-[11px]">
+                          {p.path}
+                        </span>
+                      </span>
+                      <span className="text-codex-faint shrink-0 text-[11px]">
+                        {p.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               onClick={async () => {
@@ -430,50 +590,83 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           </div>
         </SidebarGroup>
         <SidebarGroup className="min-h-0 flex-1 overflow-y-auto">
-          <SidebarMenu>
-            {loading ? (
-              <div className="text-muted-foreground py-8 text-center text-xs">
-                Loading...
+          {currentProject ? (
+            /* Single-project view: flat session list under the project path */
+            <div className="flex h-full flex-col">
+              <div className="px-3 pt-2 pb-1 group-data-[collapsible=icon]:hidden">
+                <div
+                  className="flex items-center gap-1.5 text-[11px] text-codex-faint"
+                  title={activeProject?.path}
+                >
+                  <FolderOpen className="size-3 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate font-medium">
+                    {activeProject?.label}
+                  </span>
+                  <span className="shrink-0">{projectSessions.length}</span>
+                </div>
               </div>
-            ) : filteredSessions.length === 0 ? (
-              <div className="text-muted-foreground py-8 text-center text-xs">
-                {search.trim() ? "No matching sessions" : "No sessions yet"}
-              </div>
-            ) : (
-              groups.map((g) => {
-                const isCollapsed =
-                  collapsedGroups.has(g.key) && !search.trim();
-                return (
-                  <Collapsible
-                    key={g.key}
-                    open={!isCollapsed}
-                    onOpenChange={(open) => setGroupCollapsed(g.key, !open)}
-                    className="mb-2"
-                  >
-                    <CollapsibleTrigger
-                      disabled={!!search.trim()}
-                      className="text-muted-foreground group-data-[collapsible=icon]:hidden flex w-full cursor-pointer items-center gap-1.5 px-3 py-1 text-[10px] font-medium uppercase tracking-wide select-none hover:text-foreground disabled:cursor-default"
-                      title={g.path}
+              <SidebarMenu>
+                {loading ? (
+                  <div className="text-muted-foreground py-8 text-center text-xs">
+                    Loading...
+                  </div>
+                ) : projectSessions.length === 0 ? (
+                  <div className="text-muted-foreground py-8 text-center text-xs">
+                    {search.trim()
+                      ? "No matching sessions"
+                      : "No conversations in this project"}
+                  </div>
+                ) : (
+                  projectSessions.map(renderSessionItem)
+                )}
+              </SidebarMenu>
+            </div>
+          ) : (
+            <SidebarMenu>
+              {loading ? (
+                <div className="text-muted-foreground py-8 text-center text-xs">
+                  Loading...
+                </div>
+              ) : visibleSessions.length === 0 ? (
+                <div className="text-muted-foreground py-8 text-center text-xs">
+                  {search.trim() ? "No matching sessions" : "No sessions yet"}
+                </div>
+              ) : (
+                groups.map((g) => {
+                  const isCollapsed =
+                    collapsedGroups.has(g.key) && !search.trim();
+                  return (
+                    <Collapsible
+                      key={g.key}
+                      open={!isCollapsed}
+                      onOpenChange={(open) => setGroupCollapsed(g.key, !open)}
+                      className="mb-2"
                     >
-                      <ChevronRight
-                        className={`size-3 shrink-0 transition-transform duration-200 ${isCollapsed ? "" : "rotate-90"}`}
-                      />
-                      <FolderOpen className="size-3 shrink-0" />
-                      <span className="truncate">{g.label}</span>
-                      <span className="ml-auto text-[10px] opacity-70">
-                        {g.sessions.length}
-                      </span>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent className="group-collapsible-content">
-                      <SidebarMenu>
-                        {g.sessions.map(renderSessionItem)}
-                      </SidebarMenu>
-                    </CollapsibleContent>
-                  </Collapsible>
-                );
-              })
-            )}
-          </SidebarMenu>
+                      <CollapsibleTrigger
+                        disabled={!!search.trim()}
+                        className="text-muted-foreground group-data-[collapsible=icon]:hidden flex w-full cursor-pointer items-center gap-1.5 px-3 py-1 text-[10px] font-medium uppercase tracking-wide select-none hover:text-foreground disabled:cursor-default"
+                        title={g.path}
+                      >
+                        <ChevronRight
+                          className={`size-3 shrink-0 transition-transform duration-200 ${isCollapsed ? "" : "rotate-90"}`}
+                        />
+                        <FolderOpen className="size-3 shrink-0" />
+                        <span className="truncate">{g.label}</span>
+                        <span className="ml-auto text-[10px] opacity-70">
+                          {g.sessions.length}
+                        </span>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="group-collapsible-content">
+                        <SidebarMenu>
+                          {g.sessions.map(renderSessionItem)}
+                        </SidebarMenu>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  );
+                })
+              )}
+            </SidebarMenu>
+          )}
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
