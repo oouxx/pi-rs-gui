@@ -225,6 +225,7 @@ impl Store {
                         no_tools: None,
                         exclude_tools: None,
                         custom_tools: None,
+                        tools_options: None,
                         extension_registry: Some(extension_registry),
                         fallback_message: None,
                         session_start_event: params.session_start_event,
