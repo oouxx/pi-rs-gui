@@ -601,17 +601,6 @@ const MessageItem = memo(function MessageItem({
   );
 });
 
-// Codex desktop shows a row of example prompts under the composer on a fresh
-// chat. Clicking one fills the composer so the user can edit before sending.
-const STARTER_PROMPTS = [
-  "Review my changes",
-  "Explain this codebase",
-  "Fix a failing test",
-  "Add tests for this module",
-  "Refactor for clarity",
-  "Document the main API",
-];
-
 export default function ChatView({
   onOpenSettings,
 }: {
@@ -683,13 +672,6 @@ export default function ChatView({
       requestAnimationFrame(() => slashInputRef.current?.focus());
     }
   }, [showSlash]);
-
-  // Insert a starter prompt into the composer so the user can edit before
-  // sending (matches Codex desktop's new-chat suggestion row).
-  const useStarterPrompt = useCallback((text: string) => {
-    setInput(text);
-    requestAnimationFrame(() => textareaRef.current?.focus());
-  }, []);
 
   // Close the slash picker when clicking anywhere outside it.
   useEffect(() => {
@@ -1943,21 +1925,6 @@ export default function ChatView({
               </Button>
             )}
             </div>
-            {/* Starter prompts — Codex desktop: suggestion row under the composer on a new chat */}
-            {isEmpty && (
-              <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-                {STARTER_PROMPTS.map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => useStarterPrompt(p)}
-                    className="border-codex-border hover:border-codex-border-strong bg-codex-inset hover:bg-codex-panel-2 text-codex-dim hover:text-codex-text rounded-full border px-3 py-1.5 text-xs transition-colors"
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            )}
             {/* Status line — Codex desktop composer footer */}
             <div className="mt-2 flex items-center justify-between gap-2">
               <Popover
