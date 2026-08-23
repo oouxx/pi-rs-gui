@@ -56,10 +56,11 @@ export default function PickModel({
     return m
   }, [providers])
 
-  // Filter models by query
+  // Search results. With an empty query we show the whole catalogue grouped
+  // by provider (Codex desktop behaviour); typing narrows it down.
   const results = useMemo(() => {
-    if (!query.trim()) return []
-    const q = query.toLowerCase()
+    const q = query.trim().toLowerCase()
+    if (!q) return models.slice(0, 120)
     return models
       .filter((m) => {
         const prov = providerMap.get(m.providerId)
@@ -70,8 +71,31 @@ export default function PickModel({
           prov?.name.toLowerCase().includes(q)
         )
       })
-      .slice(0, 50)
+      .slice(0, 120)
   }, [models, query, providerMap])
+
+  // Flat list of [providerId, models[]] ordered by provider name.
+  const groups = useMemo(() => {
+    const byProv = new Map<string, ModelOption[]>()
+    for (const m of results) {
+      const arr = byProv.get(m.providerId) ?? []
+      arr.push(m)
+      byProv.set(m.providerId, arr)
+    }
+    const list = [...byProv.entries()]
+    // Keep providers in the order they appear in the original models list;
+    // otherwise fall back to name order.
+    const order = new Map(models.map((m, i) => [m.providerId, i]))
+    list.sort((a, b) => {
+      const da = order.get(a[0])
+      const db = order.get(b[0])
+      if (da != null && db != null) return da - db
+      const na = providerMap.get(a[0])?.name ?? a[0]
+      const nb = providerMap.get(b[0])?.name ?? b[0]
+      return na.localeCompare(nb)
+    })
+    return list
+  }, [results, models, providerMap])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -109,6 +133,31 @@ export default function PickModel({
     [onSelect],
   )
 
+  const renderRow = (m: ModelOption) => {
+    const prov = providerMap.get(m.providerId)
+    const isSelected = m.providerId === providerId && m.modelId === modelId
+    return (
+      <button
+        key={`${m.providerId}/${m.modelId}`}
+        className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors ${
+          isSelected ? "bg-ai-muted text-foreground" : "hover:bg-muted"
+        }`}
+        onClick={() => handleSelect(m)}
+        onMouseEnter={() => setSelIdx(results.indexOf(m))}
+      >
+        <span className="flex-1 truncate">
+          <span className={`font-medium ${isSelected ? "text-ai" : ""}`}>
+            {m.label}
+          </span>
+          <span className="text-muted-foreground ml-1.5">
+            {prov?.name ?? m.providerId}
+          </span>
+        </span>
+        {isSelected && <Check className="size-3 shrink-0 text-ai" />}
+      </button>
+    )
+  }
+
   return (
     <div className="relative" ref={ref}>
       <div className="relative">
@@ -116,34 +165,25 @@ export default function PickModel({
         <Input
           value={query}
           onChange={handleChange}
-          onFocus={() => query.trim() && setShow(true)}
+          onFocus={() => setShow(true)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           className="h-8 pl-8 text-xs"
         />
       </div>
-      {show && results.length > 0 && (
-        <div className="bg-popover border-hairline absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border p-1 shadow-md">
-          {results.map((m, i) => {
-            const prov = providerMap.get(m.providerId)
-            const isSelected = m.providerId === providerId && m.modelId === modelId
+      {show && groups.length > 0 && (
+        <div className="border-hairline bg-popover absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border p-1 shadow-md">
+          {groups.map(([pid, items]) => {
+            const prov = providerMap.get(pid)
             return (
-              <button
-                key={`${m.providerId}/${m.modelId}`}
-                className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors ${
-                  i === selIdx ? "bg-accent text-accent-foreground" : "hover:bg-muted"
-                }`}
-                onClick={() => handleSelect(m)}
-                onMouseEnter={() => setSelIdx(i)}
-              >
-                <span className="flex-1 truncate">
-                  <span className="font-medium">{m.label}</span>
-                  <span className="text-muted-foreground ml-1.5">
-                    {prov?.name ?? m.providerId}
-                  </span>
-                </span>
-                {isSelected && <Check className="size-3 shrink-0 text-ai" />}
-              </button>
+              <div key={pid}>
+                {!query.trim() && (
+                  <div className="text-muted-foreground px-3 pt-2 pb-1 text-[10px] font-semibold tracking-wide uppercase">
+                    {prov?.name ?? pid}
+                  </div>
+                )}
+                {items.map(renderRow)}
+              </div>
             )
           })}
         </div>
@@ -151,6 +191,11 @@ export default function PickModel({
       {show && query.trim() && results.length === 0 && (
         <div className="bg-popover border-hairline absolute z-50 mt-1 w-full rounded-lg border p-3 text-center text-xs text-muted-foreground shadow-md">
           No models match "{query}"
+        </div>
+      )}
+      {show && !query.trim() && models.length === 0 && (
+        <div className="bg-popover border-hairline absolute z-50 mt-1 w-full rounded-lg border p-3 text-center text-xs text-muted-foreground shadow-md">
+          No models configured
         </div>
       )}
     </div>
