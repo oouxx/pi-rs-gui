@@ -170,7 +170,7 @@ export default function SkillsView() {
                       <span className="text-foreground font-mono text-sm font-medium">
                         {s.name}
                       </span>
-                      <span className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-[10px] uppercase">
+                      <span className="bg-muted text-foreground/70 rounded-full px-2 py-0.5 text-[10px] uppercase">
                         {SCOPE_LABEL[s.scope] ?? s.scope}
                       </span>
                       {s.disableModelInvocation && (

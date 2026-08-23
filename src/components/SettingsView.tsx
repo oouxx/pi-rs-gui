@@ -441,7 +441,7 @@ function ExtensionsTab() {
             >
               <Puzzle className="text-muted-foreground size-3.5 shrink-0" />
               <span className="text-foreground font-mono text-sm">{e.name}</span>
-              <span className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-[10px] uppercase">
+              <span className="bg-muted text-foreground/70 rounded-full px-2 py-0.5 text-[10px] uppercase">
                 {e.location}
               </span>
               <span className="text-muted-foreground ml-auto text-xs">
