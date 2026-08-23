@@ -295,8 +295,8 @@ export function openPath(path: string) {
 export function selectSession(sessionId: string) {
   return tauriInvoke<DesktopAppState>("select_session", { sessionId });
 }
-export function createSession(title?: string) {
-  return tauriInvoke<DesktopAppState>("create_session", { title });
+export function createSession(title?: string, cwd?: string) {
+  return tauriInvoke<DesktopAppState>("create_session", { title, cwd });
 }
 export function archiveSession(sessionId: string) {
   return tauriInvoke<DesktopAppState>("archive_session", { sessionId });

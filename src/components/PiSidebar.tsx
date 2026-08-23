@@ -200,7 +200,9 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
-        void createSession().then(() => onModeChange("chat"));
+        void createSession(undefined, currentProject ?? undefined).then(() =>
+          onModeChange("chat"),
+        );
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -535,7 +537,8 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           <SidebarMenuItem>
             <SidebarMenuButton
               onClick={async () => {
-                await createSession();
+                // Bind the new conversation to the currently selected project.
+                await createSession(undefined, currentProject ?? undefined);
                 onModeChange("chat");
               }}
               tooltip="New conversation"

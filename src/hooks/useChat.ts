@@ -559,8 +559,8 @@ export function useChat() {
     // always be discarded by the generation check).
   }, []);
 
-  const createSession = useCallback(async (title?: string) => {
-    const newState = await apiCreateSession(title);
+  const createSession = useCallback(async (title?: string, cwd?: string) => {
+    const newState = await apiCreateSession(title, cwd);
     const newId = newState.selectedSessionId;
     if (newId) {
       setActiveSessionId(newId);

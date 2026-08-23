@@ -43,6 +43,28 @@ mod tests {
         assert_eq!(cwd, "/usr/local");
     }
 
+    #[tokio::test]
+    async fn test_create_session_pins_cwd() {
+        let store = Store::new();
+        let mut state = store.state.lock().await;
+        super::session::create_session_simple(&mut state, "New thread", Some("/proj/a"));
+        let rec = state.sessions.last().unwrap();
+        assert_eq!(rec.cwd.as_deref(), Some("/proj/a"));
+        assert_eq!(state.selected_session_id, rec.id);
+    }
+
+    #[tokio::test]
+    async fn test_create_session_cwd_defaults_to_current_dir() {
+        let store = Store::new();
+        let mut state = store.state.lock().await;
+        super::session::create_session_simple(&mut state, "New", None);
+        let rec = state.sessions.last().unwrap();
+        let expected = std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned());
+        assert_eq!(rec.cwd, expected);
+    }
+
     #[test]
     fn test_resolve_session_cwd_falls_back_to_current_dir() {
         let cwd = super::cwd::resolve_session_cwd(None);

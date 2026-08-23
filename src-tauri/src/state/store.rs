@@ -696,10 +696,11 @@ impl Store {
         self: &Arc<Self>,
         app: &AppHandle,
         title: Option<&str>,
+        cwd: Option<&str>,
     ) -> Result<DesktopState, String> {
         let state = self
             .mutate(app, |s| {
-                session::create_session_simple(s, title.unwrap_or("New thread"))
+                session::create_session_simple(s, title.unwrap_or("New thread"), cwd)
             })
             .await;
         let placeholder_id = state.selected_session_id.clone();

@@ -35,8 +35,11 @@ pub async fn create_session(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     title: Option<String>,
+    cwd: Option<String>,
 ) -> Result<DesktopState, String> {
-    store.create_session_with_runtime(&app, title.as_deref()).await
+    store
+        .create_session_with_runtime(&app, title.as_deref(), cwd.as_deref())
+        .await
 }
 
 #[tauri::command]

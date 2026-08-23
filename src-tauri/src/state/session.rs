@@ -292,8 +292,10 @@ pub fn delete_session_by_id(state: &mut DesktopState, session_id: &str) {
     state.selected_session_id = next_id.unwrap_or_default();
 }
 
-/// Create a new session.
-pub fn create_session_simple(state: &mut DesktopState, title: &str) {
+/// Create a new session. `cwd` optionally pins the session to a project
+/// directory (Codex-style "new conversation in the current project"); when
+/// omitted it falls back to the process current directory.
+pub fn create_session_simple(state: &mut DesktopState, title: &str, cwd: Option<&str>) {
     let id = format!("sess-{}", chrono::Utc::now().timestamp_millis());
     state.sessions.push(SessionRecord {
         id: id.clone(),
@@ -310,9 +312,14 @@ pub fn create_session_simple(state: &mut DesktopState, title: &str) {
         archived_at: None,
         config: None,
         thinking_level: None,
-        cwd: std::env::current_dir()
-            .ok()
-            .map(|p| p.to_string_lossy().into_owned()),
+        cwd: cwd
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .or_else(|| {
+                std::env::current_dir()
+                    .ok()
+                    .map(|p| p.to_string_lossy().into_owned())
+            }),
     });
     state.selected_session_id = id;
 }
