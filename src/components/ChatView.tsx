@@ -632,7 +632,6 @@ export default function ChatView({
   const [currentProvider, setCurrentProvider] = useState("");
   const [currentModel, setCurrentModel] = useState("");
   const [modelOpen, setModelOpen] = useState(false);
-  const [composerModelOpen, setComposerModelOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
   const [trustOpen, setTrustOpen] = useState(false);
@@ -737,7 +736,6 @@ export default function ChatView({
   const handleModelSelect = useCallback(
     async (provider: string, modelId: string) => {
       setModelOpen(false);
-      setComposerModelOpen(false);
       try {
         await setSessionModel(provider, modelId);
         setCurrentProvider(provider);
@@ -1926,42 +1924,7 @@ export default function ChatView({
             )}
             </div>
             {/* Status line — Codex desktop composer footer */}
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <Popover
-                open={composerModelOpen}
-                onOpenChange={setComposerModelOpen}
-              >
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    disabled={!activeSessionId}
-                    className="border-codex-border bg-codex-inset text-codex-dim hover:border-codex-border-strong hover:text-codex-text inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors disabled:opacity-40"
-                    title="Select model"
-                  >
-                    <span
-                      className={`size-1.5 rounded-full ${
-                        currentProvider && currentModel
-                          ? "bg-codex-green"
-                          : "bg-codex-faint"
-                      }`}
-                    />
-                    <span className="font-medium">
-                      {currentProvider && currentModel
-                        ? currentModel
-                        : "Select model"}
-                    </span>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent align="start" className="w-80 p-2">
-                  <PickModel
-                    models={modelList}
-                    providers={providerList}
-                    providerId={currentProvider || undefined}
-                    modelId={currentModel || undefined}
-                    onSelect={handleModelSelect}
-                  />
-                </PopoverContent>
-              </Popover>
+            <div className="mt-2 flex items-center justify-end gap-2">
               <span className="text-codex-faint hidden items-center gap-2 text-[11px] md:flex">
                 {streaming ? <span className="animate-pulse">running…</span> : null}
                 <span>Enter to send</span>
