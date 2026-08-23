@@ -14,6 +14,9 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+    /* shadcn base reset: bare `border`/`border-r` etc. default to the theme
+       border color instead of falling back to currentColor (near-black). */
+    border-color: var(--color-border);
   }
 
   html {
