@@ -8,6 +8,7 @@ import {
   getProviders, getModels, getModelSettings, listCustomProviders,
   setProviderApiKey, setDefaultModel as apiSetDefaultModel,
   setDefaultThinkingLevel as apiSetDefaultThinkingLevel,
+  type CustomProviderInfo,
 } from "../api/commands"
 import PickModel from "./PickModel"
 import type { ProviderInfo, ModelOption } from "./PickModel"
@@ -19,7 +20,7 @@ export default function ModelsSettings() {
   const [defaultModel, setDefaultModel] = useState("")
   const [thinkingLevel, setThinkingLevel] = useState("medium")
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({})
-  const [customProviders, setCustomProviders] = useState<any[]>([])
+  const [customProviders, setCustomProviders] = useState<CustomProviderInfo[]>([])
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
@@ -31,12 +32,12 @@ export default function ModelsSettings() {
         getModelSettings(),
         listCustomProviders(),
       ])
-      setProviders(prov.providers as ProviderInfo[])
-      setModels(mods.models as ModelOption[])
+      setProviders(prov.providers)
+      setModels(mods.models)
       setDefaultProvider(settings.settings?.defaultProvider ?? "")
       setDefaultModel(settings.settings?.defaultModelId ?? "")
       setThinkingLevel(settings.settings?.defaultThinkingLevel ?? "medium")
-      setCustomProviders(custom as any[])
+      setCustomProviders(custom)
     } catch (e) { console.error("Failed to load model settings", e) }
     setLoading(false)
   }, [])

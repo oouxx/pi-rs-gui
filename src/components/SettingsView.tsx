@@ -427,8 +427,10 @@ function ExtensionsTab() {
   return (
     <div className="space-y-6">
       <p className="text-muted-foreground text-xs leading-relaxed">
-        Extensions are compiled into pi-gui as Rust plugins and are always
-        available to the agent.
+        Extensions are compiled into pi-gui as Rust plugins. Built-ins are
+        opt-in: enable them in <code>settings.json</code> via{" "}
+        <code>{`"extensionsEnabled": { "subagent": true, "web_search": true }`}</code>{" "}
+        (default off).
       </p>
       {extensions.length === 0 ? (
         <p className="text-muted-foreground text-xs">No extensions registered.</p>

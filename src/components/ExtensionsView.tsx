@@ -137,8 +137,10 @@ export default function ExtensionsView() {
                     No extensions found
                   </h3>
                   <p className="text-muted-foreground text-xs leading-relaxed">
-                    Extensions are compiled into pi-gui as Rust plugins and are
-                    always available to the agent.
+                    Extensions are compiled into pi-gui as Rust plugins. Enable
+                    built-ins in <code>settings.json</code> under{" "}
+                    <code>extensionsEnabled</code> (e.g.{" "}
+                    <code>{`{ "subagent": true, "web_search": true }`}</code>).
                   </p>
                 </div>
               </div>

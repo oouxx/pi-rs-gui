@@ -176,9 +176,12 @@ export default function TerminalDock({
     let disposed = false;
     let unsub: (() => void) | undefined;
     (async () => {
-      const u = await tauriListen<any>("terminal-output", (evt: any) => {
-        routeTerminalOutput(evt.sessionId, evt.data ?? "");
-      });
+      const u = await tauriListen<{ sessionId: string; data?: string }>(
+        "terminal-output",
+        (evt) => {
+          routeTerminalOutput(evt.sessionId, evt.data ?? "");
+        },
+      );
       if (disposed) {
         u();
         return;

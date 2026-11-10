@@ -22,8 +22,6 @@ pub struct SessionRecord {
     pub preview: String,
     #[serde(default)]
     pub status: String,
-    #[serde(default)]
-    pub has_unseen_update: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_file: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

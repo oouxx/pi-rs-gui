@@ -5,7 +5,7 @@ use crate::state::*;
 use crate::state::{model, providers, session, settings};
 use crate::state::actor::SessionCommand;
 use serde_json::json;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 
 // ── Core ──
 
@@ -85,7 +85,7 @@ pub async fn rename_session(
     // renames survive restarts — the in-memory record alone is rebuilt from
     // the files on the next launch. If the session has a live actor, delegate
     // to its SetName command; otherwise open the file directly.
-    let has_actor = store.sessions.lock().await.contains_key(&session_id);
+    let has_actor = store.actors.contains(&session_id).await;
     if has_actor {
         store
             .send_cmd(&session_id, |reply| SessionCommand::SetName {
@@ -206,16 +206,17 @@ pub async fn get_default_model(store: State<'_, Arc<Store>>) -> Result<serde_jso
 }
 
 #[tauri::command]
-pub async fn get_models(store: State<'_, Arc<Store>>) -> Result<serde_json::Value, String> {
-    let _state = store.state.lock().await;
+pub async fn get_models() -> Result<serde_json::Value, String> {
     pi_ai::providers::register_builtins::register_built_in_api_providers();
     use pi_coding_agent::core::model_registry::ModelRegistry;
     let registry = ModelRegistry::new(ModelRegistry::builtin_models_list());
     let providers = registry.get_providers();
+    // AuthStorage-aware: covers auth.json keys set in the GUI + env vars.
+    // One auth.json read for all providers instead of one per provider.
+    let authed = providers::providers_with_auth(&providers);
     let mut models = Vec::new();
     for pid in &providers {
-        // AuthStorage-aware: covers auth.json keys set in the GUI + env vars.
-        let has_auth = providers::has_provider_auth(pid);
+        let has_auth = authed.contains(pid);
         for m in registry.get_models_for_provider(pid) {
             models.push(json!({
                 "providerId": pid,
@@ -229,17 +230,16 @@ pub async fn get_models(store: State<'_, Arc<Store>>) -> Result<serde_json::Valu
 }
 
 #[tauri::command]
-pub async fn get_providers(store: State<'_, Arc<Store>>) -> Result<serde_json::Value, String> {
-    let _state = store.state.lock().await;
+pub async fn get_providers() -> Result<serde_json::Value, String> {
     pi_ai::providers::register_builtins::register_built_in_api_providers();
     use pi_coding_agent::core::model_registry::ModelRegistry;
     use pi_coding_agent::core::provider_display_names::BUILT_IN_PROVIDER_DISPLAY_NAMES;
     let registry = ModelRegistry::new(ModelRegistry::builtin_models_list());
     let providers = registry.get_providers();
+    let authed = providers::providers_with_auth(&providers);
     let mut provider_list = Vec::new();
     for pid in &providers {
-        // AuthStorage-aware: covers auth.json keys set in the GUI + env vars.
-        let has_auth = providers::has_provider_auth(pid);
+        let has_auth = authed.contains(pid);
         let name = BUILT_IN_PROVIDER_DISPLAY_NAMES
             .get(pid.as_str())
             .map(|n| n.to_string())
@@ -258,9 +258,7 @@ pub async fn get_providers(store: State<'_, Arc<Store>>) -> Result<serde_json::V
 #[tauri::command]
 pub async fn get_model_settings(store: State<'_, Arc<Store>>) -> Result<serde_json::Value, String> {
     let state = store.state.lock().await;
-    Ok(
-        json!({"settings": state.global_model_settings, "globalModelSettings": state.global_model_settings}),
-    )
+    Ok(json!({ "settings": state.global_model_settings }))
 }
 
 #[tauri::command]
@@ -296,20 +294,6 @@ pub async fn set_provider_api_key(
 ) -> Result<DesktopState, String> {
     providers::set_provider_api_key(&provider_id, &api_key).map_err(|e| format!("{e}"))?;
     Ok(store.state.lock().await.clone())
-}
-
-#[tauri::command]
-pub async fn login_provider(
-    app: AppHandle,
-    store: State<'_, Arc<Store>>,
-    _provider_id: String,
-) -> Result<DesktopState, String> {
-    pi_ai::providers::register_builtins::register_built_in_api_providers();
-    Ok(store
-        .mutate(&app, |_s| {
-            // Runtime snapshot removed; provider auth is checked on demand
-        })
-        .await)
 }
 
 #[tauri::command]
@@ -378,7 +362,7 @@ pub async fn get_selected_transcript(
     // Prefer in-memory session messages (more up-to-date than file) whenever
     // the session has a live actor — with multi-session the actor for the
     // selected session may exist even while another session streams.
-    if store.sessions.lock().await.contains_key(&sess_id) {
+    if store.actors.contains(&sess_id).await {
         let in_memory = store.get_messages().await;
         if !in_memory.is_empty() {
             let transcript = crate::state::build_display_transcript(&in_memory);
@@ -616,18 +600,9 @@ pub async fn navigate_session_tree(
     session_id: String,
     entry_id: String,
 ) -> Result<Vec<serde_json::Value>, String> {
-    store.navigate_session_tree(&app, &session_id, &entry_id).await?;
-    // Emit the updated transcript so the chat pane switches to the new branch.
-    let transcript =
-        crate::state::build_display_transcript(&store.get_messages().await);
-    let _ = app.emit(
-        "pi-gui:selected-transcript-changed",
-        &serde_json::json!({
-            "sessionId": session_id,
-            "transcript": transcript,
-        }),
-    );
-    store.get_session_tree_json(&session_id).await
+    // `Store::navigate_session_tree` already emits the transcript update;
+    // emitting here too sent every navigation twice.
+    store.navigate_session_tree(&app, &session_id, &entry_id).await
 }
 
 // ── Terminal ──

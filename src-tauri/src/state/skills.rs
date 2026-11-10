@@ -49,6 +49,7 @@ pub fn list_skills(cwd: &str) -> Vec<Value> {
         agent_dir: Some(agent_dir),
         skill_paths: configured_skill_paths(),
         include_defaults: true,
+        home_dir: None,
     });
     let mut skills: Vec<Value> = result.skills.iter().map(skill_json).collect();
     skills.sort_by(|a, b| {

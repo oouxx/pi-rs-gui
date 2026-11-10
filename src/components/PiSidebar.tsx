@@ -42,7 +42,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
-import { useChat } from "@/hooks/useChat";
+import { useChatContext } from "@/hooks/ChatProvider";
 import { exportSession, renameSession, abortSession } from "@/api/commands";
 import type { AppView } from "./AppShell";
 
@@ -112,7 +112,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     createSession,
     deleteSession,
     loading,
-  } = useChat();
+  } = useChatContext();
   const [search, setSearch] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");

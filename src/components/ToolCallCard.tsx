@@ -16,7 +16,7 @@ import {
 
 interface ToolCallCardProps {
   name: string;
-  args?: any;
+  args?: unknown;
   status?: "running" | "success" | "error";
   result?: string;
   isError?: boolean;
@@ -37,9 +37,9 @@ const TOOL_META: Record<string, { icon: ReactNode; label: string }> = {
 const DEFAULT_META = { icon: <Wrench className="size-3.5" />, label: "Tool" };
 
 /** Extract a human-readable summary of the key argument (not raw JSON). */
-function summarizeArgs(name: string, args: any): string {
+function summarizeArgs(name: string, args: unknown): string {
   if (args == null) return "";
-  let obj: any = args;
+  let obj: unknown = args;
   if (typeof args === "string") {
     // Streaming partial JSON — try to parse; fall back to the raw fragment.
     try {
@@ -48,28 +48,31 @@ function summarizeArgs(name: string, args: any): string {
       return args.length > 200 ? args.slice(0, 200) + "…" : args;
     }
   }
-  if (typeof obj !== "object") return String(obj);
+  if (typeof obj !== "object" || obj === null) return String(obj);
+  const rec = obj as Record<string, unknown>;
+  const str = (v: unknown) =>
+    typeof v === "string" ? v : v == null ? "" : String(v);
   switch (name) {
     case "bash":
-      return obj.command ?? "";
+      return str(rec.command);
     case "read":
-      return obj.path ?? "";
+      return str(rec.path);
     case "edit":
     case "edit_diff":
     case "write":
-      return obj.path ?? obj.file_path ?? "";
+      return str(rec.path) || str(rec.file_path);
     case "grep": {
-      const p = obj.pattern ?? "";
-      const path = obj.path ?? "";
+      const p = str(rec.pattern);
+      const path = str(rec.path);
       return path ? `${p} in ${path}` : p;
     }
     case "find": {
-      const p = obj.pattern ?? obj.name ?? "";
-      const path = obj.path ?? "";
+      const p = str(rec.pattern) || str(rec.name);
+      const path = str(rec.path);
       return path ? `${p} in ${path}` : p;
     }
     case "ls":
-      return obj.path ?? "";
+      return str(rec.path);
     default: {
       const s = JSON.stringify(obj);
       return s.length > 200 ? s.slice(0, 200) + "…" : s;

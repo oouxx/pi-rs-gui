@@ -175,10 +175,31 @@ pub fn has_provider_auth(provider_id: &str) -> bool {
     auth_storage().has_auth(provider_id)
 }
 
+/// Filter `provider_ids` down to those with credentials, reading auth.json
+/// **once** (the per-provider helper re-reads the file on every call, which is
+/// wasteful when building the provider/model lists).
+pub fn providers_with_auth(provider_ids: &[String]) -> std::collections::HashSet<String> {
+    let storage = auth_storage();
+    provider_ids
+        .iter()
+        .filter(|id| storage.has_auth(id))
+        .cloned()
+        .collect()
+}
+
 /// Set a provider's API key. Persists via pi-rs `AuthStorage` to auth.json
 /// (survives restarts). Returns the env var name used for display.
 pub fn set_provider_api_key(provider_id: &str, api_key: &str) -> Result<String, String> {
-    let var_name = pi_ai::env_api_keys::get_env_var_name(provider_id)
+    // v1.87 replaced `get_env_var_name` with `get_api_key_env_vars` (which
+    // lists every candidate). Prefer ANTHROPIC_API_KEY for anthropic, whose
+    // list also contains the bearer/OAuth token vars.
+    let var_name = pi_ai::env_api_keys::get_api_key_env_vars(provider_id)
+        .and_then(|vars| {
+            vars.iter()
+                .find(|v| **v == pi_ai::env_api_keys::ANTHROPIC_API_KEY_ENV)
+                .or_else(|| vars.first())
+                .copied()
+        })
         .ok_or_else(|| format!("unknown provider '{provider_id}'"))?;
     let mut storage = auth_storage();
     storage.set(provider_id, AuthCredential::ApiKey {

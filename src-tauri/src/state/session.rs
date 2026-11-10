@@ -51,51 +51,67 @@ fn last_message_preview(path: &str) -> String {
     }
 }
 
+/// Map a pi-rs `SessionInfo` to the UI-facing record.
+///
+/// pi-rs `list_all` scans every subdirectory of the sessions dir, including
+/// `archived/` — callers filter those out so archived sessions don't reappear.
+fn record_from_info(info: pi_coding_agent::core::session_manager::SessionInfo) -> SessionRecord {
+    let title = info.name.unwrap_or_else(|| {
+        if !info.first_message.is_empty() && info.first_message != "(no messages)" {
+            info.first_message.chars().take(60).collect()
+        } else {
+            info.path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Untitled")
+                .to_string()
+        }
+    });
+    let preview = info
+        .path
+        .to_str()
+        .map(last_message_preview)
+        .unwrap_or_default();
+    SessionRecord {
+        id: info.id.clone(),
+        title,
+        updated_at: info
+            .modified
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        preview,
+        status: "idle".to_string(),
+        session_file: Some(info.path.to_string_lossy().to_string()),
+        archived_at: None,
+        config: None,
+        thinking_level: None,
+        cwd: (!info.cwd.is_empty()).then_some(info.cwd),
+    }
+}
+
+fn records_from_infos(
+    sessions: Vec<pi_coding_agent::core::session_manager::SessionInfo>,
+) -> Vec<SessionRecord> {
+    sessions
+        .into_iter()
+        .filter(|info| !info.path.to_string_lossy().contains("/archived/"))
+        .map(record_from_info)
+        .collect()
+}
+
 /// Scan `~/.pi-rs/agent/sessions/` for `.jsonl` files and return session records.
 /// Delegates to pi-rs `SessionManager::list_all()` (which provides the title,
 /// first-message text, and timestamps — no manual JSONL parsing here).
+///
+/// Blocking variant for pre-runtime startup (`Store::new_with_runtime`). Async
+/// call sites must use [`scan_existing_sessions_async`] instead: blocking a
+/// tokio worker while scanning every session file stalls all other tasks.
 pub fn scan_existing_sessions() -> Vec<SessionRecord> {
-    let sessions = futures::executor::block_on(SessionManager::list_all(None));
-    sessions
-        .into_iter()
-        // pi-rs list_all scans every subdirectory of the sessions dir,
-        // including `archived/` — exclude those so archived sessions don't
-        // reappear in the UI.
-        .filter(|info| !info.path.to_string_lossy().contains("/archived/"))
-        .map(|info| {
-            let title = info.name.unwrap_or_else(|| {
-                if !info.first_message.is_empty() && info.first_message != "(no messages)" {
-                    info.first_message.chars().take(60).collect()
-                } else {
-                    info.path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("Untitled")
-                        .to_string()
-                }
-            });
-            let preview = info
-                .path
-                .to_str()
-                .map(last_message_preview)
-                .unwrap_or_default();
-            SessionRecord {
-                id: info.id.clone(),
-                title,
-                updated_at: info
-                    .modified
-                    .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-                preview,
-                status: "idle".to_string(),
-                has_unseen_update: false,
-                session_file: Some(info.path.to_string_lossy().to_string()),
-                archived_at: None,
-                config: None,
-                thinking_level: None,
-                cwd: (!info.cwd.is_empty()).then_some(info.cwd),
-            }
-        })
-        .collect()
+    records_from_infos(futures::executor::block_on(SessionManager::list_all(None)))
+}
+
+/// Async variant used from runtime paths (fork/import/select).
+pub async fn scan_existing_sessions_async() -> Vec<SessionRecord> {
+    records_from_infos(SessionManager::list_all(None).await)
 }
 
 /// Read transcript messages from a JSONL session file using pi-rs `SessionManager`.
@@ -295,6 +311,7 @@ pub fn delete_session_by_id(state: &mut DesktopState, session_id: &str) {
 /// Create a new session. `cwd` optionally pins the session to a project
 /// directory (Codex-style "new conversation in the current project"); when
 /// omitted it falls back to the process current directory.
+#[cfg(test)]
 pub fn create_session_simple(state: &mut DesktopState, title: &str, cwd: Option<&str>) {
     let id = format!("sess-{}", chrono::Utc::now().timestamp_millis());
     state.sessions.push(SessionRecord {
@@ -307,7 +324,6 @@ pub fn create_session_simple(state: &mut DesktopState, title: &str, cwd: Option<
         updated_at: now_iso(),
         preview: String::new(),
         status: "idle".to_string(),
-        has_unseen_update: false,
         session_file: None,
         archived_at: None,
         config: None,

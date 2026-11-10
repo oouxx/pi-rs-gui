@@ -7,13 +7,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 bun run dev              # Vite dev server (frontend only)
 bun run build            # Vite production build
+bun run typecheck        # tsc --noEmit (also catches IPC type drift)
+bun test                 # Bun test runner (pure frontend logic)
 bun run tauri:dev        # Tauri dev mode (full desktop app, requires Rust toolchain)
 bun run tauri:build      # Production Tauri build
 bunx shadcn@latest add <component>  # Add a shadcn/ui component
 ```
 
-- Rust tests: `cd src-tauri && cargo test` (single test in `state.rs`)
-- No frontend test framework is configured
+- Rust tests: `cd src-tauri && cargo test`
+- Frontend tests: `bun test` (currently the message reducer; no DOM harness)
 
 ## Architecture
 
@@ -33,6 +35,23 @@ bunx shadcn@latest add <component>  # Add a shadcn/ui component
 - **Sessions**: Stored as JSONL files in `~/.pi-rs/agent/sessions/`
 - **State persistence**: `~/.pi-rs/agent/ui-state.json` (active IDs only)
 - **API keys**: Environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.)
+
+### Backend module layout (`src-tauri/src/state/`)
+
+- `store.rs` — `DesktopState` + `mutate()` (single writer; emits `pi-gui:state-changed`, persists `ui-state.json` only when the selected id changes)
+- `actors.rs` — `ActorRegistry`: session id → mailbox; owns `send_cmd`
+- `runtime.rs` — pi-rs runtime factory, spawn / ensure / shutdown actor
+- `lifecycle.rs` — session CRUD, fork/import/clone, cwd switch, model switch, messaging
+- `transcript.rs` — `AgentSessionEvent` serialization + display-transcript merge (unit-tested)
+- `events.rs` — Tauri event channel constants (mirror `src/api/eventNames.ts`)
+
+### Frontend layout
+
+- `hooks/ChatProvider.tsx` — the single `useChat` instance shared by sidebar and chat (do not call `useChat()` directly in components)
+- `hooks/useChat.ts` — session list, transcript loading, streaming orchestration
+- `hooks/message-reducer.ts` — pure message merge / delta logic (tested with `bun test`)
+- `components/chat/` — `Composer`, `MessageItem`, `TimelinePanel`, markdown renderer
+- `api/types.ts` — IPC contract types; keep in sync with the Rust serializers
 
 ### 职责划分：pi-rs vs pi-rs-gui
 

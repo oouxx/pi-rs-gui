@@ -1,10 +1,14 @@
 pub(crate) mod actor;
+pub(crate) mod actors;
 pub(crate) mod cwd;
+pub(crate) mod events;
 pub(crate) mod export;
 pub(crate) mod extensions;
 pub(crate) mod files;
+pub(crate) mod lifecycle;
 pub(crate) mod model;
 pub(crate) mod providers;
+pub(crate) mod runtime;
 pub(crate) mod session;
 pub(crate) mod settings;
 pub(crate) mod skills;

@@ -1,25 +1,91 @@
+import type {
+  CustomProviderInfo,
+  DefaultModelDto,
+  DesktopStateDto,
+  ExtensionInfo,
+  GeneralSettings,
+  GlobalModelSettingsDto,
+  ModelOption,
+  ModelSettingsDto,
+  ProviderInfo,
+  SessionInfo,
+  SessionRecordDto,
+  SessionTreeNode,
+  SkillInfo,
+  SlashCommandInfo,
+  TranscriptPayload,
+  TrustDecision,
+} from "./types";
+
 // ── Low-level Tauri invoke ────────────────────────────────────
+
+/** Argument/result keys whose values must never reach the console. */
+const SENSITIVE_KEY = /(api[_-]?key|token|secret|password|credential)/i;
+
+/** Deep-copy a value for logging, masking credential-looking fields. */
+function redact(value: unknown, depth = 0): unknown {
+  if (depth > 4 || value == null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    out[k] = SENSITIVE_KEY.test(k) ? "***" : redact(v, depth + 1);
+  }
+  return out;
+}
+
+interface TauriInternals {
+  invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
+}
 
 export async function tauriInvoke<T>(
   cmd: string,
   args?: Record<string, unknown>,
 ): Promise<T> {
-  const ipc = (window as any).__TAURI_INTERNALS__;
-  console.log(`[IPC →] ${cmd}`, args);
-  const result = await (ipc.invoke(cmd, args) as Promise<T>);
-  console.log(`[IPC ←] ${cmd}`, result);
+  const ipc = (window as unknown as { __TAURI_INTERNALS__: TauriInternals })
+    .__TAURI_INTERNALS__;
+  if (import.meta.env.DEV) {
+    console.log(`[IPC →] ${cmd}`, redact(args));
+  }
+  const result = (await ipc.invoke(cmd, args)) as T;
+  if (import.meta.env.DEV) {
+    console.log(`[IPC ←] ${cmd}`, redact(result));
+  }
   return result;
 }
 
-// ── Commands (no workspace params) ────────────────────────────
+// ── Types ─────────────────────────────────────────────────────
+// Shared IPC types live in `./types`; re-export the ones consumers import
+// from this module.
 
-export type DesktopAppState = any;
+export type {
+  CustomProviderInfo,
+  DefaultModelDto,
+  DesktopStateDto,
+  ExtensionInfo,
+  GeneralSettings,
+  GlobalModelSettingsDto,
+  ModelOption,
+  ModelSettingsDto,
+  ProviderInfo,
+  SessionInfo,
+  SessionRecordDto,
+  SessionTreeNode,
+  SkillInfo,
+  SlashCommandInfo,
+  TranscriptItem,
+  TranscriptPayload,
+  TrustDecision,
+} from "./types";
+
+export type DesktopAppState = DesktopStateDto;
+
+// ── Commands (no workspace params) ────────────────────────────
 
 export function getState() {
   return tauriInvoke<DesktopAppState>("get_state");
 }
 export function getSelectedTranscript() {
-  return tauriInvoke<any>("get_selected_transcript");
+  return tauriInvoke<TranscriptPayload | null>("get_selected_transcript");
 }
 
 /** Resolve the active session's working directory (falls back to undefined). */
@@ -27,7 +93,7 @@ export async function getActiveSessionCwd(): Promise<string | undefined> {
   try {
     const state = await getState();
     const sess = (state.sessions ?? []).find(
-      (s: any) => s.id === state.selectedSessionId,
+      (s) => s.id === state.selectedSessionId,
     );
     return sess?.cwd ?? undefined;
   } catch {
@@ -55,7 +121,7 @@ export function shareSession() {
   return tauriInvoke<string>("share_session");
 }
 export function listCustomProviders() {
-  return tauriInvoke<any[]>("list_custom_providers");
+  return tauriInvoke<CustomProviderInfo[]>("list_custom_providers");
 }
 
 // ── Agent-session flow ──
@@ -72,18 +138,16 @@ export function abortSession(sessionId: string) {
 // ── Model ──
 
 export function getDefaultModel() {
-  return tauriInvoke<any>("get_default_model");
+  return tauriInvoke<DefaultModelDto>("get_default_model");
 }
 export function getModels() {
-  return tauriInvoke<{ models: readonly any[] }>("get_models");
+  return tauriInvoke<{ models: ModelOption[] }>("get_models");
 }
 export function getProviders() {
-  return tauriInvoke<{ providers: readonly any[] }>("get_providers");
+  return tauriInvoke<{ providers: ProviderInfo[] }>("get_providers");
 }
 export function getModelSettings() {
-  return tauriInvoke<{ settings: any; globalModelSettings: any }>(
-    "get_model_settings",
-  );
+  return tauriInvoke<ModelSettingsDto>("get_model_settings");
 }
 export function setDefaultModel(provider: string, modelId: string) {
   return tauriInvoke<DesktopAppState>("set_default_model", {
@@ -102,13 +166,10 @@ export function setProviderApiKey(providerId: string, apiKey: string) {
     apiKey,
   });
 }
-export function loginProvider(providerId: string) {
-  return tauriInvoke<DesktopAppState>("login_provider", { providerId });
-}
 export function logoutProvider(providerId: string) {
   return tauriInvoke<DesktopAppState>("logout_provider", { providerId });
 }
-export function setCustomProvider(config: any) {
+export function setCustomProvider(config: CustomProviderInfo) {
   return tauriInvoke<DesktopAppState>("set_custom_provider", { config });
 }
 export function deleteCustomProvider(providerId: string) {
@@ -118,19 +179,19 @@ export function deleteCustomProvider(providerId: string) {
 // ── Skills ──
 
 export function listSkills(cwd?: string) {
-  return tauriInvoke<any[]>("list_skills", cwd ? { cwd } : {});
+  return tauriInvoke<SkillInfo[]>("list_skills", cwd ? { cwd } : {});
 }
 export function getSkill(name: string, cwd?: string) {
-  return tauriInvoke<any>("get_skill", cwd ? { name, cwd } : { name });
+  return tauriInvoke<SkillInfo>("get_skill", cwd ? { name, cwd } : { name });
 }
 
 // ── Extensions ──
 
 export function listExtensions() {
-  return tauriInvoke<any[]>("list_extensions");
+  return tauriInvoke<ExtensionInfo[]>("list_extensions");
 }
 export function getExtension(name: string) {
-  return tauriInvoke<any>("get_extension", { name });
+  return tauriInvoke<ExtensionInfo>("get_extension", { name });
 }
 
 // ── Workspace file completion (composer @ mention / Tab) ──
@@ -151,7 +212,7 @@ export function fileCompletions(cwd: string | null | undefined, query: string) {
 // ── Slash commands ──
 
 export function listSlashCommands() {
-  return tauriInvoke<any[]>("list_slash_commands");
+  return tauriInvoke<SlashCommandInfo[]>("list_slash_commands");
 }
 
 // ── Terminal ──
@@ -188,32 +249,11 @@ export function setSessionModel(provider: string, modelId: string) {
 
 // ── Session info ──
 
-export interface SessionInfo {
-  id: string;
-  found?: boolean;
-  title?: string;
-  cwd?: string | null;
-  sessionFile?: string | null;
-  messageCount?: number;
-  createdAt?: string | null;
-  model?: { provider?: string | null; modelId?: string | null } | null;
-}
-
 export function getSessionInfo(sessionId: string) {
   return tauriInvoke<SessionInfo>("get_session_info", { sessionId });
 }
 
 // ── Session tree (timeline) ──
-
-export interface SessionTreeNode {
-  id: string;
-  parentId?: string | null;
-  kind: string;
-  label: string;
-  timestamp: string;
-  current?: boolean;
-  children: SessionTreeNode[];
-}
 
 export function getSessionTree(sessionId: string) {
   return tauriInvoke<SessionTreeNode[]>("get_session_tree", { sessionId });
@@ -236,16 +276,10 @@ export function compactSession(customInstructions?: string) {
 // ── Project trust ──
 
 export function getProjectTrust(cwd?: string | null) {
-  return tauriInvoke<{ cwd: string; decision: boolean | null }>(
-    "get_project_trust",
-    cwd ? { cwd } : {},
-  );
+  return tauriInvoke<TrustDecision>("get_project_trust", cwd ? { cwd } : {});
 }
 export function setProjectTrust(cwd: string, decision: boolean | null) {
-  return tauriInvoke<{ cwd: string; decision: boolean | null }>(
-    "set_project_trust",
-    { cwd, decision },
-  );
+  return tauriInvoke<TrustDecision>("set_project_trust", { cwd, decision });
 }
 
 // ── Fork / import / reload ──
@@ -277,10 +311,10 @@ export function exportSession(
 // ── General settings ──
 
 export function getGeneralSettings() {
-  return tauriInvoke<any>("get_general_settings");
+  return tauriInvoke<GeneralSettings>("get_general_settings");
 }
 export function setGeneralSetting(key: string, value: unknown) {
-  return tauriInvoke<any>("set_general_setting", { key, value });
+  return tauriInvoke<GeneralSettings>("set_general_setting", { key, value });
 }
 
 // ── Resources dirs ──

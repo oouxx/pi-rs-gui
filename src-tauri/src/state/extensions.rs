@@ -4,24 +4,42 @@
 //! EXTENSION_LOADING_FEASIBILITY.md in pi-rs). The only extensions the
 //! runtime knows are the built-in Rust extensions registered by
 //! `pi_coding_agent::core::extensions::builtin_extension_registry`
-//! (goal / subagent / web_search).
+//! (subagent / web_search).
 //!
-//! This module owns the single `build_default_registry()` helper so the
-//! Extensions view always reflects exactly what agent sessions get.
+//! Since pi-rs v1.83.15 built-ins are **opt-in** via settings
+//! `extensionsEnabled`; this module mirrors that policy so the Extensions
+//! view reflects exactly what agent sessions get.
 
 use std::collections::BTreeMap;
+#[cfg(test)]
+use std::collections::HashMap;
 
+use pi_coding_agent::config;
 use pi_coding_agent::core::extensions::{builtin_extension_registry, ExtensionRegistry};
+use pi_coding_agent::core::settings_manager::SettingsManager;
 use serde_json::{json, Value};
 
-/// Build the registry with the static Rust extensions the GUI wires into every
-/// agent session. Keep in sync with `Store::build_runtime_factory`.
-///
-/// Reuses pi-rs's canonical `builtin_extension_registry(true)` (goal +
-/// subagent + web_search) instead of re-implementing per-extension wiring.
+/// Build a registry for an explicit `extensionsEnabled` map (no settings read).
+#[cfg(test)]
+fn registry_for(enabled: &HashMap<String, bool>) -> ExtensionRegistry {
+    builtin_extension_registry(true, enabled, &Default::default()).unwrap_or_default()
+}
+
+/// Build the registry sessions get, honoring the same settings pi-rs uses
+/// (`extensionsEnabled` + `webSearch`). Sessions themselves pass `None` and
+/// let pi-rs construct it; this mirror is for the Extensions view.
 pub fn build_default_registry() -> ExtensionRegistry {
-    builtin_extension_registry(true)
-        .expect("pi-gui enables builtin extensions (enable=true)")
+    let agent_dir = config::get_agent_dir();
+    let mgr = SettingsManager::create(
+        agent_dir.to_string_lossy().as_ref(),
+        Some(agent_dir.to_string_lossy().as_ref()),
+    );
+    builtin_extension_registry(
+        true,
+        &mgr.get_extensions_enabled(),
+        &mgr.get_web_search_config(),
+    )
+    .unwrap_or_default()
 }
 
 /// Derive the extension name from a stamped `<builtin:name>` source path.
@@ -35,8 +53,12 @@ fn extension_name(source_path: &str) -> String {
 /// Summarize the registered extensions for the frontend: one entry per
 /// extension, with the tools and slash commands it contributes.
 pub fn list_extensions() -> Vec<Value> {
-    let reg = build_default_registry();
+    summarize(&build_default_registry())
+}
 
+/// One entry per registered extension, with the tools and slash commands it
+/// contributes.
+fn summarize(reg: &ExtensionRegistry) -> Vec<Value> {
     let mut tools: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut commands: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
 
@@ -84,13 +106,16 @@ pub fn get_extension(name: &str) -> Option<Value> {
 mod tests {
     use super::*;
 
-    /// The Extensions view must reflect all pi-rs built-in Rust extensions
-    /// (goal / subagent / web_search), not just `goal`.
+    /// Enabled built-ins are listed and flagged as builtin.
     #[test]
-    fn lists_all_builtin_extensions() {
-        let ext = list_extensions();
+    fn lists_enabled_builtin_extensions() {
+        let enabled: HashMap<String, bool> = pi_coding_agent::core::extensions::BUILTIN_EXTENSION_IDS
+            .iter()
+            .map(|id| ((*id).to_string(), true))
+            .collect();
+        let ext = summarize(&registry_for(&enabled));
         let names: Vec<&str> = ext.iter().map(|e| e["name"].as_str().unwrap()).collect();
-        for expected in ["goal", "subagent", "web_search"] {
+        for expected in ["subagent", "web_search"] {
             assert!(
                 names.contains(&expected),
                 "missing builtin extension {expected:?}; got {names:?}"
@@ -100,5 +125,11 @@ mod tests {
         for e in &ext {
             assert_eq!(e["location"], "builtin");
         }
+    }
+
+    /// Opt-in policy: missing ids register nothing.
+    #[test]
+    fn disabled_builtins_are_not_listed() {
+        assert!(summarize(&registry_for(&HashMap::new())).is_empty());
     }
 }

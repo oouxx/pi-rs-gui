@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { ChatProvider } from "@/hooks/ChatProvider"
 import PiSidebar from "./PiSidebar"
 import ChatView from "./ChatView"
 import SkillsView from "./SkillsView"
@@ -32,10 +33,12 @@ export default function AppShell() {
 
   return (
     <TooltipProvider>
-      <SidebarProvider defaultOpen>
-        <PiSidebar mode={mode} onModeChange={setMode} />
-        <SidebarInset className="overflow-hidden">{views[mode]}</SidebarInset>
-      </SidebarProvider>
+      <ChatProvider>
+        <SidebarProvider defaultOpen>
+          <PiSidebar mode={mode} onModeChange={setMode} />
+          <SidebarInset className="overflow-hidden">{views[mode]}</SidebarInset>
+        </SidebarProvider>
+      </ChatProvider>
     </TooltipProvider>
   )
 }

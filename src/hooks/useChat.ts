@@ -8,36 +8,26 @@ import {
   deleteSession as apiDeleteSession,
   renameSession as apiRenameSession,
   type ComposerImage,
+  type DesktopAppState,
 } from "../api/commands";
 import { tauriListen } from "../api/events";
+import { EVENTS } from "../api/eventNames";
+import type { AgentEventPayload, TranscriptPayload } from "../api/types";
+import {
+  appendAssistantStep,
+  applyDeltaBatch,
+  extractText,
+  replaceAssistantStep,
+  toBlocks,
+  transcriptToDisplay,
+  type ContentBlock,
+  type DisplayMessage,
+  type StreamDelta,
+} from "./message-reducer";
 import { useToast } from "../components/ui/toast";
 
-// ── Content block types (mirrors pi-ai ContentBlock) ──────────
-
-export interface ContentBlock {
-  type: "text" | "thinking" | "toolCall" | "image";
-  text?: string;
-  thinking?: string;
-  id?: string;          // toolCall.id
-  name?: string;        // toolCall.name
-  arguments?: any;      // toolCall.arguments
-  // Image blocks: raw base64 data + mime type
-  data?: string;
-  mimeType?: string;
-  // Frontend-only: execution state (set by tool_execution_* events)
-  status?: "running" | "success" | "error";
-  result?: string;
-  isError?: boolean;
-}
-
-export interface DisplayMessage {
-  id: string;
-  role: "user" | "assistant" | "system";
-  content: string;       // flattened text (backward compat)
-  blocks: ContentBlock[]; // structured content blocks
-  createdAt: string;
-  errorMessage?: string; // assistant run failure (LLM error, timeout)
-}
+// Re-export so components keep importing message shapes from the hook module.
+export type { ContentBlock, DisplayMessage } from "./message-reducer";
 
 interface SessionItem {
   id: string;
@@ -48,126 +38,8 @@ interface SessionItem {
   preview?: string;
 }
 
-/** Extract text from an assistant message's content blocks. */
-function extractText(content: any[]): string {
-  return (content ?? [])
-    .filter((b: any) => b.type === "text" || b.text)
-    .map((b: any) => b.text ?? "")
-    .join("");
-}
-
-/** Convert raw ContentBlock[] from the backend to our frontend ContentBlock[]. */
-function toBlocks(raw: any[] | undefined | null): ContentBlock[] {
-  if (!raw) return [];
-  return raw.map((b: any) => {
-    const block: ContentBlock = { type: b.type ?? "text" };
-    if (b.text !== undefined) block.text = b.text;
-    if (b.thinking !== undefined) block.thinking = b.thinking;
-    if (b.id !== undefined) block.id = b.id;
-    if (b.name !== undefined) block.name = b.name;
-    if (b.arguments !== undefined) block.arguments = b.arguments;
-    if (b.data !== undefined) block.data = b.data;
-    if (b.mimeType !== undefined) block.mimeType = b.mimeType;
-    // Frontend-only execution state (present in transcript reloads where the
-    // backend merges tool results onto toolCall blocks).
-    if (b.status !== undefined) block.status = b.status;
-    if (b.result !== undefined) block.result = b.result;
-    if (b.isError !== undefined) block.isError = b.isError;
-    return block;
-  });
-}
-
-/** Flatten blocks to a single text string. */
-function blocksToText(blocks: ContentBlock[]): string {
-  return blocks
-    .filter((b) => b.type === "text" && b.text)
-    .map((b) => b.text!)
-    .join("");
-}
-
-// ── Streaming delta batch application ──────────────────────────
-// text/thinking/toolcall deltas are accumulated and applied once per
-// animation frame (instead of one React render per token).
-interface StreamDelta {
-  event_type: string;
-  data: any;
-  /** Block offset of the assistant step within its merged message. */
-  offset?: number;
-}
-
-function ensureIndex(blocks: ContentBlock[], idx: number): void {
-  while (blocks.length <= idx) {
-    blocks.push({ type: "text", text: "" });
-  }
-}
-
-function applyDelta(prev: DisplayMessage[], d: StreamDelta): DisplayMessage[] {
-  if (prev.length === 0) return prev;
-  const last = prev[prev.length - 1];
-  if (last.role !== "assistant") return prev;
-  const { contentIndex, delta } = d.data ?? {};
-  // Steps of a tool-calling run are merged into one message; each step's
-  // deltas are offset by the block index where the step started.
-  const idx = (d.offset ?? 0) + (contentIndex ?? 0);
-  const blocks = [...last.blocks];
-
-  switch (d.event_type) {
-    case "text_delta": {
-      if (typeof delta !== "string" || !delta) return prev;
-      ensureIndex(blocks, idx);
-      const b = blocks[idx];
-      blocks[idx] = { type: "text", text: (b.text ?? "") + delta };
-      return [...prev.slice(0, -1), { ...last, blocks, content: blocksToText(blocks) }];
-    }
-    case "thinking_delta": {
-      if (typeof delta !== "string" || !delta) return prev;
-      ensureIndex(blocks, idx);
-      const b = blocks[idx];
-      blocks[idx] = { type: "thinking", thinking: (b.thinking ?? "") + delta };
-      return [...prev.slice(0, -1), { ...last, blocks }];
-    }
-    case "toolcall_start": {
-      const src = d.data?.partial?.content?.[contentIndex] ?? {};
-      ensureIndex(blocks, idx);
-      blocks[idx] = {
-        type: "toolCall",
-        id: src.id ?? `tc-${idx}`,
-        name: src.name ?? "tool",
-        arguments: "",
-      };
-      return [...prev.slice(0, -1), { ...last, blocks }];
-    }
-    case "toolcall_delta": {
-      if (typeof delta !== "string" || !delta) return prev;
-      const b = blocks[idx];
-      if (!b || b.type !== "toolCall") return prev;
-      const prevArgs =
-        typeof b.arguments === "string" ? b.arguments : JSON.stringify(b.arguments ?? "");
-      blocks[idx] = { ...b, arguments: prevArgs + delta };
-      return [...prev.slice(0, -1), { ...last, blocks }];
-    }
-    case "toolcall_end": {
-      const toolCall = d.data?.toolCall;
-      if (!toolCall) return prev;
-      ensureIndex(blocks, idx);
-      blocks[idx] = {
-        type: "toolCall",
-        id: toolCall.id ?? `tc-${idx}`,
-        name: toolCall.name ?? "tool",
-        arguments: toolCall.arguments ?? {},
-      };
-      return [...prev.slice(0, -1), { ...last, blocks }];
-    }
-    default:
-      return prev;
-  }
-}
-
-function applyDeltaBatch(prev: DisplayMessage[], deltas: StreamDelta[]): DisplayMessage[] {
-  let out = prev;
-  for (const d of deltas) out = applyDelta(out, d);
-  return out;
-}
+/** Keep in sync with the backend actor's turn timeout (`actor.rs`). */
+const TURN_TIMEOUT_MS = 300_000;
 
 export function useChat() {
   const { toast } = useToast();
@@ -214,33 +86,41 @@ export function useChat() {
     }
   }, [sessions, toast]);
 
+  /** Apply a `DesktopState` snapshot (from `get_state` or the change event). */
+  const applyState = useCallback((state: DesktopAppState) => {
+    setSessions(
+      (state.sessions ?? [])
+        .filter((s) => !s.archivedAt)
+        .map((s) => ({
+          id: s.id,
+          title: s.title || "Untitled",
+          updatedAt: s.updatedAt,
+          status: s.status,
+          cwd: s.cwd ?? null,
+          preview: s.preview ?? "",
+        })),
+    );
+    if (state.selectedSessionId && state.selectedSessionId !== activeSessionIdRef.current) {
+      setActiveSessionId(state.selectedSessionId);
+    }
+    setLoading(false);
+  }, []);
+
   const refreshState = useCallback(async () => {
     try {
-      const state = await getState();
-      setSessions(
-        (state.sessions ?? [])
-          .filter((s: any) => !s.archivedAt)
-          .map((s: any) => ({
-            id: s.id,
-            title: s.title || "Untitled",
-            updatedAt: s.updatedAt,
-            status: s.status,
-            cwd: s.cwd ?? null,
-            preview: s.preview ?? "",
-          })),
-      );
-      if (state.selectedSessionId && state.selectedSessionId !== activeSessionIdRef.current) {
-        setActiveSessionId(state.selectedSessionId);
-      }
-      setLoading(false);
+      applyState(await getState());
     } catch { /* ignore */ }
-  }, []);
+  }, [applyState]);
 
   useEffect(() => {
     let disposed = false;
     let unsub: (() => void) | undefined;
     (async () => {
-      const u = await tauriListen<any>("pi-gui:state-changed", () => refreshState());
+      // The event already carries the full state — use the payload instead of
+      // round-tripping through `get_state` on every change.
+      const u = await tauriListen<DesktopAppState>(EVENTS.stateChanged, (state) =>
+        applyState(state),
+      );
       if (disposed) {
         u();
         return;
@@ -252,7 +132,7 @@ export function useChat() {
       disposed = true;
       unsub?.();
     };
-  }, [refreshState]);
+  }, [applyState, refreshState]);
 
   // ── Streaming: listen for agent events ──────────────────────
   useEffect(() => {
@@ -267,7 +147,7 @@ export function useChat() {
       deltaQueueRef.current = [];
       setMessages((prev) => applyDeltaBatch(prev, q));
     };
-    const queueDelta = (event_type: string, data: any) => {
+    const queueDelta = (event_type: string, data: AgentEventPayload["data"]) => {
       deltaQueueRef.current.push({
         event_type,
         data,
@@ -279,7 +159,7 @@ export function useChat() {
     };
 
     (async () => {
-      const u = await tauriListen<any>("agent-event", (evt: any) => {
+      const u = await tauriListen<AgentEventPayload>(EVENTS.agentEvent, (evt) => {
         if (disposed) return;
         if (evt.session_id !== activeSessionIdRef.current) return;
         const et = evt.event_type;
@@ -305,34 +185,17 @@ export function useChat() {
               ? msg.error_message
               : undefined;
           setMessages((prev) => {
-            if (prev.length > 0) {
-              const last = prev[prev.length - 1];
-              if (last.role === "assistant") {
-                // Merge: consecutive steps of a tool-calling run render as one
-                // bubble (Claude Code style). Record the block offset so this
-                // step's deltas land at the right index.
-                stepOffsetRef.current = last.blocks.length;
-                return [
-                  ...prev.slice(0, -1),
-                  {
-                    ...last,
-                    blocks: [...last.blocks, ...blocks],
-                    content: last.content + text,
-                    errorMessage: errorMessage ?? last.errorMessage,
-                  },
-                ];
-              }
-            }
-            stepOffsetRef.current = 0;
-            const newMsg: DisplayMessage = {
-              id: `msg-${Date.now()}`,
-              role: "assistant",
-              content: text,
+            // Consecutive steps of a tool-calling run merge into one bubble
+            // (Claude Code style). The reducer records the step's block offset
+            // so this step's deltas land at the right index.
+            const { messages: next, stepOffset } = appendAssistantStep(
+              prev,
               blocks,
-              createdAt: new Date().toISOString(),
+              text,
               errorMessage,
-            };
-            return [...prev, newMsg];
+            );
+            stepOffsetRef.current = stepOffset;
+            return next;
           });
 
         } else if (
@@ -358,22 +221,9 @@ export function useChat() {
             typeof msg.error_message === "string" && msg.error_message
               ? msg.error_message
               : undefined;
-          setMessages((prev) => {
-            if (prev.length === 0) return prev;
-            const last = prev[prev.length - 1];
-            if (last.role !== "assistant") return prev;
-            const merged = [...last.blocks];
-            merged.splice(offset, merged.length - offset, ...blocks);
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...last,
-                blocks: merged,
-                content: blocksToText(merged),
-                errorMessage: errorMessage ?? last.errorMessage,
-              },
-            ];
-          });
+          setMessages((prev) =>
+            replaceAssistantStep(prev, offset, blocks, errorMessage),
+          );
 
         } else if (et === "message_end") {
           // Finalize the current assistant step. As with message_start, ignore
@@ -390,22 +240,9 @@ export function useChat() {
             typeof msg.error_message === "string" && msg.error_message
               ? msg.error_message
               : undefined;
-          setMessages((prev) => {
-            if (prev.length === 0) return prev;
-            const last = prev[prev.length - 1];
-            if (last.role !== "assistant") return prev;
-            const merged = [...last.blocks];
-            merged.splice(offset, merged.length - offset, ...blocks);
-            return [
-              ...prev.slice(0, -1),
-              {
-                ...last,
-                blocks: merged,
-                content: blocksToText(merged),
-                errorMessage: errorMessage ?? last.errorMessage,
-              },
-            ];
-          });
+          setMessages((prev) =>
+            replaceAssistantStep(prev, offset, blocks, errorMessage),
+          );
 
         } else if (et === "run_error") {
           // Turn-level failure (timeout / agent-loop error) with no message
@@ -514,7 +351,7 @@ export function useChat() {
     const gen = ++transcriptGenRef.current;
     activeSessionIdRef.current = activeSessionId;
     setMessages([]);
-    getSelectedTranscript().then((t: any) => {
+    getSelectedTranscript().then((t) => {
       if (gen === transcriptGenRef.current) {
         setMessages(t ? transcriptToDisplay(t.transcript) : []);
       }
@@ -523,7 +360,7 @@ export function useChat() {
     let disposed = false;
     let unsub: (() => void) | undefined;
     (async () => {
-      const u = await tauriListen<any>("pi-gui:selected-transcript-changed", (t: any) => {
+      const u = await tauriListen<TranscriptPayload>(EVENTS.transcriptChanged, (t) => {
         if (disposed) return;
         if (gen !== transcriptGenRef.current) return;
         // Ignore transcripts for other sessions (a stale send_message task can
@@ -569,7 +406,7 @@ export function useChat() {
     // is still running keeps the Stop button visible).
     try {
       const state = await getState();
-      const sess = (state.sessions ?? []).find((s: any) => s.id === sessionId);
+      const sess = (state.sessions ?? []).find((s) => s.id === sessionId);
       const running = sess?.status === "running";
       setStreaming(running);
       streamingRef.current = running;
@@ -653,14 +490,14 @@ export function useChat() {
       streamingRef.current = true;
       try {
         await submitComposer(text, attachments);
-        // Safety net matching the backend's 300s add_user_text timeout. The
-        // transcript event normally clears streaming when the turn ends.
+        // Safety net matching the backend's turn timeout. The transcript event
+        // normally clears streaming when the turn ends.
         setTimeout(() => {
           if (streamingRef.current) {
             setStreaming(false);
             streamingRef.current = false;
           }
-        }, 300_000);
+        }, TURN_TIMEOUT_MS);
       } catch (e) {
         setStreaming(false);
         streamingRef.current = false;
@@ -691,28 +528,4 @@ export function useChat() {
     streaming,
     loading,
   };
-}
-
-function transcriptToDisplay(transcript: readonly any[]): DisplayMessage[] {
-  return transcript
-    .filter((t: any) => t.kind === "message" || t.role)
-    .map((t: any) => {
-      // Prefer structured content blocks from the backend (text/thinking/toolCall
-      // with merged tool execution state); fall back to flattened text.
-      const rawBlocks = Array.isArray(t.content) ? t.content : null;
-      const blocks: ContentBlock[] = rawBlocks && rawBlocks.length > 0
-        ? toBlocks(rawBlocks)
-        : [{ type: "text" as const, text: t.text ?? "" }];
-      return {
-        id: t.id ?? `msg-${Math.random().toString(36).slice(2, 8)}`,
-        role: t.role === "user" ? ("user" as const) : ("assistant" as const),
-        content: t.text ?? blocksToText(blocks) ?? "",
-        blocks,
-        createdAt: t.createdAt ?? "",
-        errorMessage:
-          typeof t.errorMessage === "string" && t.errorMessage
-            ? t.errorMessage
-            : undefined,
-      };
-    });
 }

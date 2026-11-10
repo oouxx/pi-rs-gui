@@ -175,7 +175,9 @@ impl SessionActor {
                         .get_model_registry()
                         .find(&provider, &model_id)
                         .ok_or_else(|| format!("model '{provider}/{model_id}' not found"))?;
-                    self.session.set_model(model).await?;
+                    // `persist=false`: the global default is written by the
+                    // store (`model::set_default_model`) after this succeeds.
+                    self.session.set_model(model, false).await?;
                     Ok(())
                 })()
                 .await;
@@ -209,7 +211,9 @@ impl SessionActor {
             SessionCommand::ForkAt { entry_id, reply } => {
                 let result = self
                     .session
-                    .session_mgr_fork(&entry_id)
+                    // `at`: the branch includes the selected entry (the GUI's
+                    // timeline fork has always been inclusive).
+                    .session_mgr_fork(&entry_id, Some("at"))
                     .await
                     .map(|_| ())
                     .map_err(|e| e.to_string());
@@ -225,7 +229,8 @@ impl SessionActor {
                             .to_string()
                     };
                     self.session
-                        .session_mgr_fork(&leaf)
+                        // `at`: keep the current leaf in the clone.
+                        .session_mgr_fork(&leaf, Some("at"))
                         .await
                         .map(|_| ())
                         .map_err(|e| e.to_string())
@@ -308,51 +313,53 @@ impl SessionActor {
             let result = tokio::time::timeout(
                 std::time::Duration::from_secs(300),
                 async {
-                    if images.is_empty() {
-                        session.add_user_text(&text).await;
-                        Ok(())
-                    } else {
-                        session
-                            .prompt(
-                                &text,
-                                Some(PromptOptions {
-                                    // Skip skill/template expansion for raw
-                                    // attachment messages (mirrors
-                                    // `send_user_message`); `/commands` are
-                                    // still routed by the frontend.
-                                    expand_prompt_templates: Some(false),
-                                    images: Some(images),
-                                    ..Default::default()
-                                }),
-                            )
-                            .await
-                    }
+                    // `add_user_text` is no longer public (v1.87); `prompt`
+                    // with template expansion disabled is the equivalent
+                    // entry point. Skip skill/template expansion for raw
+                    // messages; `/commands` are still routed by the frontend.
+                    session
+                        .prompt(
+                            &text,
+                            Some(PromptOptions {
+                                expand_prompt_templates: Some(false),
+                                images: (!images.is_empty()).then_some(images),
+                                ..Default::default()
+                            }),
+                        )
+                        .await
                 },
             )
             .await;
-            if result.is_err() {
-                eprintln!("[LLM] turn timed out after 300s");
-                let _ = app.emit(
-                    "agent-event",
-                    FrontendEvent {
-                        event_type: "run_error".into(),
-                        session_id: sid.clone(),
-                        data: json!({
-                            "message": "Turn timed out after 300s. The run was abandoned.",
-                            "timeout": true,
-                        }),
-                    },
-                );
-            } else if let Err(ref e) = result {
-                eprintln!("[LLM] turn error: {e}");
-                let _ = app.emit(
-                    "agent-event",
-                    FrontendEvent {
-                        event_type: "run_error".into(),
-                        session_id: sid.clone(),
-                        data: json!({"message": e.to_string()}),
-                    },
-                );
+            match result {
+                // Outer error = the 300s timeout elapsed.
+                Err(_) => {
+                    eprintln!("[LLM] turn timed out after 300s");
+                    let _ = app.emit(
+                        super::events::AGENT_EVENT,
+                        FrontendEvent {
+                            event_type: "run_error".into(),
+                            session_id: sid.clone(),
+                            data: json!({
+                                "message": "Turn timed out after 300s. The run was abandoned.",
+                                "timeout": true,
+                            }),
+                        },
+                    );
+                }
+                // Inner error = `prompt()` rejected the turn (no model / no
+                // API key / compaction in progress) or the agent loop failed.
+                Ok(Err(ref e)) => {
+                    eprintln!("[LLM] turn error: {e}");
+                    let _ = app.emit(
+                        super::events::AGENT_EVENT,
+                        FrontendEvent {
+                            event_type: "run_error".into(),
+                            session_id: sid.clone(),
+                            data: json!({"message": e.to_string()}),
+                        },
+                    );
+                }
+                Ok(Ok(())) => {}
             }
             // Emit the transcript so the frontend reflects the final state
             // (also after aborts, whose transcript may be partial).
@@ -360,7 +367,7 @@ impl SessionActor {
             let transcript = build_display_transcript(&msgs);
             if !transcript.is_empty() {
                 let _ = app.emit(
-                    "pi-gui:selected-transcript-changed",
+                    super::events::TRANSCRIPT_CHANGED,
                     &json!({ "sessionId": sid, "transcript": transcript }),
                 );
             }
@@ -373,7 +380,7 @@ impl SessionActor {
         let transcript = build_display_transcript(&msgs);
         if !transcript.is_empty() {
             let _ = self.app.emit(
-                "pi-gui:selected-transcript-changed",
+                super::events::TRANSCRIPT_CHANGED,
                 &json!({ "sessionId": self.session_id, "transcript": transcript }),
             );
         }

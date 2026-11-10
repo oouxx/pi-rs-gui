@@ -58,6 +58,14 @@ fn entry_info(entry: &SessionEntry) -> (String, String) {
             let (_role, label) = message_info(message);
             ("message".to_string(), label)
         }
+        SessionEntry::Usage { kind, .. } => (
+            "usage".to_string(),
+            format!("Usage: {kind}"),
+        ),
+        SessionEntry::ContextEdit { target_id, .. } => (
+            "context_edit".to_string(),
+            format!("Context edit: {}", truncate(target_id, 80)),
+        ),
         SessionEntry::ThinkingLevelChange { thinking_level, .. } => (
             "thinking_level_change".to_string(),
             format!("Thinking: {thinking_level}"),

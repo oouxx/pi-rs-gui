@@ -320,3 +320,106 @@ pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value>
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pi_agent_core::pi_ai_types::Usage;
+
+    fn user(text: &str, ts: i64) -> AgentMessage {
+        AgentMessage::User {
+            content: vec![ContentBlock::text(text)],
+            timestamp: ts,
+        }
+    }
+
+    fn assistant(
+        content: Vec<ContentBlock>,
+        error_message: Option<&str>,
+        ts: i64,
+    ) -> AgentMessage {
+        AgentMessage::Assistant {
+            content,
+            api: "test".into(),
+            provider: "test".into(),
+            model: "test".into(),
+            usage: Usage::default(),
+            stop_reason: None,
+            error_message: error_message.map(str::to_string),
+            timestamp: ts,
+        }
+    }
+
+    fn tool_result(id: &str, text: &str, is_error: bool, ts: i64) -> AgentMessage {
+        AgentMessage::ToolResult {
+            tool_call_id: id.into(),
+            tool_name: "bash".into(),
+            content: vec![ContentBlock::text(text)],
+            details: serde_json::json!({}),
+            is_error,
+            usage: None,
+            timestamp: ts,
+        }
+    }
+
+    fn tool_call(id: &str, ts: i64) -> AgentMessage {
+        assistant(
+            vec![ContentBlock::ToolCall {
+                id: id.into(),
+                name: "bash".into(),
+                arguments: serde_json::json!({"command": "ls"}),
+                thought_signature: None,
+                namespace: None,
+            }],
+            None,
+            ts,
+        )
+    }
+
+    #[test]
+    fn merges_agent_steps_and_injects_tool_results() {
+        let transcript = build_display_transcript(&[
+            user("run it", 1),
+            tool_call("t1", 2),
+            tool_result("t1", "ok", false, 3),
+            assistant(vec![ContentBlock::text("done")], None, 4),
+        ]);
+
+        // user + one merged assistant bubble.
+        assert_eq!(transcript.len(), 2);
+        let bubble = &transcript[1];
+        assert_eq!(bubble["role"], "assistant");
+        assert_eq!(bubble["text"], "done");
+        let blocks = bubble["content"].as_array().unwrap();
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["type"], "toolCall");
+        assert_eq!(blocks[0]["status"], "success");
+        assert_eq!(blocks[0]["result"], "ok");
+        assert_eq!(blocks[1]["text"], "done");
+    }
+
+    #[test]
+    fn tool_failure_marks_the_tool_call_block() {
+        let transcript = build_display_transcript(&[
+            user("run it", 1),
+            tool_call("t1", 2),
+            tool_result("t1", "boom", true, 3),
+        ]);
+
+        let block = &transcript[1]["content"][0];
+        assert_eq!(block["status"], "error");
+        assert_eq!(block["isError"], true);
+    }
+
+    #[test]
+    fn keeps_last_error_message_on_the_merged_bubble() {
+        let transcript = build_display_transcript(&[
+            user("hi", 1),
+            assistant(vec![ContentBlock::text("part")], None, 2),
+            assistant(vec![ContentBlock::text("retry failed")], Some("boom"), 3),
+        ]);
+
+        assert_eq!(transcript.len(), 2);
+        assert_eq!(transcript[1]["errorMessage"], "boom");
+    }
+}

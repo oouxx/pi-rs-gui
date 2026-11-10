@@ -40,7 +40,6 @@ pub fn run() {
             commands::set_default_model,
             commands::set_default_thinking_level,
             commands::set_provider_api_key,
-            commands::login_provider,
             commands::logout_provider,
             commands::set_custom_provider,
             commands::delete_custom_provider,

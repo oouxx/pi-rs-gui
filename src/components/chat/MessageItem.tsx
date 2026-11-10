@@ -1,0 +1,128 @@
+import { memo } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { AlertCircle } from "lucide-react";
+import type { ContentBlock, DisplayMessage } from "@/hooks/message-reducer";
+import ToolCallCard from "@/components/ToolCallCard";
+import ThinkingBlock from "@/components/ThinkingBlock";
+import { CopyButton, mdComponents } from "./markdown";
+
+function imageDataUrl(block: ContentBlock): string {
+  if (block.data) {
+    return block.data.startsWith("data:")
+      ? block.data
+      : `data:${block.mimeType || "image/png"};base64,${block.data}`;
+  }
+  const args = block.arguments as { data?: string } | string | undefined;
+  return block.text ?? (typeof args === "object" ? args?.data : undefined) ?? "";
+}
+
+/** Render a single content block. Memoized: unchanged block references skip
+ *  re-render entirely, so a text_delta only re-renders the affected block.
+ *  Text is rendered progressively (real-time markdown, like ChatGPT/Claude). */
+const BlockRenderer = memo(function BlockRenderer({
+  block,
+}: {
+  block: ContentBlock;
+}) {
+  switch (block.type) {
+    case "text":
+      return block.text ? (
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+          {block.text}
+        </ReactMarkdown>
+      ) : null;
+
+    case "thinking":
+      return <ThinkingBlock thinking={block.thinking} />;
+
+    case "toolCall":
+      return (
+        <ToolCallCard
+          name={block.name ?? "tool"}
+          args={block.arguments}
+          status={block.status}
+          result={block.result}
+          isError={block.isError}
+        />
+      );
+
+    case "image":
+      return (
+        <div className="my-2">
+          <img
+            src={imageDataUrl(block)}
+            alt=""
+            className="border-codex-border max-h-64 rounded-md border"
+          />
+        </div>
+      );
+
+    default:
+      return null;
+  }
+});
+
+/** A single transcript message. Memoized: during streaming only the last
+ *  assistant message's props change (new blocks), so all other messages skip
+ *  re-rendering entirely. */
+export const MessageItem = memo(function MessageItem({
+  msg,
+  streaming,
+  isLast,
+}: {
+  msg: DisplayMessage;
+  streaming: boolean;
+  isLast: boolean;
+}) {
+  const isLastAi = msg.role === "assistant" && isLast;
+  return (
+    <div
+      {...(isLast ? { "data-msg-last": "true" } : {})}
+      className="group mx-auto w-full max-w-[820px]"
+    >
+      {msg.role === "user" ? (
+        /* Codex desktop: user prompt in a subtle neutral box, full width */
+        <div className="border-codex-border bg-codex-panel relative rounded-lg border px-4 py-3 text-[15px] leading-relaxed text-codex-text">
+          <CopyButton
+            text={msg.content}
+            className="text-codex-faint hover:text-codex-dim absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+          />
+          <div className="break-words whitespace-pre-wrap">{msg.content}</div>
+          {msg.blocks
+            .filter((b) => b.type === "image")
+            .map((b, bi) => (
+              <img
+                key={`${msg.id}-img${bi}`}
+                src={imageDataUrl(b)}
+                alt=""
+                className="border-codex-border mt-2 max-h-48 rounded-lg border"
+              />
+            ))}
+        </div>
+      ) : msg.errorMessage ? (
+        <div className="border-red-200 bg-red-50 relative flex items-start gap-2 rounded-lg border px-4 py-3 text-sm text-red-600">
+          <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <div className="min-w-0 break-words whitespace-pre-wrap">
+            {msg.errorMessage}
+          </div>
+        </div>
+      ) : (
+        /* Codex web: assistant answers are plain markdown, no bubble */
+        <div className="text-codex-text relative text-[15px] leading-relaxed">
+          <CopyButton
+            text={msg.content}
+            className="text-codex-faint hover:text-codex-dim absolute -top-1 right-1 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+          />
+          {msg.blocks.length > 0 ? (
+            msg.blocks.map((block, bi) => (
+              <BlockRenderer key={`${msg.id}-b${bi}`} block={block} />
+            ))
+          ) : streaming && isLastAi ? (
+            <span className="text-codex-faint inline-block animate-pulse">▍</span>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+});
