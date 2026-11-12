@@ -56,11 +56,11 @@ jobs:
           # macOS (x86_64 is cross-compiled on the arm64 runner)
           - platform: macos-latest
             target: x86_64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
             artifact: macos-x86_64
           - platform: macos-latest
             target: aarch64-apple-darwin
-            bundles: dmg
+            bundles: app,dmg
             artifact: macos-aarch64
 
     steps:
@@ -98,6 +98,8 @@ jobs:
         run: bunx tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
         env:
           CI: true
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -109,6 +111,12 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
             src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
             src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
+            src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage.tar.gz
+            src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage.tar.gz.sig
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.nsis.zip
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.nsis.zip.sig
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -117,13 +125,71 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
+      - name: Generate latest.json
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          from datetime import datetime, timezone
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          version = json.load(open("src-tauri/tauri.conf.json"))["version"]
+
+          platform_dirs = {
+              "linux-x86_64": "linux-x86_64",
+              "linux-aarch64": "linux-aarch64",
+              "windows-x86_64": "windows-x86_64",
+              "windows-aarch64": "windows-aarch64",
+              "macos-x86_64": "darwin-x86_64",
+              "macos-aarch64": "darwin-aarch64",
+          }
+
+          platforms = {}
+          for artifact_dir, platform in platform_dirs.items():
+              root = Path("artifacts") / artifact_dir
+              if not root.exists():
+                  continue
+              for sig in root.rglob("*.sig"):
+                  bundle = Path(str(sig)[:-4])
+                  if not bundle.exists():
+                      continue
+                  name = bundle.name
+                  if not (
+                      name.endswith(".app.tar.gz")
+                      or name.endswith(".AppImage.tar.gz")
+                      or name.endswith(".nsis.zip")
+                  ):
+                      continue
+                  platforms[platform] = {
+                      "signature": sig.read_text().strip(),
+                      "url": f"https://github.com/{repo}/releases/download/{tag}/{name}",
+                  }
+
+          if not platforms:
+              raise SystemExit("No updater artifacts found")
+
+          latest = {
+              "version": version,
+              "pub_date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "platforms": platforms,
+          }
+          Path("latest.json").write_text(json.dumps(latest, indent=2))
+          print(json.dumps(latest, indent=2))
+          PY
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: |
+            artifacts/**/*
+            latest.json
           generate_release_notes: true

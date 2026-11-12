@@ -11,11 +11,30 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { FolderOpen, FolderPlus, Info, Puzzle, Trash2, BookOpen, X } from "lucide-react";
+import { useToast } from "@/components/ui/toast";
+import {
+  BookOpen,
+  Download,
+  FolderOpen,
+  FolderPlus,
+  Info,
+  Loader2,
+  Puzzle,
+  RefreshCw,
+  Trash2,
+  X,
+} from "lucide-react";
 import ModelsSettings from "./ModelsSettings";
 import McpSettings from "./McpSettings";
 import { useTheme, type ThemePreference } from "@/hooks/useTheme";
 import { useI18n, type LanguagePreference } from "@/i18n";
+import {
+  checkForUpdate,
+  downloadAndInstall,
+  type Update,
+  type UpdateInfo,
+  type UpdateProgress,
+} from "@/lib/updater";
 import {
   KEYBINDING_DEFINITIONS,
   bindingFromEvent,
@@ -548,6 +567,15 @@ function GeneralTab() {
 
 function AboutTab() {
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
+  const { t } = useI18n();
+  const { toast } = useToast();
+  const [checking, setChecking] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const [update, setUpdate] = useState<Update | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [progress, setProgress] = useState<UpdateProgress | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -558,6 +586,43 @@ function AboutTab() {
       }
     })();
   }, []);
+
+  const checkUpdates = useCallback(async () => {
+    setChecking(true);
+    setChecked(true);
+    setUpdateError(null);
+    setUpdate(null);
+    setUpdateInfo(null);
+    setProgress(null);
+    try {
+      const result = await checkForUpdate();
+      setUpdate(result.update);
+      setUpdateInfo(result.info);
+      if (!result.update) {
+        toast({ title: t("updates.upToDate"), variant: "success" });
+      }
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setChecking(false);
+    }
+  }, [t, toast]);
+
+  const install = useCallback(async () => {
+    if (!update) return;
+    setInstalling(true);
+    setUpdateError(null);
+    try {
+      await downloadAndInstall(update, setProgress);
+    } catch (e) {
+      setUpdateError(e instanceof Error ? e.message : String(e));
+      setInstalling(false);
+    }
+  }, [update]);
+
+  const percent = progress?.total
+    ? Math.min(100, Math.round((progress.downloaded / progress.total) * 100))
+    : null;
 
   const paths = settings?.paths ?? {};
   const showPath = async (path?: string) => {
@@ -589,6 +654,92 @@ function AboutTab() {
       </section>
 
       <section>
+        <h3 className="mb-1 text-sm font-medium text-foreground">
+          {t("updates.title")}
+        </h3>
+        <Separator className="my-2" />
+        <Row label={t("updates.currentVersion")} hint="pi-gui-rs">
+          <span className="font-mono text-xs">{settings?.version ?? "—"}</span>
+        </Row>
+        <div className="flex flex-wrap items-center gap-2 py-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={checkUpdates}
+            disabled={checking || installing}
+          >
+            {checking ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="size-3.5" />
+            )}
+            {checking ? t("updates.checking") : t("updates.check")}
+          </Button>
+          {checked && !checking && !updateInfo && !updateError && (
+            <span className="text-muted-foreground text-xs">
+              {t("updates.upToDate")}
+            </span>
+          )}
+        </div>
+
+        {updateError && (
+          <div className="text-destructive text-xs break-words">
+            {t("updates.failed")}: {updateError}
+          </div>
+        )}
+
+        {updateInfo && (
+          <div className="border-hairline mt-2 rounded-lg border p-3">
+            <div className="text-foreground text-sm font-medium">
+              {t("updates.available", { version: updateInfo.version })}
+            </div>
+            {updateInfo.date && (
+              <div className="text-muted-foreground mt-0.5 text-[11px]">
+                {updateInfo.date}
+              </div>
+            )}
+            {updateInfo.body && (
+              <div className="mt-2">
+                <div className="text-foreground text-xs font-medium">
+                  {t("updates.releaseNotes")}
+                </div>
+                <p className="text-muted-foreground mt-1 max-h-40 overflow-y-auto text-xs whitespace-pre-wrap">
+                  {updateInfo.body}
+                </p>
+              </div>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <Button
+                size="sm"
+                onClick={install}
+                disabled={installing || !update}
+              >
+                {installing ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Download className="size-3.5" />
+                )}
+                {installing ? t("updates.installing") : t("updates.install")}
+              </Button>
+              {percent !== null && (
+                <>
+                  <div className="bg-muted h-1.5 w-40 overflow-hidden rounded-full">
+                    <div
+                      className="bg-primary h-full transition-all"
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
+                  <span className="text-muted-foreground text-[11px] tabular-nums">
+                    {t("updates.progress", { percent })}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section>
         <h3 className="mb-1 text-sm font-medium text-foreground">Paths</h3>
         <Separator className="my-2" />
         {rows.map((r) => (
@@ -611,7 +762,6 @@ function AboutTab() {
       </section>
     </div>
   );
-
 }
 
 function SkillsTab() {
