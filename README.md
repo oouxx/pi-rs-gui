@@ -145,7 +145,6 @@ pi-gui-rs/
 │   │   └── state/              # Store + domain modules
 │   ├── capabilities/default.json
 │   └── Cargo.toml              # pi-rs crates by git tag
-├── scripts/inspect_session.py  # Session JSONL diagnostics
 └── package.json
 ```
 
