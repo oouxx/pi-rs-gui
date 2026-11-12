@@ -1014,3 +1014,11 @@ pub async fn list_prompt_templates(
     store.ensure_selected_actor(&app).await.ok();
     Ok(store.list_prompt_templates().await)
 }
+
+// ── In-app text preview ──
+
+#[tauri::command]
+pub async fn read_text_file(path: String, cwd: Option<String>) -> Result<String, String> {
+    let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
+    crate::state::files::read_text_file(&path, &cwd)
+}

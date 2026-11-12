@@ -3,22 +3,29 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import {
   BookOpen,
   ExternalLink,
+  Eye,
   FileCode,
-  FolderOpen,
+  Loader2,
   RefreshCw,
   Search,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { useChatContext } from "@/hooks/ChatProvider";
 import {
   getActiveSessionCwd,
-  getAgentDir,
   listPromptTemplates,
   listSkills,
   openFile,
-  openPath,
+  readTextFile,
 } from "@/api/commands";
 import type { PromptTemplateInfo } from "@/api/types";
 
@@ -58,6 +65,13 @@ export default function SkillsView() {
   const [prompts, setPrompts] = useState<PromptTemplateInfo[]>([]);
   const [promptsLoading, setPromptsLoading] = useState(false);
   const [promptsError, setPromptsError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{
+    title: string;
+    path: string;
+    content: string;
+  } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -99,19 +113,6 @@ export default function SkillsView() {
     });
   }, [skills, activeCat, search]);
 
-  const openSkillsDir = useCallback(async () => {
-    try {
-      const agentDir = await getAgentDir();
-      await openPath(`${agentDir}/skills`);
-    } catch (e) {
-      toast({
-        variant: "error",
-        title: "Failed to open skills folder",
-        description: e instanceof Error ? e.message : String(e),
-      });
-    }
-  }, [toast]);
-
   const refreshPrompts = useCallback(async () => {
     setPromptsLoading(true);
     try {
@@ -138,6 +139,24 @@ export default function SkillsView() {
         prompt.filePath.toLowerCase().includes(query),
     );
   }, [prompts, search]);
+
+  const openPreview = useCallback(
+    async (title: string, path: string) => {
+      setPreview({ title, path, content: "" });
+      setPreviewLoading(true);
+      setPreviewError(null);
+      try {
+        const cwd = activeSessionCwd ?? (await getActiveSessionCwd());
+        const content = await readTextFile(path, cwd);
+        setPreview((prev) => (prev ? { ...prev, content } : prev));
+      } catch (e) {
+        setPreviewError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setPreviewLoading(false);
+      }
+    },
+    [activeSessionCwd],
+  );
 
   const openFileInEditor = useCallback(
     async (path: string) => {
@@ -223,23 +242,17 @@ export default function SkillsView() {
               />
             </div>
             {view === "skills" ? (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={refresh}
-                  disabled={loading}
-                >
-                  <RefreshCw
-                    className={`size-3.5 ${loading ? "animate-spin" : ""}`}
-                  />
-                  <span>Refresh</span>
-                </Button>
-                <Button size="sm" onClick={openSkillsDir}>
-                  <FolderOpen className="size-3.5" />
-                  <span>Open Skills Folder</span>
-                </Button>
-              </>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={refresh}
+                disabled={loading}
+              >
+                <RefreshCw
+                  className={`size-3.5 ${loading ? "animate-spin" : ""}`}
+                />
+                <span>Refresh</span>
+              </Button>
             ) : (
               <Button size="sm" variant="outline" onClick={refreshPrompts}>
                 <RefreshCw className="size-3.5" />
@@ -282,7 +295,10 @@ export default function SkillsView() {
                   {filteredPrompts.map((prompt) => (
                     <div
                       key={prompt.filePath}
-                      className="border-hairline bg-card hover:bg-accent/5 flex flex-col gap-1 rounded-lg border p-3"
+                      onClick={() =>
+                        openPreview(`/${prompt.name}`, prompt.filePath)
+                      }
+                      className="border-hairline bg-card hover:bg-accent/5 flex cursor-pointer flex-col gap-1 rounded-lg border p-3"
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-foreground font-mono text-sm font-medium">
@@ -296,14 +312,30 @@ export default function SkillsView() {
                             append
                           </span>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => openFileInEditor(prompt.filePath)}
-                          className="text-muted-foreground hover:text-foreground ml-auto"
-                          title="Open in editor"
-                        >
-                          <ExternalLink className="size-3.5" />
-                        </button>
+                        <div className="ml-auto flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openPreview(`/${prompt.name}`, prompt.filePath);
+                            }}
+                            className="text-muted-foreground hover:text-foreground"
+                            title="Preview"
+                          >
+                            <Eye className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openFileInEditor(prompt.filePath);
+                            }}
+                            className="text-muted-foreground hover:text-foreground"
+                            title="Open in editor"
+                          >
+                            <ExternalLink className="size-3.5" />
+                          </button>
+                        </div>
                       </div>
                       {prompt.argumentHint && (
                         <span className="text-muted-foreground font-mono text-[10px]">
@@ -340,7 +372,8 @@ export default function SkillsView() {
                   <h3 className="text-foreground mb-1 text-sm font-medium">No skills found</h3>
                   <p className="text-muted-foreground text-xs leading-relaxed">
                     Skills extend pi-gui's capabilities with custom prompts and
-                    tools. Open the skills folder to add one.
+                    tools. Add SKILL.md under the agent or project skills
+                    directory.
                   </p>
                 </div>
               </div>
@@ -349,7 +382,8 @@ export default function SkillsView() {
                 {filtered.map((s) => (
                   <div
                     key={s.filePath}
-                    className="border-hairline bg-card hover:bg-accent/5 flex flex-col gap-1 rounded-lg border p-3"
+                    onClick={() => openPreview(s.name, s.filePath)}
+                    className="border-hairline bg-card hover:bg-accent/5 flex cursor-pointer flex-col gap-1 rounded-lg border p-3"
                   >
                     <div className="flex items-center gap-2">
                       <span className="text-foreground font-mono text-sm font-medium">
@@ -363,14 +397,30 @@ export default function SkillsView() {
                           manual only
                         </span>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => openFileInEditor(s.filePath)}
-                        className="text-muted-foreground hover:text-foreground ml-auto"
-                        title="Open in editor"
-                      >
-                        <ExternalLink className="size-3.5" />
-                      </button>
+                      <div className="ml-auto flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openPreview(s.name, s.filePath);
+                          }}
+                          className="text-muted-foreground hover:text-foreground"
+                          title="Preview"
+                        >
+                          <Eye className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openFileInEditor(s.filePath);
+                          }}
+                          className="text-muted-foreground hover:text-foreground"
+                          title="Open in editor"
+                        >
+                          <ExternalLink className="size-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <p className="text-muted-foreground text-xs leading-relaxed">
                       {s.description}
@@ -385,6 +435,39 @@ export default function SkillsView() {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={!!preview}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreview(null);
+            setPreviewError(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{preview?.title}</DialogTitle>
+            <DialogDescription className="font-mono text-[11px] break-all">
+              {preview?.path}
+            </DialogDescription>
+          </DialogHeader>
+          {previewLoading ? (
+            <div className="text-muted-foreground flex items-center gap-2 p-6 text-sm">
+              <Loader2 className="size-4 animate-spin" />
+              Loading…
+            </div>
+          ) : previewError ? (
+            <div className="text-destructive text-xs break-words">
+              {previewError}
+            </div>
+          ) : (
+            <pre className="border-hairline bg-muted/30 max-h-[60vh] overflow-auto rounded-lg border p-3 font-mono text-[11px] whitespace-pre-wrap">
+              {preview?.content}
+            </pre>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

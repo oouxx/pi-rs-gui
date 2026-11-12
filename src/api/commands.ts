@@ -481,3 +481,12 @@ export function openFile(path: string, cwd?: string) {
 export function listPromptTemplates() {
   return tauriInvoke<PromptTemplateInfo[]>("list_prompt_templates");
 }
+
+// ── In-app text preview ──
+
+export function readTextFile(path: string, cwd?: string) {
+  return tauriInvoke<string>("read_text_file", {
+    path,
+    ...(cwd ? { cwd } : {}),
+  });
+}

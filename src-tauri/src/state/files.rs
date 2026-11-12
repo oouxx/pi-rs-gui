@@ -232,3 +232,45 @@ pub fn open_in_editor(path: &str, cwd: &str) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Read a UTF-8 text file for the in-app skill/prompt preview.
+pub fn read_text_file(path: &str, cwd: &str) -> Result<String, String> {
+    let raw = Path::new(path);
+    let resolved = if raw.is_absolute() {
+        raw.to_path_buf()
+    } else {
+        Path::new(cwd).join(raw)
+    };
+    let meta = std::fs::metadata(&resolved)
+        .map_err(|error| format!("Cannot read {}: {error}", resolved.display()))?;
+    if !meta.is_file() {
+        return Err(format!("Not a file: {}", resolved.display()));
+    }
+    if meta.len() > 1024 * 1024 {
+        return Err("File is too large to preview (max 1 MB)".to_string());
+    }
+    let bytes = std::fs::read(&resolved)
+        .map_err(|error| format!("Cannot read {}: {error}", resolved.display()))?;
+    String::from_utf8(bytes).map_err(|_| "File is not valid UTF-8 text".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_text_files_relative_to_cwd() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("SKILL.md"), "# Hello").expect("write");
+        let content = read_text_file("SKILL.md", &dir.path().to_string_lossy()).expect("read");
+        assert_eq!(content, "# Hello");
+    }
+
+    #[test]
+    fn rejects_non_utf8() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("bin"), [0xff, 0xfe, 0x00]).expect("write");
+        let error = read_text_file("bin", &dir.path().to_string_lossy()).unwrap_err();
+        assert!(error.contains("UTF-8"));
+    }
+}

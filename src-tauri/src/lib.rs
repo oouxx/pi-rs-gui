@@ -101,6 +101,7 @@ pub fn run() {
             commands::terminal_stop_all,
             commands::file_completions,
             commands::open_file,
+            commands::read_text_file,
             commands::get_general_settings,
             commands::set_session_model,
             commands::get_session_model,
