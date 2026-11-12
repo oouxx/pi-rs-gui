@@ -4,8 +4,43 @@ use tauri::Manager;
 mod commands;
 mod state;
 
+/// GUI apps launched from Finder inherit launchd's minimal PATH, so tools
+/// installed by Homebrew/nvm (`npx`, `node`, …) are invisible to MCP servers
+/// and child processes. Hydrate PATH from the user's login shell once.
+#[cfg(unix)]
+fn hydrate_path_from_login_shell() {
+    use std::process::{Command, Stdio};
+
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    let Ok(output) = Command::new(&shell)
+        .args(["-ilc", "printf '__PI_PATH__%s\\n' \"$PATH\""])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return;
+    };
+    if !output.status.success() {
+        return;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    if let Some(line) = text
+        .lines()
+        .rev()
+        .find(|line| line.starts_with("__PI_PATH__"))
+    {
+        let path = line.trim_start_matches("__PI_PATH__").trim();
+        if !path.is_empty() {
+            std::env::set_var("PATH", path);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(unix)]
+    hydrate_path_from_login_shell();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())

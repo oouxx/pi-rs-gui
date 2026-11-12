@@ -777,14 +777,14 @@ export default function ChatView({
 
       {/* Messages or empty state */}
       <div className="bg-codex-bg flex min-h-0 flex-1">
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div
             key={activeSessionId}
             ref={timelineRef}
             className="timeline custom-scroll bg-codex-bg relative flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-6"
           >
             {threadSearch.isOpen && (
-              <div className="border-codex-border bg-white absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-lg">
+              <div className="border-codex-border bg-codex-bg absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-lg">
                 <Search className="text-codex-faint size-3.5" />
                 <input
                   ref={threadSearch.inputRef}

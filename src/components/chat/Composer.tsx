@@ -673,7 +673,7 @@ export default function Composer({
 
         {/* @ mention / file completion popover */}
         {showMention && (
-          <div className="border-codex-border bg-white absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-lg">
+          <div className="border-codex-border bg-codex-bg absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-lg">
             {mentionFiles.length === 0 ? (
               <div className="text-codex-dim px-3 py-2 font-mono text-xs">
                 No files found
@@ -715,7 +715,7 @@ export default function Composer({
 
         {/* /command argument completion popover */}
         {showArgMenu && (
-          <div className="border-codex-border bg-white absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-lg">
+          <div className="border-codex-border bg-codex-bg absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-lg">
             {argItems.length === 0 ? (
               <div className="text-codex-dim px-3 py-2 font-mono text-xs">
                 No matching {argCmd === "model" ? "models" : "providers"}

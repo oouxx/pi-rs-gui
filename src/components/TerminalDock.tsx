@@ -237,7 +237,7 @@ export default function TerminalDock({
   );
 
   return (
-    <div className="border-codex-border bg-white flex h-56 shrink-0 flex-col border-t">
+    <div className="border-codex-border bg-codex-bg flex h-56 shrink-0 flex-col border-t">
       {/* Tab bar */}
       <div className="border-codex-border/60 flex items-center border-b px-1.5 pt-1">
         <TerminalSquare className="text-codex-faint mx-1.5 size-3.5 shrink-0" />

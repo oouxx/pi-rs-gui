@@ -152,7 +152,7 @@ export function TimelinePanel({
   );
 
   return (
-    <div className="border-codex-border bg-white flex w-72 shrink-0 flex-col border-l">
+    <div className="border-codex-border bg-codex-bg flex min-h-0 w-72 shrink-0 flex-col border-l">
       <div className="border-codex-border flex items-center gap-2 border-b px-3 py-2">
         <GitBranch className="text-codex-faint size-3.5" />
         <span className="text-codex-text flex-1 text-xs font-medium">

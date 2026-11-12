@@ -40,15 +40,12 @@ import {
   Loader2,
   Square,
   MessageSquare,
-  Moon,
-  Sun,
   Archive,
 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useChatContext } from "@/hooks/ChatProvider";
 import { exportSession, renameSession, abortSession, searchSessions } from "@/api/commands";
 import type { SessionSearchResult } from "@/api/types";
-import { useTheme } from "@/hooks/useTheme";
 import { matchesBinding, useKeybindings } from "@/lib/keybindings";
 import { useI18n } from "@/i18n";
 import type { AppView } from "./AppShell";
@@ -65,19 +62,6 @@ interface SessionItem {
   status: string;
   cwd?: string | null;
   preview?: string;
-}
-
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(diff) || diff < 0) return "";
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "now";
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d`;
-  return new Date(iso).toLocaleDateString();
 }
 
 function cwdBasename(cwd?: string | null): string {
@@ -112,7 +96,6 @@ function loadCollapsedGroups(): Set<string> {
 
 export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
   const { toast } = useToast();
-  const { resolved, setTheme } = useTheme();
   const { bindings } = useKeybindings();
   const { t } = useI18n();
   const {
@@ -467,11 +450,6 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                       <Loader2 className="text-codex-green size-3 shrink-0 animate-spin" />
                     )}
                   </span>
-                  <span className="text-codex-faint w-full truncate text-[11px] leading-none">
-                    {s.preview ? `${s.preview} · ` : ""}
-                    {s.cwd ? `${cwdBasename(s.cwd)} · ` : ""}
-                    {s.status === "running" ? "Running…" : relativeTime(s.updatedAt)}
-                  </span>
                 </span>
               </SidebarMenuButton>
             )}
@@ -813,23 +791,6 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              onClick={() =>
-                setTheme(resolved === "dark" ? "light" : "dark")
-              }
-              tooltip={
-                resolved === "dark"
-                  ? t("nav.switchLight")
-                  : t("nav.switchDark")
-              }
-            >
-              {resolved === "dark" ? <Sun /> : <Moon />}
-              <span>
-                {resolved === "dark" ? t("nav.lightMode") : t("nav.darkMode")}
-              </span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               onClick={() =>
