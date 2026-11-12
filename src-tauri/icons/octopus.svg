@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#12211D"/>
+      <stop offset="1" stop-color="#070C0B"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="28%" r="62%">
+      <stop offset="0" stop-color="#2FE3A5" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#2FE3A5" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#57E8B0"/>
+      <stop offset="0.55" stop-color="#25C392"/>
+      <stop offset="1" stop-color="#0E9B75"/>
+    </linearGradient>
+    <linearGradient id="arm" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#25C392"/>
+      <stop offset="1" stop-color="#0B8A68"/>
+    </linearGradient>
+  </defs>
+
+  <!-- app badge -->
+  <rect x="64" y="64" width="896" height="896" rx="216" fill="url(#bg)"/>
+  <rect x="64" y="64" width="896" height="896" rx="216" fill="url(#glow)"/>
+  <rect x="88" y="88" width="848" height="848" rx="194" fill="none" stroke="#FFFFFF" stroke-opacity="0.06" stroke-width="8"/>
+
+  <!-- shadow -->
+  <ellipse cx="512" cy="858" rx="300" ry="42" fill="#000000" opacity="0.28"/>
+
+  <!-- tentacles -->
+  <g fill="none" stroke="url(#arm)" stroke-width="62" stroke-linecap="round">
+    <path d="M 372 610 C 300 672 262 742 272 812 C 278 850 306 866 334 850"/>
+    <path d="M 438 654 C 390 720 378 790 396 846"/>
+    <path d="M 500 678 C 480 752 486 816 506 862"/>
+    <path d="M 560 678 C 588 752 590 818 572 862"/>
+    <path d="M 624 654 C 676 720 692 792 676 846"/>
+    <path d="M 660 610 C 736 672 774 736 766 806 C 762 844 736 860 708 846"/>
+  </g>
+  <g fill="none" stroke="url(#arm)" stroke-width="58" stroke-linecap="round">
+    <!-- waving arm -->
+    <path d="M 716 556 C 786 528 818 466 802 404"/>
+  </g>
+
+  <!-- head -->
+  <path d="M 512 206
+           C 652 206 756 316 756 458
+           C 756 572 694 648 602 676
+           C 576 684 544 688 512 688
+           C 480 688 448 684 422 676
+           C 330 648 268 572 268 458
+           C 268 316 372 206 512 206 Z"
+        fill="url(#body)"/>
+  <path d="M 512 244 C 612 244 690 318 704 418 C 660 306 592 274 512 274 C 432 274 364 306 320 418 C 334 318 412 244 512 244 Z"
+        fill="#FFFFFF" opacity="0.16"/>
+
+  <!-- eyes -->
+  <ellipse cx="424" cy="462" rx="62" ry="72" fill="#F8FFFC"/>
+  <ellipse cx="600" cy="462" rx="62" ry="72" fill="#F8FFFC"/>
+  <ellipse cx="424" cy="474" rx="33" ry="39" fill="#07221B"/>
+  <ellipse cx="600" cy="474" rx="33" ry="39" fill="#07221B"/>
+  <circle cx="410" cy="454" r="13" fill="#FFFFFF" opacity="0.95"/>
+  <circle cx="586" cy="454" r="13" fill="#FFFFFF" opacity="0.95"/>
+  <circle cx="438" cy="492" r="6" fill="#FFFFFF" opacity="0.7"/>
+  <circle cx="614" cy="492" r="6" fill="#FFFFFF" opacity="0.7"/>
+
+  <!-- blush -->
+  <ellipse cx="336" cy="552" rx="38" ry="20" fill="#FF9AA8" opacity="0.55"/>
+  <ellipse cx="688" cy="552" rx="38" ry="20" fill="#FF9AA8" opacity="0.55"/>
+
+  <!-- mouth -->
+  <path d="M 486 574 Q 499 590 512 574 Q 525 590 538 574" fill="none" stroke="#07221B" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- bubbles -->
+  <circle cx="806" cy="330" r="12" fill="#57E8B0" opacity="0.55"/>
+  <circle cx="832" cy="292" r="7" fill="#57E8B0" opacity="0.4"/>
+  <circle cx="238" cy="360" r="9" fill="#57E8B0" opacity="0.45"/>
+</svg>
