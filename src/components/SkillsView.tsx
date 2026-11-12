@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
+import { useChatContext } from "@/hooks/ChatProvider";
 import {
   getActiveSessionCwd,
   getAgentDir,
@@ -45,6 +47,8 @@ const SCOPE_LABEL: Record<string, string> = {
 };
 
 export default function SkillsView() {
+  const { activeSessionId, activeSessionCwd } = useChatContext();
+  const { toast } = useToast();
   const [view, setView] = useState<"skills" | "prompts">("skills");
   const [activeCat, setActiveCat] = useState<CatId>("all");
   const [search, setSearch] = useState("");
@@ -58,7 +62,7 @@ export default function SkillsView() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const cwd = await getActiveSessionCwd();
+      const cwd = activeSessionCwd ?? (await getActiveSessionCwd());
       const items = await listSkills(cwd);
       setSkills((items ?? []) as Skill[]);
       setError(null);
@@ -67,8 +71,9 @@ export default function SkillsView() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeSessionCwd]);
 
+  // Follow the selected session: workspace skills depend on its cwd.
   useEffect(() => {
     refresh();
   }, [refresh]);
@@ -98,10 +103,14 @@ export default function SkillsView() {
     try {
       const agentDir = await getAgentDir();
       await openPath(`${agentDir}/skills`);
-    } catch {
-      /* ignore */
+    } catch (e) {
+      toast({
+        variant: "error",
+        title: "Failed to open skills folder",
+        description: e instanceof Error ? e.message : String(e),
+      });
     }
-  }, []);
+  }, [toast]);
 
   const refreshPrompts = useCallback(async () => {
     setPromptsLoading(true);
@@ -117,7 +126,7 @@ export default function SkillsView() {
 
   useEffect(() => {
     if (view === "prompts") refreshPrompts();
-  }, [view, refreshPrompts]);
+  }, [view, refreshPrompts, activeSessionId]);
 
   const filteredPrompts = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -130,13 +139,20 @@ export default function SkillsView() {
     );
   }, [prompts, search]);
 
-  const openFileInEditor = useCallback(async (path: string) => {
-    try {
-      await openFile(path);
-    } catch {
-      /* ignore */
-    }
-  }, []);
+  const openFileInEditor = useCallback(
+    async (path: string) => {
+      try {
+        await openFile(path);
+      } catch (e) {
+        toast({
+          variant: "error",
+          title: "Failed to open file",
+          description: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
+    [toast],
+  );
 
   return (
     <div className="flex h-full max-h-screen min-w-0 flex-1 flex-col">
@@ -151,7 +167,10 @@ export default function SkillsView() {
             <button
               key={item}
               type="button"
-              onClick={() => setView(item)}
+              onClick={() => {
+                setView(item);
+                setSearch("");
+              }}
               className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
                 view === item
                   ? "bg-accent/10 text-accent font-medium"
@@ -204,10 +223,23 @@ export default function SkillsView() {
               />
             </div>
             {view === "skills" ? (
-              <Button size="sm" onClick={openSkillsDir}>
-                <FolderOpen className="size-3.5" />
-                <span>Open Skills Folder</span>
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={refresh}
+                  disabled={loading}
+                >
+                  <RefreshCw
+                    className={`size-3.5 ${loading ? "animate-spin" : ""}`}
+                  />
+                  <span>Refresh</span>
+                </Button>
+                <Button size="sm" onClick={openSkillsDir}>
+                  <FolderOpen className="size-3.5" />
+                  <span>Open Skills Folder</span>
+                </Button>
+              </>
             ) : (
               <Button size="sm" variant="outline" onClick={refreshPrompts}>
                 <RefreshCw className="size-3.5" />
@@ -316,7 +348,7 @@ export default function SkillsView() {
               <div className="flex flex-col gap-2">
                 {filtered.map((s) => (
                   <div
-                    key={s.name}
+                    key={s.filePath}
                     className="border-hairline bg-card hover:bg-accent/5 flex flex-col gap-1 rounded-lg border p-3"
                   >
                     <div className="flex items-center gap-2">

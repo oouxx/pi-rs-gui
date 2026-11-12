@@ -27,6 +27,7 @@ import {
 import ModelsSettings from "./ModelsSettings";
 import McpSettings from "./McpSettings";
 import { useTheme, type ThemePreference } from "@/hooks/useTheme";
+import { useChatContext } from "@/hooks/ChatProvider";
 import { useI18n, type LanguagePreference } from "@/i18n";
 import {
   checkForUpdate,
@@ -44,6 +45,7 @@ import {
 } from "@/lib/keybindings";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
+  getActiveSessionCwd,
   getGeneralSettings,
   listExtensions,
   listSkills,
@@ -765,6 +767,7 @@ function AboutTab() {
 }
 
 function SkillsTab() {
+  const { activeSessionId, activeSessionCwd } = useChatContext();
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
   const [skillCount, setSkillCount] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
@@ -777,16 +780,21 @@ function SkillsTab() {
     }
   }, []);
 
+  // Count skills for the active session's cwd (workspace skills differ per
+  // project); the process cwd would be `/` in a packaged app.
+  const refreshCount = useCallback(async () => {
+    try {
+      const cwd = activeSessionCwd ?? (await getActiveSessionCwd());
+      setSkillCount(((await listSkills(cwd)) ?? []).length);
+    } catch {
+      setSkillCount(null);
+    }
+  }, [activeSessionCwd]);
+
   useEffect(() => {
     refresh();
-    (async () => {
-      try {
-        setSkillCount(((await listSkills()) ?? []).length);
-      } catch {
-        setSkillCount(null);
-      }
-    })();
-  }, [refresh]);
+    refreshCount();
+  }, [refresh, refreshCount, activeSessionId]);
 
   const apply = useCallback(
     async (key: keyof GeneralSettings, value: unknown) => {
@@ -807,11 +815,12 @@ function SkillsTab() {
       const current = settings?.skillPaths ?? [];
       if (!current.includes(selected)) {
         await apply("skillPaths", [...current, selected]);
+        await refreshCount();
       }
     } finally {
       setAdding(false);
     }
-  }, [settings, apply]);
+  }, [settings, apply, refreshCount]);
 
   const removePath = useCallback(
     async (path: string) => {
@@ -820,8 +829,9 @@ function SkillsTab() {
         "skillPaths",
         current.filter((p) => p !== path),
       );
+      await refreshCount();
     },
-    [settings, apply],
+    [settings, apply, refreshCount],
   );
 
   if (!settings) {
