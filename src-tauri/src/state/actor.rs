@@ -38,6 +38,8 @@ pub enum SessionCommand {
     SendMessage {
         text: String,
         images: Vec<ContentBlock>,
+        /// `steer` (interrupt) or `followUp` (wait) when a turn is running.
+        streaming_behavior: Option<String>,
         reply: oneshot::Sender<Result<(), String>>,
     },
     /// Abort the current run (if any). Works concurrently with a turn.
@@ -84,7 +86,45 @@ pub enum SessionCommand {
     GetModel {
         reply: oneshot::Sender<serde_json::Value>,
     },
+    /// Change the session's thinking level (persisted in the session file).
+    SetThinkingLevel {
+        level: String,
+        reply: oneshot::Sender<serde_json::Value>,
+    },
+    /// Context-window usage for the header indicator.
+    GetUsage {
+        reply: oneshot::Sender<Option<serde_json::Value>>,
+    },
+    /// Cycle the session model through the scoped/all model list.
+    CycleModel {
+        direction: String,
+        reply: oneshot::Sender<Option<serde_json::Value>>,
+    },
     GetCommands {
+        reply: oneshot::Sender<Vec<serde_json::Value>>,
+    },
+    /// Live MCP connection state/tools for the selected session.
+    GetMcpSnapshot {
+        reply: oneshot::Sender<Vec<serde_json::Value>>,
+    },
+    /// Reconnect one MCP server (after config or OAuth changes).
+    ReconnectMcp {
+        name: String,
+        reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// List resources + resource templates for one MCP server.
+    GetMcpResources {
+        name: String,
+        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    /// Read one MCP resource by URI.
+    ReadMcpResource {
+        name: String,
+        uri: String,
+        reply: oneshot::Sender<Result<serde_json::Value, String>>,
+    },
+    /// File-based prompt templates (`/name`) discovered by pi-rs.
+    GetPromptTemplates {
         reply: oneshot::Sender<Vec<serde_json::Value>>,
     },
     /// Abort and terminate this actor (session close / delete).
@@ -156,9 +196,14 @@ impl SessionActor {
 
     async fn handle(&mut self, cmd: SessionCommand) {
         match cmd {
-            SessionCommand::SendMessage { text, images, reply } => {
+            SessionCommand::SendMessage {
+                text,
+                images,
+                streaming_behavior,
+                reply,
+            } => {
                 let _ = reply.send(Ok(()));
-                self.start_turn(text, images).await;
+                self.start_turn(text, images, streaming_behavior).await;
             }
             SessionCommand::Abort { reply } => {
                 self.session.abort().await;
@@ -263,7 +308,56 @@ impl SessionActor {
             }
             SessionCommand::GetModel { reply } => {
                 let m = self.session.get_model().await;
-                let _ = reply.send(json!({ "provider": m.provider, "modelId": m.id }));
+                let supported = pi_agent_core::pi_ai_types::get_supported_thinking_levels(&m);
+                let thinking_level = self.session.get_thinking_level().await;
+                let _ = reply.send(json!({
+                    "provider": m.provider,
+                    "modelId": m.id,
+                    "thinkingLevel": thinking_level,
+                    "supportedThinkingLevels": supported,
+                }));
+            }
+            SessionCommand::SetThinkingLevel { level, reply } => {
+                // `persist = false`: the per-session level is written to the
+                // session file; the global default is a separate setting.
+                self.session.set_thinking_level(&level, false).await;
+                let m = self.session.get_model().await;
+                let supported = pi_agent_core::pi_ai_types::get_supported_thinking_levels(&m);
+                let thinking_level = self.session.get_thinking_level().await;
+                let _ = reply.send(json!({
+                    "provider": m.provider,
+                    "modelId": m.id,
+                    "thinkingLevel": thinking_level,
+                    "supportedThinkingLevels": supported,
+                }));
+            }
+            SessionCommand::GetUsage { reply } => {
+                let usage = self.session.get_context_usage().await;
+                let _ = reply.send(usage.map(|usage| {
+                    json!({
+                        "totalTokens": usage.total_tokens,
+                        "contextWindow": usage.context_window,
+                        "inputTokens": usage.input_tokens,
+                        "outputTokens": usage.output_tokens,
+                        "cacheReadTokens": usage.cache_read_tokens,
+                        "cacheWriteTokens": usage.cache_write_tokens,
+                        "messagesCount": usage.messages_count,
+                        "percentage": usage.usage_percentage(),
+                        "remainingTokens": usage.remaining_tokens(),
+                        "formatted": usage.format_usage(),
+                    })
+                }));
+            }
+            SessionCommand::CycleModel { direction, reply } => {
+                let result = self.session.cycle_model(&direction).await;
+                let _ = reply.send(result.map(|(model, thinking_level, scoped)| {
+                    json!({
+                        "provider": model.provider,
+                        "modelId": model.id,
+                        "thinkingLevel": thinking_level,
+                        "scoped": scoped,
+                    })
+                }));
             }
             SessionCommand::GetCommands { reply } => {
                 let mut items = Vec::new();
@@ -291,6 +385,92 @@ impl SessionActor {
                 }
                 let _ = reply.send(items);
             }
+            SessionCommand::GetMcpSnapshot { reply } => {
+                let items = self
+                    .session
+                    .mcp_connections()
+                    .into_iter()
+                    .map(|connection| {
+                        json!({
+                            "name": connection.name(),
+                            "state": connection.state().as_str(),
+                            "error": connection.error(),
+                            "tools": connection.tools(),
+                            "hasResources": connection.has_resources(),
+                            "instructions": connection.instructions(),
+                        })
+                    })
+                    .collect();
+                let _ = reply.send(items);
+            }
+            SessionCommand::ReconnectMcp { name, reply } => {
+                let connection = self
+                    .session
+                    .mcp_connections()
+                    .into_iter()
+                    .find(|connection| connection.name() == name);
+                let result = match connection {
+                    Some(connection) => connection.reconnect().await,
+                    None => Err(format!(
+                        "MCP server '{name}' is not connected in this session"
+                    )),
+                };
+                let _ = reply.send(result);
+            }
+            SessionCommand::GetMcpResources { name, reply } => {
+                let result = async {
+                    let connection = self
+                        .session
+                        .mcp_connections()
+                        .into_iter()
+                        .find(|connection| connection.name() == name)
+                        .ok_or_else(|| {
+                            format!("MCP server '{name}' is not connected in this session")
+                        })?;
+                    let resources = connection.list_resources().await?;
+                    let templates = connection.list_resource_templates().await?;
+                    Ok(json!({
+                        "resources": serde_json::to_value(resources).unwrap_or_else(|_| json!([])),
+                        "templates": serde_json::to_value(templates).unwrap_or_else(|_| json!([])),
+                    }))
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            SessionCommand::ReadMcpResource { name, uri, reply } => {
+                let result = async {
+                    let connection = self
+                        .session
+                        .mcp_connections()
+                        .into_iter()
+                        .find(|connection| connection.name() == name)
+                        .ok_or_else(|| {
+                            format!("MCP server '{name}' is not connected in this session")
+                        })?;
+                    let contents = connection.read_resource(&uri).await?;
+                    Ok(serde_json::to_value(contents).unwrap_or_else(|_| json!({})))
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            SessionCommand::GetPromptTemplates { reply } => {
+                let items = self
+                    .session
+                    .prompt_templates()
+                    .into_iter()
+                    .map(|template| {
+                        json!({
+                            "name": template.name,
+                            "description": template.description,
+                            "argumentHint": template.argument_hint,
+                            "filePath": template.file_path,
+                            "source": template.source,
+                            "append": template.append,
+                        })
+                    })
+                    .collect();
+                let _ = reply.send(items);
+            }
             SessionCommand::Shutdown => {
                 self.session.abort().await;
                 // Break out of the loop by ending the run.
@@ -305,7 +485,12 @@ impl SessionActor {
     /// completion the final transcript is emitted. Turn failures (timeout,
     /// agent-loop errors) are surfaced to the frontend via a `run_error`
     /// agent-event so the UI never silently stalls.
-    async fn start_turn(&mut self, text: String, images: Vec<ContentBlock>) {
+    async fn start_turn(
+        &mut self,
+        text: String,
+        images: Vec<ContentBlock>,
+        streaming_behavior: Option<String>,
+    ) {
         let session = Arc::clone(&self.session);
         let app = self.app.clone();
         let sid = self.session_id.clone();
@@ -314,15 +499,19 @@ impl SessionActor {
                 std::time::Duration::from_secs(300),
                 async {
                     // `add_user_text` is no longer public (v1.87); `prompt`
-                    // with template expansion disabled is the equivalent
-                    // entry point. Skip skill/template expansion for raw
-                    // messages; `/commands` are still routed by the frontend.
+                    // is the equivalent entry point. Prompt templates and
+                    // skill commands (`/skill:name`) are expanded by pi-rs;
+                    // builtin commands never reach here (the frontend routes
+                    // them locally).
                     session
                         .prompt(
                             &text,
                             Some(PromptOptions {
-                                expand_prompt_templates: Some(false),
+                                expand_prompt_templates: Some(true),
                                 images: (!images.is_empty()).then_some(images),
+                                // When a turn is already running, pi-rs queues
+                                // the message and returns immediately.
+                                streaming_behavior,
                                 ..Default::default()
                             }),
                         )

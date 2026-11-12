@@ -1,9 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { BookOpen, FolderOpen, Search } from "lucide-react";
+import {
+  BookOpen,
+  ExternalLink,
+  FileCode,
+  FolderOpen,
+  RefreshCw,
+  Search,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { getActiveSessionCwd, getAgentDir, listSkills, openPath } from "@/api/commands";
+import {
+  getActiveSessionCwd,
+  getAgentDir,
+  listPromptTemplates,
+  listSkills,
+  openFile,
+  openPath,
+} from "@/api/commands";
+import type { PromptTemplateInfo } from "@/api/types";
 
 interface Skill {
   name: string;
@@ -30,11 +45,15 @@ const SCOPE_LABEL: Record<string, string> = {
 };
 
 export default function SkillsView() {
+  const [view, setView] = useState<"skills" | "prompts">("skills");
   const [activeCat, setActiveCat] = useState<CatId>("all");
   const [search, setSearch] = useState("");
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [prompts, setPrompts] = useState<PromptTemplateInfo[]>([]);
+  const [promptsLoading, setPromptsLoading] = useState(false);
+  const [promptsError, setPromptsError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -84,17 +103,71 @@ export default function SkillsView() {
     }
   }, []);
 
+  const refreshPrompts = useCallback(async () => {
+    setPromptsLoading(true);
+    try {
+      setPrompts((await listPromptTemplates()) ?? []);
+      setPromptsError(null);
+    } catch (e) {
+      setPromptsError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPromptsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (view === "prompts") refreshPrompts();
+  }, [view, refreshPrompts]);
+
+  const filteredPrompts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return prompts;
+    return prompts.filter(
+      (prompt) =>
+        prompt.name.toLowerCase().includes(query) ||
+        prompt.description.toLowerCase().includes(query) ||
+        prompt.filePath.toLowerCase().includes(query),
+    );
+  }, [prompts, search]);
+
+  const openFileInEditor = useCallback(async (path: string) => {
+    try {
+      await openFile(path);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   return (
     <div className="flex h-full max-h-screen min-w-0 flex-1 flex-col">
       {/* Top bar */}
       <div className="border-hairline flex items-center gap-3 border-b px-4 py-1.5">
         <SidebarTrigger className="shrink-0" />
-        <div className="text-foreground text-sm font-medium">Skills</div>
+        <div className="text-foreground text-sm font-medium">
+          {view === "skills" ? "Skills" : "Prompts"}
+        </div>
+        <div className="border-hairline ml-auto flex items-center gap-0.5 rounded-md border p-0.5">
+          {(["skills", "prompts"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => setView(item)}
+              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                view === item
+                  ? "bg-accent/10 text-accent font-medium"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {item === "skills" ? "Skills" : "Prompts"}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Two-panel body */}
       <div className="flex min-h-0 flex-1">
         {/* Left — categories */}
+        {view === "skills" && (
         <div className="border-hairline w-48 shrink-0 border-r p-3">
           <nav className="flex flex-col gap-1">
             {CATEGORIES.map((cat) => (
@@ -113,6 +186,7 @@ export default function SkillsView() {
             ))}
           </nav>
         </div>
+        )}
 
         {/* Right — content */}
         <div className="flex min-w-0 flex-1 flex-col">
@@ -121,21 +195,100 @@ export default function SkillsView() {
             <div className="relative max-w-sm flex-1">
               <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
               <Input
-                placeholder="Search skills..."
+                placeholder={
+                  view === "skills" ? "Search skills..." : "Search prompts..."
+                }
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="h-8 pl-8 text-xs"
               />
             </div>
-            <Button size="sm" onClick={openSkillsDir}>
-              <FolderOpen className="size-3.5" />
-              <span>Open Skills Folder</span>
-            </Button>
+            {view === "skills" ? (
+              <Button size="sm" onClick={openSkillsDir}>
+                <FolderOpen className="size-3.5" />
+                <span>Open Skills Folder</span>
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" onClick={refreshPrompts}>
+                <RefreshCw className="size-3.5" />
+                <span>Refresh</span>
+              </Button>
+            )}
           </div>
 
           {/* List / empty state */}
           <div className="flex-1 overflow-y-auto p-4">
-            {loading ? (
+            {view === "prompts" ? (
+              promptsLoading ? (
+                <div className="text-muted-foreground flex h-full items-center justify-center text-xs">
+                  Loading prompts...
+                </div>
+              ) : promptsError ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                  <div className="text-destructive text-xs">{promptsError}</div>
+                  <Button size="sm" variant="outline" onClick={refreshPrompts}>
+                    Retry
+                  </Button>
+                </div>
+              ) : filteredPrompts.length === 0 ? (
+                <div className="flex h-full items-center justify-center">
+                  <div className="max-w-sm text-center">
+                    <div className="bg-muted/30 mx-auto mb-4 flex size-16 items-center justify-center rounded-full">
+                      <FileCode className="text-muted-foreground size-8" />
+                    </div>
+                    <h3 className="text-foreground mb-1 text-sm font-medium">
+                      No prompt templates found
+                    </h3>
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      Prompts are Markdown files in the agent or project prompt
+                      directories. Add more through the Prompt paths setting.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {filteredPrompts.map((prompt) => (
+                    <div
+                      key={prompt.filePath}
+                      className="border-hairline bg-card hover:bg-accent/5 flex flex-col gap-1 rounded-lg border p-3"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-foreground font-mono text-sm font-medium">
+                          /{prompt.name}
+                        </span>
+                        <span className="bg-muted text-foreground/70 rounded-full px-2 py-0.5 text-[10px] uppercase">
+                          {prompt.source}
+                        </span>
+                        {prompt.append && (
+                          <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">
+                            append
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => openFileInEditor(prompt.filePath)}
+                          className="text-muted-foreground hover:text-foreground ml-auto"
+                          title="Open in editor"
+                        >
+                          <ExternalLink className="size-3.5" />
+                        </button>
+                      </div>
+                      {prompt.argumentHint && (
+                        <span className="text-muted-foreground font-mono text-[10px]">
+                          {prompt.argumentHint}
+                        </span>
+                      )}
+                      <p className="text-muted-foreground text-xs leading-relaxed">
+                        {prompt.description}
+                      </p>
+                      <p className="text-muted-foreground/70 font-mono text-[10px]">
+                        {prompt.filePath}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : loading ? (
               <div className="flex h-full items-center justify-center text-muted-foreground text-xs">
                 Loading skills...
               </div>
@@ -178,6 +331,14 @@ export default function SkillsView() {
                           manual only
                         </span>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => openFileInEditor(s.filePath)}
+                        className="text-muted-foreground hover:text-foreground ml-auto"
+                        title="Open in editor"
+                      >
+                        <ExternalLink className="size-3.5" />
+                      </button>
                     </div>
                     <p className="text-muted-foreground text-xs leading-relaxed">
                       {s.description}

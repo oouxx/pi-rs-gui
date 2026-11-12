@@ -27,9 +27,19 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useChatContext } from "@/hooks/ChatProvider";
 import { useThreadSearch } from "@/hooks/use-thread-search";
+import { setThemePreference } from "@/hooks/useTheme";
+import { matchesBinding, useKeybindings } from "@/lib/keybindings";
+import { useI18n } from "@/i18n";
 import { useToast } from "@/components/ui/toast";
 import PickModel from "@/components/PickModel";
 import TerminalDock from "@/components/TerminalDock";
@@ -51,14 +61,18 @@ import {
   getProviders,
   getSessionInfo,
   getSessionModel,
+  getSessionUsage,
   getSessionTree,
   setSessionModel,
+  setSessionThinkingLevel,
+  cycleScopedModel,
   renameSession,
   setSessionCwd,
   cloneSession,
   shareSession,
   type SessionInfo,
   type SessionTreeNode,
+  type SessionUsage,
 } from "@/api/commands";
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -70,10 +84,16 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   );
 }
 
+function formatTokens(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(2)}M`;
+  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`;
+  return String(count);
+}
+
 export default function ChatView({
   onOpenSettings,
 }: {
-  onOpenSettings?: () => void;
+  onOpenSettings?: (tab?: string) => void;
 }) {
   const {
     messages,
@@ -83,11 +103,14 @@ export default function ChatView({
     sendMessage,
     stop,
     streaming,
+    queued,
     loading,
     activeSessionId,
     activeSessionCwd,
   } = useChatContext();
   const { toast } = useToast();
+  const { bindings } = useKeybindings();
+  const { t } = useI18n();
   const [showTimeline, setShowTimeline] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [timelineTree, setTimelineTree] = useState<SessionTreeNode[]>([]);
@@ -95,6 +118,9 @@ export default function ChatView({
   const [providerList, setProviderList] = useState<ProviderInfo[]>([]);
   const [currentProvider, setCurrentProvider] = useState("");
   const [currentModel, setCurrentModel] = useState("");
+  const [thinkingLevel, setThinkingLevel] = useState("");
+  const [supportedThinkingLevels, setSupportedThinkingLevels] = useState<string[]>([]);
+  const [usage, setUsage] = useState<SessionUsage | null>(null);
   const [modelOpen, setModelOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null);
@@ -120,6 +146,8 @@ export default function ChatView({
       setModelList(mods.models ?? []);
       setCurrentProvider(cur.provider ?? "");
       setCurrentModel(cur.modelId ?? "");
+      setThinkingLevel(cur.thinkingLevel ?? "");
+      setSupportedThinkingLevels(cur.supportedThinkingLevels ?? []);
     } catch (e) {
       console.error("[model picker]", e);
     }
@@ -129,18 +157,87 @@ export default function ChatView({
     refreshModelPicker();
   }, [refreshModelPicker, activeSessionId]);
 
+  const refreshUsage = useCallback(async () => {
+    try {
+      setUsage(await getSessionUsage());
+    } catch {
+      setUsage(null);
+    }
+  }, []);
+
+  // Refresh when the active session changes and whenever a run finishes (the
+  // context only grows at turn boundaries we care about).
+  useEffect(() => {
+    if (!streaming) refreshUsage();
+  }, [refreshUsage, activeSessionId, streaming]);
+
+  // The startup actor is spawned asynchronously, so the first model/usage
+  // query can arrive before it exists. Retry once shortly after.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      refreshModelPicker();
+      refreshUsage();
+    }, 800);
+    return () => clearTimeout(id);
+  }, [refreshModelPicker, refreshUsage, activeSessionId]);
+
   const handleModelSelect = useCallback(
     async (provider: string, modelId: string) => {
       setModelOpen(false);
       try {
         await setSessionModel(provider, modelId);
-        setCurrentProvider(provider);
-        setCurrentModel(modelId);
+        await refreshModelPicker();
+        refreshUsage();
       } catch (e) {
         console.error("[setSessionModel]", e);
       }
     },
-    [],
+    [refreshModelPicker, refreshUsage],
+  );
+
+  const handleThinkingSelect = useCallback(
+    async (level: string) => {
+      try {
+        const state = await setSessionThinkingLevel(level);
+        setThinkingLevel(state.thinkingLevel ?? level);
+        setSupportedThinkingLevels(state.supportedThinkingLevels ?? []);
+      } catch (e) {
+        console.error("[setSessionThinkingLevel]", e);
+        toast({
+          variant: "error",
+          title: "Failed to set thinking level",
+          description: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
+    [toast],
+  );
+
+  /** Ctrl/Cmd+P (Shift = backward) cycling over scoped/all models. */
+  const handleCycleModel = useCallback(
+    async (direction: "forward" | "backward") => {
+      try {
+        const next = await cycleScopedModel(direction);
+        if (!next) {
+          toast({ title: "No models available to cycle", variant: "error" });
+          return;
+        }
+        const state = await getSessionModel();
+        setCurrentProvider(state.provider ?? next.provider);
+        setCurrentModel(state.modelId ?? next.modelId);
+        setThinkingLevel(state.thinkingLevel ?? next.thinkingLevel ?? "");
+        setSupportedThinkingLevels(state.supportedThinkingLevels ?? []);
+        refreshUsage();
+        toast({ title: `Model: ${next.provider}/${next.modelId}` });
+      } catch (e) {
+        toast({
+          variant: "error",
+          title: "Failed to cycle model",
+          description: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
+    [toast, refreshUsage],
   );
 
   const toggleInfo = useCallback(() => {
@@ -291,6 +388,18 @@ export default function ChatView({
         case "/hotkeys":
           onOpenSettings?.();
           return true;
+        case "/mcp":
+          onOpenSettings?.("mcp");
+          return true;
+        case "/theme": {
+          const value = arg.toLowerCase();
+          if (value === "light" || value === "dark" || value === "system") {
+            setThemePreference(value);
+          } else {
+            onOpenSettings?.("general");
+          }
+          return true;
+        }
         case "/model": {
           if (arg) {
             // /model <provider>/<modelId> — apply the selection directly.
@@ -314,6 +423,14 @@ export default function ChatView({
         case "/login":
           setModelOpen(true);
           return true;
+        case "/thinking": {
+          if (arg) {
+            await handleThinkingSelect(arg.toLowerCase());
+          } else {
+            setModelOpen(true);
+          }
+          return true;
+        }
         case "/fork":
           setShowTimeline(true);
           if (activeSessionId) {
@@ -379,6 +496,7 @@ export default function ChatView({
       activeSessionCwd,
       messages,
       onOpenSettings,
+      handleThinkingSelect,
       exportActiveSession,
       toast,
     ],
@@ -453,23 +571,39 @@ export default function ChatView({
     prevEmptyRef.current = isEmpty;
   }, [messages, activeSessionId]);
 
-  // Cmd/Ctrl+F opens in-chat search; Esc closes it (the hook handles cleanup).
-  // Cmd/Ctrl+J toggles the terminal dock (Cmd+K is handled by the composer).
+  // Find-in-chat / terminal / model cycling (bindings are customizable).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+      if (matchesBinding(e, bindings.findInChat)) {
         e.preventDefault();
         threadSearch.open();
         return;
       }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+      if (matchesBinding(e, bindings.toggleTerminal)) {
         e.preventDefault();
         setTerminalOpen((o) => !o);
+        return;
+      }
+      if (matchesBinding(e, bindings.cycleModelBackward)) {
+        e.preventDefault();
+        void handleCycleModel("backward");
+        return;
+      }
+      if (matchesBinding(e, bindings.cycleModel)) {
+        e.preventDefault();
+        void handleCycleModel("forward");
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [threadSearch]);
+  }, [
+    threadSearch,
+    handleCycleModel,
+    bindings.findInChat,
+    bindings.toggleTerminal,
+    bindings.cycleModel,
+    bindings.cycleModelBackward,
+  ]);
 
   const activeTitle =
     sessions.find((s) => s.id === activeSessionId)?.title || "";
@@ -483,7 +617,7 @@ export default function ChatView({
         <SidebarTrigger className="shrink-0" />
         <div className="text-codex-faint flex min-w-0 shrink items-center gap-1.5 text-sm whitespace-nowrap">
           <span className="text-codex-text font-medium">
-            {activeTitle || "New conversation"}
+            {activeTitle || t("chat.newConversation")}
           </span>
           {streaming && (
             <Loader2 className="text-codex-green size-3.5 shrink-0 animate-spin" />
@@ -500,12 +634,12 @@ export default function ChatView({
               type="button"
               disabled={!activeSessionId}
               className="text-codex-faint hover:text-codex-dim inline-flex max-w-[220px] items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-40"
-              title="Select model"
+              title={t("chat.selectModel")}
             >
               <span className="truncate">
                 {currentProvider && currentModel
                   ? `${currentProvider}/${currentModel}`
-                  : "select model"}
+                  : t("chat.selectModel")}
               </span>
             </button>
           </PopoverTrigger>
@@ -517,8 +651,38 @@ export default function ChatView({
               modelId={currentModel || undefined}
               onSelect={handleModelSelect}
             />
+            {supportedThinkingLevels.length > 0 && (
+              <div className="border-codex-border mt-2 flex items-center justify-between gap-2 border-t px-1 pt-2">
+                <span className="text-codex-faint text-xs">Thinking</span>
+                <Select
+                  value={thinkingLevel || supportedThinkingLevels[0]}
+                  onValueChange={handleThinkingSelect}
+                >
+                  <SelectTrigger className="h-7 w-32 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {supportedThinkingLevels.map((level) => (
+                      <SelectItem key={level} value={level}>
+                        {level}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </PopoverContent>
         </Popover>
+        {usage && (
+          <span
+            className={`hidden text-[11px] tabular-nums sm:inline ${
+              usage.percentage >= 85 ? "text-codex-amber" : "text-codex-faint"
+            }`}
+            title={usage.formatted}
+          >
+            {usage.percentage.toFixed(0)}% ctx
+          </span>
+        )}
         <Popover open={infoOpen} onOpenChange={setInfoOpen}>
           <PopoverTrigger asChild>
             <button
@@ -526,7 +690,7 @@ export default function ChatView({
               disabled={!activeSessionId}
               onClick={toggleInfo}
               className="text-codex-faint hover:text-codex-dim rounded-md p-1 transition-colors disabled:opacity-40"
-              title="Session info"
+              title={t("chat.sessionInfo")}
             >
               <Info className="size-3.5" />
             </button>
@@ -537,7 +701,7 @@ export default function ChatView({
                 <div className="text-foreground truncate text-sm font-medium">
                   {sessionInfo.title || "Untitled"}
                 </div>
-                <InfoRow label="Session ID">
+                <InfoRow label={t("chat.sessionId")}>
                   <button
                     type="button"
                     className="text-muted-foreground hover:text-foreground truncate font-mono transition-colors"
@@ -550,33 +714,42 @@ export default function ChatView({
                   </button>
                 </InfoRow>
                 {sessionInfo.cwd && (
-                  <InfoRow label="Working directory">
+                  <InfoRow label={t("chat.workingDirectory")}>
                     <span className="text-muted-foreground truncate font-mono">
                       {sessionInfo.cwd}
                     </span>
                   </InfoRow>
                 )}
                 {sessionInfo.sessionFile && (
-                  <InfoRow label="Session file">
+                  <InfoRow label={t("chat.sessionFile")}>
                     <span className="text-muted-foreground truncate font-mono">
                       {sessionInfo.sessionFile}
                     </span>
                   </InfoRow>
                 )}
-                <InfoRow label="Messages">
+                <InfoRow label={t("chat.messages")}>
                   <span className="text-muted-foreground">
                     {sessionInfo.messageCount ?? 0}
                   </span>
                 </InfoRow>
                 {sessionInfo.model?.provider && sessionInfo.model.modelId && (
-                  <InfoRow label="Model">
+                  <InfoRow label={t("chat.model")}>
                     <span className="text-muted-foreground font-mono">
                       {sessionInfo.model.provider}/{sessionInfo.model.modelId}
                     </span>
                   </InfoRow>
                 )}
+                {usage && (
+                  <InfoRow label={t("chat.context")}>
+                    <span className="text-muted-foreground">
+                      {usage.percentage.toFixed(1)}% ·{" "}
+                      {formatTokens(usage.totalTokens)}/
+                      {formatTokens(usage.contextWindow)}
+                    </span>
+                  </InfoRow>
+                )}
                 {sessionInfo.createdAt && (
-                  <InfoRow label="Created">
+                  <InfoRow label={t("chat.created")}>
                     <span className="text-muted-foreground">
                       {new Date(sessionInfo.createdAt).toLocaleString()}
                     </span>
@@ -736,7 +909,10 @@ export default function ChatView({
             cwd={activeSessionCwd}
             loading={loading}
             streaming={streaming}
-            onSend={(text, images) => sendMessage(text, images)}
+            queued={queued}
+            onSend={(text, images, behavior, files) =>
+              sendMessage(text, images, behavior, files)
+            }
             onStop={stop}
             onSlashCommand={tryHandleSlash}
           />

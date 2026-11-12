@@ -191,3 +191,44 @@ pub fn file_completions(cwd: &str, raw_query: &str) -> Vec<Value> {
         .collect()
 }
 
+
+/// Open a file in the configured external editor (fallback: the OS default
+/// application). Relative paths resolve against the session cwd.
+pub fn open_in_editor(path: &str, cwd: &str) -> Result<(), String> {
+    let raw = Path::new(path);
+    let resolved = if raw.is_absolute() {
+        raw.to_path_buf()
+    } else {
+        Path::new(cwd).join(raw)
+    };
+    if !resolved.exists() {
+        return Err(format!("File not found: {}", resolved.display()));
+    }
+
+    let editor = {
+        let agent_dir = pi_coding_agent::config::get_agent_dir();
+        let mgr = pi_coding_agent::core::settings_manager::SettingsManager::create(
+            agent_dir.to_string_lossy().as_ref(),
+            Some(agent_dir.to_string_lossy().as_ref()),
+        );
+        mgr.get_external_editor_command()
+            .map(str::to_string)
+            .or_else(|| std::env::var("EDITOR").ok())
+            .filter(|value| !value.trim().is_empty())
+    };
+
+    if let Some(command) = editor {
+        let mut parts = command.split_whitespace();
+        let program = parts
+            .next()
+            .ok_or_else(|| "external editor command is empty".to_string())?;
+        std::process::Command::new(program)
+            .args(parts)
+            .arg(&resolved)
+            .spawn()
+            .map_err(|error| format!("Failed to launch editor '{program}': {error}"))?;
+    } else {
+        open::that(&resolved).map_err(|error| format!("Failed to open file: {error}"))?;
+    }
+    Ok(())
+}

@@ -335,6 +335,7 @@ impl Store {
         app: &AppHandle,
         text: &str,
         images: Option<Vec<ContentBlock>>,
+        streaming_behavior: Option<String>,
     ) -> Result<(), String> {
         let sid = self.state.lock().await.selected_session_id.clone();
         if sid.is_empty() {
@@ -348,10 +349,62 @@ impl Store {
         self.send_cmd(&sid, |reply| SessionCommand::SendMessage {
             text: text.to_string(),
             images: images.unwrap_or_default(),
+            streaming_behavior,
             reply,
         })
         .await??;
         Ok(())
+    }
+
+    /// Per-session thinking level change (persisted in the session file).
+    pub async fn set_session_thinking_level(
+        self: &Arc<Self>,
+        app: &AppHandle,
+        level: &str,
+    ) -> Result<serde_json::Value, String> {
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() {
+            return Err("No session".to_string());
+        }
+        self.ensure_actor(app, &sid).await?;
+        self.send_cmd(&sid, |reply| SessionCommand::SetThinkingLevel {
+            level: level.to_string(),
+            reply,
+        })
+        .await
+    }
+
+    /// Context-window usage for the selected session (`None` when no model /
+    /// no response yet).
+    pub async fn get_session_usage(&self) -> Option<serde_json::Value> {
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() || !self.actors.contains(&sid).await {
+            return None;
+        }
+        self.send_cmd(&sid, |reply| SessionCommand::GetUsage { reply })
+            .await
+            .ok()
+            .flatten()
+    }
+
+    /// Cycle the selected session's model (scoped list first, otherwise all
+    /// available models) and return the new selection.
+    pub async fn cycle_model(
+        &self,
+        direction: &str,
+    ) -> Result<Option<serde_json::Value>, String> {
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() {
+            return Err("No session selected".to_string());
+        }
+        if !self.actors.contains(&sid).await {
+            return Err("Session is not loaded".to_string());
+        }
+        self.send_cmd(&sid, |reply| SessionCommand::CycleModel {
+            direction: direction.to_string(),
+            reply,
+        })
+        .await
     }
 
     /// Abort the selected session's in-flight run.
@@ -507,5 +560,101 @@ impl Store {
         self.send_cmd(&sid, |reply| SessionCommand::GetMessages { reply })
             .await
             .unwrap_or_default()
+    }
+
+    // ── MCP ──────────────────────────────────────────────────
+
+    /// Live MCP snapshot for the selected session (empty when no actor).
+    pub async fn mcp_snapshot(&self) -> Vec<serde_json::Value> {
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() || !self.actors.contains(&sid).await {
+            return Vec::new();
+        }
+        self.send_cmd(&sid, |reply| SessionCommand::GetMcpSnapshot { reply })
+            .await
+            .unwrap_or_default()
+    }
+
+    /// Reconnect one MCP server in the selected session.
+    pub async fn reconnect_mcp(&self, name: &str) -> Result<(), String> {
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() {
+            return Err("No session selected".to_string());
+        }
+        self.send_cmd(&sid, |reply| SessionCommand::ReconnectMcp {
+            name: name.to_string(),
+            reply,
+        })
+        .await?
+    }
+
+    /// List resources + templates exposed by one MCP server.
+    pub async fn mcp_resources(&self, name: &str) -> Result<serde_json::Value, String> {
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() {
+            return Err("No session selected".to_string());
+        }
+        self.send_cmd(&sid, |reply| SessionCommand::GetMcpResources {
+            name: name.to_string(),
+            reply,
+        })
+        .await?
+    }
+
+    /// Read one MCP resource by URI.
+    pub async fn read_mcp_resource(
+        &self,
+        name: &str,
+        uri: &str,
+    ) -> Result<serde_json::Value, String> {
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() {
+            return Err("No session selected".to_string());
+        }
+        self.send_cmd(&sid, |reply| SessionCommand::ReadMcpResource {
+            name: name.to_string(),
+            uri: uri.to_string(),
+            reply,
+        })
+        .await?
+    }
+
+    /// File-based prompt templates from the selected session.
+    pub async fn list_prompt_templates(&self) -> Vec<serde_json::Value> {
+        let sid = self.state.lock().await.selected_session_id.clone();
+        if sid.is_empty() || !self.actors.contains(&sid).await {
+            return Vec::new();
+        }
+        self.send_cmd(&sid, |reply| SessionCommand::GetPromptTemplates { reply })
+            .await
+            .unwrap_or_default()
+    }
+
+    /// Restart the selected session's actor so config changes (MCP servers,
+    /// extensions, …) are picked up. Refuses while a turn is running — the
+    /// actor's shutdown would abort it.
+    pub async fn restart_selected_actor(
+        self: &Arc<Self>,
+        app: &AppHandle,
+    ) -> Result<(), String> {
+        let (sid, running) = {
+            let state = self.state.lock().await;
+            let sid = state.selected_session_id.clone();
+            let running = state
+                .sessions
+                .iter()
+                .find(|session| session.id == sid)
+                .map(|session| session.status == "running")
+                .unwrap_or(false);
+            (sid, running)
+        };
+        if sid.is_empty() {
+            return Ok(());
+        }
+        if running {
+            return Err("Abort the running turn before applying this change".to_string());
+        }
+        self.shutdown_actor(&sid).await;
+        self.ensure_actor(app, &sid).await
     }
 }

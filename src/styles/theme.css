@@ -259,4 +259,20 @@
   --color-ink: oklch(0.92 0.004 260);
   --color-ink-muted: oklch(0.56 0.01 260);
   --color-ink-dim: oklch(0.92 0.004 260 / 0.06);
+
+  /* Codex chat palette — dark surfaces, light text */
+  --color-codex-bg: #0b0c0f;
+  --color-codex-inset: #141519;
+  --color-codex-panel: #191a1e;
+  --color-codex-panel-2: #212228;
+  --color-codex-panel-3: #2b2c33;
+  --color-codex-border: rgb(255 255 255 / 0.09);
+  --color-codex-border-strong: rgb(255 255 255 / 0.18);
+  --color-codex-text: #e9e9ec;
+  --color-codex-dim: #a1a1aa;
+  --color-codex-faint: #71717a;
+  --color-codex-green: #19b28d;
+  --color-codex-green-bright: #34d399;
+  --color-codex-amber: #fbbf24;
+  --color-codex-red: #f87171;
 }

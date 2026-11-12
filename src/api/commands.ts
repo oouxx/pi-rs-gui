@@ -1,16 +1,26 @@
 import type {
   CustomProviderInfo,
+  CycledModel,
   DefaultModelDto,
   DesktopStateDto,
   ExtensionInfo,
   GeneralSettings,
   GlobalModelSettingsDto,
+  McpConfigView,
+  McpResourceContents,
+  McpResourcesResult,
   ModelOption,
   ModelSettingsDto,
+  PromptTemplateInfo,
   ProviderInfo,
+  QueuedMessage,
+  ScopedModelsState,
   SessionInfo,
+  SessionModelState,
   SessionRecordDto,
+  SessionSearchResult,
   SessionTreeNode,
+  SessionUsage,
   SkillInfo,
   SlashCommandInfo,
   TranscriptPayload,
@@ -59,17 +69,27 @@ export async function tauriInvoke<T>(
 
 export type {
   CustomProviderInfo,
+  CycledModel,
   DefaultModelDto,
   DesktopStateDto,
   ExtensionInfo,
   GeneralSettings,
   GlobalModelSettingsDto,
+  McpConfigView,
+  McpResourceContents,
+  McpResourcesResult,
   ModelOption,
   ModelSettingsDto,
+  PromptTemplateInfo,
   ProviderInfo,
+  QueuedMessage,
+  ScopedModelsState,
   SessionInfo,
+  SessionModelState,
   SessionRecordDto,
+  SessionSearchResult,
   SessionTreeNode,
+  SessionUsage,
   SkillInfo,
   SlashCommandInfo,
   TranscriptItem,
@@ -106,10 +126,19 @@ export interface ComposerImage {
   mimeType: string;
 }
 
-export function submitComposer(text: string, images?: ComposerImage[]) {
+export type StreamingBehavior = "steer" | "followUp";
+
+export function submitComposer(
+  text: string,
+  images?: ComposerImage[],
+  streamingBehavior?: StreamingBehavior,
+) {
+  const options: Record<string, unknown> = {};
+  if (images && images.length > 0) options.images = images;
+  if (streamingBehavior) options.streamingBehavior = streamingBehavior;
   return tauriInvoke<DesktopAppState>("submit_composer", {
     text,
-    options: images && images.length > 0 ? { images } : undefined,
+    options: Object.keys(options).length > 0 ? options : undefined,
   });
 }
 
@@ -193,6 +222,12 @@ export function listExtensions() {
 export function getExtension(name: string) {
   return tauriInvoke<ExtensionInfo>("get_extension", { name });
 }
+export function setExtensionEnabled(name: string, enabled: boolean) {
+  return tauriInvoke<{ applied: boolean; warning?: string }>(
+    "set_extension_enabled",
+    { name, enabled },
+  );
+}
 
 // ── Workspace file completion (composer @ mention / Tab) ──
 
@@ -236,9 +271,13 @@ export function terminalStopAll() {
 // ── Session model ──
 
 export function getSessionModel() {
-  return tauriInvoke<{ provider?: string | null; modelId?: string | null }>(
-    "get_session_model",
-  );
+  return tauriInvoke<SessionModelState>("get_session_model");
+}
+export function setSessionThinkingLevel(level: string) {
+  return tauriInvoke<SessionModelState>("set_session_thinking_level", { level });
+}
+export function getSessionUsage() {
+  return tauriInvoke<SessionUsage | null>("get_session_usage");
 }
 export function setSessionModel(provider: string, modelId: string) {
   return tauriInvoke<DesktopAppState>("set_session_model", {
@@ -348,4 +387,97 @@ export function deleteSession(sessionId: string) {
 }
 export function setSessionCwd(sessionId: string, path: string) {
   return tauriInvoke<DesktopAppState>("set_session_cwd", { sessionId, path });
+}
+
+// ── MCP servers ──
+
+export function listMcpServers(cwd?: string) {
+  return tauriInvoke<McpConfigView>("list_mcp_servers", cwd ? { cwd } : {});
+}
+export function saveMcpServer(
+  name: string,
+  config: Record<string, unknown>,
+  scope: "global" | "project",
+  cwd?: string,
+) {
+  return tauriInvoke<McpConfigView>("save_mcp_server", {
+    name,
+    config,
+    scope,
+    ...(cwd ? { cwd } : {}),
+  });
+}
+export function deleteMcpServer(name: string, cwd?: string) {
+  return tauriInvoke<McpConfigView>("delete_mcp_server", {
+    name,
+    ...(cwd ? { cwd } : {}),
+  });
+}
+export function updateMcpServer(
+  name: string,
+  patch: { enabled?: boolean; exposure?: string },
+  cwd?: string,
+) {
+  return tauriInvoke<McpConfigView>("update_mcp_server", {
+    name,
+    ...patch,
+    ...(cwd ? { cwd } : {}),
+  });
+}
+export function reconnectMcpServer(name: string) {
+  return tauriInvoke<void>("reconnect_mcp_server", { name });
+}
+export function signInMcpServer(name: string, cwd?: string) {
+  return tauriInvoke<void>("sign_in_mcp_server", {
+    name,
+    ...(cwd ? { cwd } : {}),
+  });
+}
+export function getMcpLog(name: string, limit = 200) {
+  return tauriInvoke<string>("get_mcp_log", { name, limit });
+}
+
+// ── Scoped models (Ctrl/Cmd+P cycling) ──
+
+export function getScopedModels() {
+  return tauriInvoke<ScopedModelsState>("get_scoped_models");
+}
+export function setScopedModels(patterns: string[]) {
+  return tauriInvoke<ScopedModelsState>("set_scoped_models", { patterns });
+}
+export function cycleScopedModel(direction: "forward" | "backward") {
+  return tauriInvoke<CycledModel | null>("cycle_scoped_model", { direction });
+}
+
+// ── Full-text session search ──
+
+export function searchSessions(query: string, limit = 30) {
+  return tauriInvoke<SessionSearchResult[]>("search_sessions", {
+    query,
+    limit,
+  });
+}
+
+// ── MCP resources ──
+
+export function getMcpResources(name: string) {
+  return tauriInvoke<McpResourcesResult>("get_mcp_resources", { name });
+}
+export function readMcpResource(name: string, uri: string) {
+  return tauriInvoke<{ contents?: McpResourceContents[] }>(
+    "read_mcp_resource",
+    { name, uri },
+  );
+}
+
+// ── Local files / prompt templates ──
+
+export function openFile(path: string, cwd?: string) {
+  return tauriInvoke<void>("open_file", {
+    path,
+    ...(cwd ? { cwd } : {}),
+  });
+}
+export function listPromptTemplates() {
+  return tauriInvoke<PromptTemplateInfo[]>("list_prompt_templates");
 }

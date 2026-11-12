@@ -43,6 +43,7 @@ bunx shadcn@latest add <component>  # Add a shadcn/ui component
 - `runtime.rs` — pi-rs runtime factory, spawn / ensure / shutdown actor
 - `lifecycle.rs` — session CRUD, fork/import/clone, cwd switch, model switch, messaging
 - `transcript.rs` — `AgentSessionEvent` serialization + display-transcript merge (unit-tested)
+- `mcp.rs` — MCP server config CRUD (delegates to pi-rs `core::mcp_config`) + OAuth sign-in + log tail
 - `events.rs` — Tauri event channel constants (mirror `src/api/eventNames.ts`)
 
 ### Frontend layout
@@ -51,6 +52,11 @@ bunx shadcn@latest add <component>  # Add a shadcn/ui component
 - `hooks/useChat.ts` — session list, transcript loading, streaming orchestration
 - `hooks/message-reducer.ts` — pure message merge / delta logic (tested with `bun test`)
 - `components/chat/` — `Composer`, `MessageItem`, `TimelinePanel`, markdown renderer
+- `components/McpSettings.tsx` — MCP server management (Settings → MCP)
+- `hooks/useTheme.ts` — system/light/dark theme preference
+- `lib/keybindings.ts` — customizable shortcut registry (localStorage-backed)
+- `lib/attachments.ts` — image + text/code file attachment helpers
+- `i18n/` — English / 简体中文 dictionaries + `useI18n()` hook
 - `api/types.ts` — IPC contract types; keep in sync with the Rust serializers
 
 ### 职责划分：pi-rs vs pi-rs-gui

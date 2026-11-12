@@ -33,6 +33,8 @@ export interface ContentBlock {
   status?: "running" | "success" | "error";
   result?: string;
   isError?: boolean;
+  /** Tool-specific payload (edit diff/patch, …). */
+  details?: unknown;
 }
 
 export interface DisplayMessage {
@@ -87,6 +89,7 @@ export function toBlocks(raw: RawContentBlock[] | undefined | null): ContentBloc
           status: b.status,
           result: b.result,
           isError: b.isError,
+          details: b.details,
         };
       case "image":
         return { type: "image", data: b.data, mimeType: b.mimeType };

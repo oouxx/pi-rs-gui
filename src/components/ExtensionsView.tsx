@@ -3,7 +3,9 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Puzzle, Search, TerminalSquare, SlashSquare } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { listExtensions } from "@/api/commands";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useToast } from "@/components/ui/toast";
+import { listExtensions, setExtensionEnabled } from "@/api/commands";
 
 interface ExtensionCommand {
   name: string;
@@ -15,6 +17,7 @@ interface Extension {
   location: "builtin";
   tools: string[];
   commands: ExtensionCommand[];
+  enabled: boolean;
 }
 
 const CATEGORIES = [
@@ -25,11 +28,13 @@ const CATEGORIES = [
 type CatId = (typeof CATEGORIES)[number]["id"];
 
 export default function ExtensionsView() {
+  const { toast } = useToast();
   const [activeCat, setActiveCat] = useState<CatId>("all");
   const [search, setSearch] = useState("");
   const [extensions, setExtensions] = useState<Extension[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -47,6 +52,37 @@ export default function ExtensionsView() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const toggleExtension = useCallback(
+    async (extension: Extension, enabled: boolean) => {
+      setBusy(extension.name);
+      try {
+        const result = await setExtensionEnabled(extension.name, enabled);
+        if (result.applied === false && result.warning) {
+          toast({
+            title: `${extension.name} ${enabled ? "enabled" : "disabled"}`,
+            description: result.warning,
+            variant: "error",
+          });
+        } else {
+          toast({
+            title: `${extension.name} ${enabled ? "enabled" : "disabled"}`,
+            variant: "success",
+          });
+        }
+        await refresh();
+      } catch (e) {
+        toast({
+          title: "Failed to update extension",
+          description: e instanceof Error ? e.message : String(e),
+          variant: "error",
+        });
+      } finally {
+        setBusy(null);
+      }
+    },
+    [refresh, toast],
+  );
 
   const counts = useMemo(() => {
     const c: Record<CatId, number> = {
@@ -137,10 +173,9 @@ export default function ExtensionsView() {
                     No extensions found
                   </h3>
                   <p className="text-muted-foreground text-xs leading-relaxed">
-                    Extensions are compiled into pi-gui as Rust plugins. Enable
-                    built-ins in <code>settings.json</code> under{" "}
-                    <code>extensionsEnabled</code> (e.g.{" "}
-                    <code>{`{ "subagent": true, "web_search": true }`}</code>).
+                    Built-in extensions are compiled into pi-gui as Rust
+                    plugins. Enable them with the checkbox above; sessions
+                    reload the registry on restart.
                   </p>
                 </div>
               </div>
@@ -149,14 +184,33 @@ export default function ExtensionsView() {
                 {filtered.map((e) => (
                   <div
                     key={e.name}
-                    className="border-hairline bg-card hover:bg-accent/5 flex flex-col gap-2 rounded-lg border p-3"
+                    className={`border-hairline bg-card hover:bg-accent/5 flex flex-col gap-2 rounded-lg border p-3 ${
+                      e.enabled ? "" : "opacity-60"
+                    }`}
                   >
                     <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={e.enabled}
+                        disabled={busy === e.name}
+                        onCheckedChange={(checked) =>
+                          toggleExtension(e, checked === true)
+                        }
+                        aria-label={`Enable ${e.name}`}
+                      />
                       <span className="text-foreground font-mono text-sm font-medium">
                         {e.name}
                       </span>
                       <span className="bg-muted text-foreground/70 rounded-full px-2 py-0.5 text-[10px] uppercase">
                         {e.location}
+                      </span>
+                      <span
+                        className={`ml-auto text-[10px] uppercase ${
+                          e.enabled
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {e.enabled ? "Enabled" : "Disabled"}
                       </span>
                     </div>
 

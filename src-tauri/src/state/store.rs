@@ -93,13 +93,16 @@ impl Store {
     {
         let mut state = self.state.lock().await;
         let previous_selected = state.selected_session_id.clone();
+        let previous_patterns = state.global_model_settings.enabled_model_patterns.clone();
         f(&mut state);
         state.revision += 1;
         let result = state.clone();
         let _ = app.emit(super::events::STATE_CHANGED, &result);
-        // `ui-state.json` only stores the selected session id — don't hit the
-        // disk on transient mutations (status flips, rename, ...).
-        if result.selected_session_id != previous_selected {
+        // `ui-state.json` stores the selected id + scoped-model patterns —
+        // don't hit the disk for transient mutations (status flips, rename).
+        if result.selected_session_id != previous_selected
+            || result.global_model_settings.enabled_model_patterns != previous_patterns
+        {
             ui::persist_state(&result);
         }
         drop(state);

@@ -64,6 +64,8 @@ export interface ToolCallBlockDto {
   status?: "running" | "success" | "error";
   result?: string;
   isError?: boolean;
+  /** Tool-specific payload from the ToolResult (e.g. edit diff/patch). */
+  details?: unknown;
 }
 
 export interface ImageBlockDto {
@@ -179,6 +181,8 @@ export interface ExtensionInfo {
   location: "builtin";
   tools: string[];
   commands: ExtensionCommandInfo[];
+  /** Built-ins are opt-in; false means the agent won't load it. */
+  enabled: boolean;
 }
 
 export interface SlashCommandInfo {
@@ -230,10 +234,172 @@ export interface GeneralSettings {
   theme: string | null;
   enableSkillCommands: boolean;
   skillPaths: string[];
+  promptPaths: string[];
+  steeringMode: string;
+  followUpMode: string;
+  transport: string;
+  cacheWarming: string;
+  showCacheMissNotices: boolean;
+  externalEditor: string | null;
+  defaultProjectTrust: string;
+  shellCommandPrefix: string | null;
+  npmCommand: string[] | null;
+  collapseChangelog: boolean;
   paths: {
     agentDir: string;
     settingsPath: string;
     sessionsDir: string;
   };
   version: string;
+}
+
+// ── MCP servers (src-tauri/src/state/mcp.rs) ─────────────────
+
+export type McpScope = "global" | "project" | "extension";
+export type McpExposure = "codemode" | "deferred" | "direct" | "hidden";
+export type McpTransport = "stdio" | "http";
+export type McpStatus =
+  | "connected"
+  | "connecting"
+  | "disconnected"
+  | "needs-auth"
+  | "failed"
+  | "closed"
+  | "disabled"
+  | "not-loaded";
+
+export interface McpTool {
+  name: string;
+  title?: string;
+  description?: string;
+}
+
+export interface McpServerInfo {
+  name: string;
+  scope: McpScope;
+  source?: string;
+  overridePath?: string | null;
+  enabled: boolean;
+  exposure: McpExposure;
+  transport: McpTransport;
+  description?: string | null;
+  command?: string | null;
+  args?: string[] | null;
+  url?: string | null;
+  timeout?: number | null;
+  /** Raw pi-rs config entry; round-trip it so unmodeled fields survive edits. */
+  config: Record<string, unknown>;
+  status: McpStatus;
+  error?: string | null;
+  tools: McpTool[];
+  hasResources: boolean;
+  instructions?: string | null;
+}
+
+export interface McpConfigView {
+  servers: McpServerInfo[];
+  errors: string[];
+  globalConfigPath: string;
+  projectConfigPath: string;
+  agentDir: string;
+  cwd: string;
+  /** False when a running turn blocked the actor restart. */
+  applied?: boolean;
+  warning?: string;
+}
+
+// ── Session model / thinking / context usage ─────────────────
+
+export interface SessionModelState {
+  provider?: string | null;
+  modelId?: string | null;
+  thinkingLevel?: string | null;
+  supportedThinkingLevels?: string[];
+}
+
+export interface SessionUsage {
+  totalTokens: number;
+  contextWindow: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number | null;
+  cacheWriteTokens?: number | null;
+  messagesCount: number;
+  percentage: number;
+  remainingTokens: number;
+  formatted: string;
+}
+
+/** A message queued while a turn is running. */
+export interface QueuedMessage {
+  text: string;
+  mode: "steer" | "followUp";
+}
+
+// ── Scoped models (Ctrl/Cmd+P cycling) ───────────────────────
+
+export interface ScopedModelsState {
+  patterns: string[];
+  /** False when a running turn blocked applying the new list. */
+  applied?: boolean;
+  warning?: string;
+}
+
+export interface CycledModel {
+  provider: string;
+  modelId: string;
+  thinkingLevel?: string | null;
+  scoped: boolean;
+}
+
+// ── Full-text session search ─────────────────────────────────
+
+export interface SessionSearchResult {
+  sessionId: string;
+  title: string;
+  role: string;
+  snippet: string;
+  timestamp?: number | null;
+}
+
+// ── MCP resources ────────────────────────────────────────────
+
+export interface McpResource {
+  uri: string;
+  name?: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+  size?: number;
+}
+
+export interface McpResourceTemplate {
+  uriTemplate: string;
+  name?: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+}
+
+export interface McpResourceContents {
+  uri: string;
+  mimeType?: string;
+  text?: string;
+  blob?: string;
+}
+
+export interface McpResourcesResult {
+  resources: McpResource[];
+  templates: McpResourceTemplate[];
+}
+
+// ── Prompt templates ─────────────────────────────────────────
+
+export interface PromptTemplateInfo {
+  name: string;
+  description: string;
+  argumentHint?: string | null;
+  filePath: string;
+  source: "user" | "project" | "path" | string;
+  append: boolean;
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -10,8 +11,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { FolderOpen, FolderPlus, Info, Puzzle, Trash2, BookOpen } from "lucide-react";
+import { FolderOpen, FolderPlus, Info, Puzzle, Trash2, BookOpen, X } from "lucide-react";
 import ModelsSettings from "./ModelsSettings";
+import McpSettings from "./McpSettings";
+import { useTheme, type ThemePreference } from "@/hooks/useTheme";
+import { useI18n, type LanguagePreference } from "@/i18n";
+import {
+  KEYBINDING_DEFINITIONS,
+  bindingFromEvent,
+  findKeybindingConflict,
+  formatBinding,
+  useKeybindings,
+} from "@/lib/keybindings";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   getGeneralSettings,
@@ -22,17 +33,22 @@ import {
 } from "@/api/commands";
 
 const settingsTabs = [
-  { id: "general", label: "General", desc: "Agent behavior and paths" },
+  { id: "general", labelKey: "settings.general", descKey: "settings.generalDesc" },
+  { id: "models", labelKey: "settings.models", descKey: "settings.modelsDesc" },
+  { id: "mcp", labelKey: "settings.mcp", descKey: "settings.mcpDesc" },
+  { id: "skills", labelKey: "settings.skills", descKey: "settings.skillsDesc" },
   {
-    id: "models",
-    label: "Models",
-    desc: "AI providers, default model, thinking level",
+    id: "extensions",
+    labelKey: "settings.extensions",
+    descKey: "settings.extensionsDesc",
   },
-  { id: "skills", label: "Skills", desc: "Skill discovery and permissions" },
-  { id: "extensions", label: "Extensions", desc: "Extension management" },
-  { id: "keybindings", label: "Keybindings", desc: "Keyboard shortcuts" },
-  { id: "about", label: "About", desc: "Version, licenses, updates" },
-];
+  {
+    id: "keybindings",
+    labelKey: "settings.keybindings",
+    descKey: "settings.keybindingsDesc",
+  },
+  { id: "about", labelKey: "settings.about", descKey: "settings.aboutDesc" },
+] as const;
 
 interface GeneralSettings {
   defaultThinkingLevel: string;
@@ -46,6 +62,17 @@ interface GeneralSettings {
   theme: string | null;
   enableSkillCommands: boolean;
   skillPaths: string[];
+  promptPaths: string[];
+  steeringMode: string;
+  followUpMode: string;
+  transport: string;
+  cacheWarming: string;
+  showCacheMissNotices: boolean;
+  externalEditor: string | null;
+  defaultProjectTrust: string;
+  shellCommandPrefix: string | null;
+  npmCommand: string[] | null;
+  collapseChangelog: boolean;
   paths?: {
     agentDir?: string;
     settingsPath?: string;
@@ -95,8 +122,97 @@ function ToggleRow({
   );
 }
 
+/** Numeric input that commits on blur (avoids one IPC call per keystroke). */
+function NumberField({
+  value,
+  onCommit,
+}: {
+  value: number;
+  onCommit: (value: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  return (
+    <Input
+      className="h-8 w-28 text-xs tabular-nums"
+      inputMode="numeric"
+      value={text}
+      onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, ""))}
+      onBlur={() => {
+        const parsed = Number(text);
+        if (Number.isFinite(parsed) && parsed > 0) onCommit(parsed);
+        else setText(String(value));
+      }}
+    />
+  );
+}
+
+/** Editable path list used by skill/prompt resource paths. */
+function PathList({
+  paths,
+  placeholder,
+  onAdd,
+  onRemove,
+}: {
+  paths: string[];
+  placeholder: string;
+  onAdd: (path: string) => void;
+  onRemove: (path: string) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  return (
+    <div className="space-y-1.5">
+      {paths.map((path) => (
+        <div key={path} className="flex items-center gap-2">
+          <span className="text-muted-foreground flex-1 truncate font-mono text-xs">
+            {path}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => onRemove(path)}
+            title="Remove"
+          >
+            <X className="size-3.5" />
+          </Button>
+        </div>
+      ))}
+      <div className="flex items-center gap-1.5">
+        <Input
+          className="h-8 flex-1 font-mono text-xs"
+          value={draft}
+          placeholder={placeholder}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "Enter") return;
+            const value = draft.trim();
+            if (!value) return;
+            onAdd(value);
+            setDraft("");
+          }}
+        />
+        <Button
+          size="xs"
+          variant="outline"
+          className="h-8"
+          onClick={() => {
+            const value = draft.trim();
+            if (!value) return;
+            onAdd(value);
+            setDraft("");
+          }}
+        >
+          Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function GeneralTab() {
   const [settings, setSettings] = useState<GeneralSettings | null>(null);
+  const { preference, setTheme } = useTheme();
+  const { preference: languagePreference, setLanguage, t } = useI18n();
 
   const refresh = useCallback(async () => {
     try {
@@ -132,19 +248,110 @@ function GeneralTab() {
   return (
     <div className="space-y-8">
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">Behavior</h3>
+        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.appearance")}</h3>
+        <Separator className="my-2" />
+        <Row label={t("settings.appTheme")} hint={t("settings.appThemeHint")}>
+          <Select
+            value={preference}
+            onValueChange={(value) =>
+              setTheme(value as ThemePreference)
+            }
+          >
+            <SelectTrigger className="h-8 w-32 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="system">System</SelectItem>
+              <SelectItem value="light">Light</SelectItem>
+              <SelectItem value="dark">Dark</SelectItem>
+            </SelectContent>
+          </Select>
+        </Row>
+        <Row label={t("settings.language")} hint={t("settings.languageHint")}>
+          <Select
+            value={languagePreference}
+            onValueChange={(value) =>
+              setLanguage(value as LanguagePreference)
+            }
+          >
+            <SelectTrigger className="h-8 w-32 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="system">{t("settings.system")}</SelectItem>
+              <SelectItem value="en">{t("settings.english")}</SelectItem>
+              <SelectItem value="zh">{t("settings.chinese")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </Row>
+      </section>
+
+      <section>
+        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.behavior")}</h3>
         <Separator className="my-2" />
         <ToggleRow
           label="Auto-compact long conversations"
-          hint={`Reserve ${settings.compactionReserveTokens.toLocaleString()} tokens, keep ${settings.compactionKeepRecentTokens.toLocaleString()} recent`}
+          hint="Summarize the context when it approaches the model window"
           checked={settings.compactionEnabled}
           onChange={(v) => apply("compactionEnabled", v)}
         />
+        <Row label="Compaction reserve tokens" hint="Headroom kept below the context limit">
+          <NumberField
+            value={settings.compactionReserveTokens}
+            onCommit={(v) => apply("compactionReserveTokens", v)}
+          />
+        </Row>
+        <Row label="Compaction keep-recent tokens" hint="Recent context preserved verbatim">
+          <NumberField
+            value={settings.compactionKeepRecentTokens}
+            onCommit={(v) => apply("compactionKeepRecentTokens", v)}
+          />
+        </Row>
+        <Row
+          label="Steering mode"
+          hint="How queued steering messages are delivered mid-run"
+        >
+          <Select
+            value={settings.steeringMode}
+            onValueChange={(v) => apply("steeringMode", v)}
+          >
+            <SelectTrigger className="h-8 w-36 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="one-at-a-time">One at a time</SelectItem>
+              <SelectItem value="all">All at once</SelectItem>
+            </SelectContent>
+          </Select>
+        </Row>
+        <Row
+          label="Follow-up mode"
+          hint="How queued follow-up messages are delivered after a run"
+        >
+          <Select
+            value={settings.followUpMode}
+            onValueChange={(v) => apply("followUpMode", v)}
+          >
+            <SelectTrigger className="h-8 w-36 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="one-at-a-time">One at a time</SelectItem>
+              <SelectItem value="all">All at once</SelectItem>
+            </SelectContent>
+          </Select>
+        </Row>
         <ToggleRow
           label="Auto-retry failed requests"
           hint="Retry transient provider errors automatically"
           checked={settings.retryEnabled}
           onChange={(v) => apply("retryEnabled", v)}
+        />
+        <ToggleRow
+          label="Show cache-miss notices"
+          hint="Surface prompt-cache misses in the transcript"
+          checked={settings.showCacheMissNotices}
+          onChange={(v) => apply("showCacheMissNotices", v)}
         />
         <ToggleRow
           label="Hide thinking blocks"
@@ -161,7 +368,7 @@ function GeneralTab() {
       </section>
 
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">Model</h3>
+        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.model")}</h3>
         <Separator className="my-2" />
         <Row label="Default thinking level" hint="Used when creating new sessions">
           <Select
@@ -178,7 +385,7 @@ function GeneralTab() {
             </SelectContent>
           </Select>
         </Row>
-        <Row label="Theme" hint="Theme id passed to the agent (empty = default)">
+        <Row label="Agent theme" hint="Theme id passed to the agent (empty = default)">
           <Input
             className="h-8 w-40 text-xs"
             value={settings.theme ?? ""}
@@ -189,7 +396,7 @@ function GeneralTab() {
       </section>
 
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">Shell</h3>
+        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.shell")}</h3>
         <Separator className="my-2" />
         <Row
           label="Shell path"
@@ -202,6 +409,138 @@ function GeneralTab() {
             onBlur={(e) => apply("shellPath", e.target.value)}
           />
         </Row>
+        <Row
+          label="Shell command prefix"
+          hint="Prepended to every bash tool command (e.g. mise exec --)"
+        >
+          <Input
+            className="h-8 w-64 font-mono text-xs"
+            value={settings.shellCommandPrefix ?? ""}
+            placeholder="none"
+            onBlur={(e) => apply("shellCommandPrefix", e.target.value)}
+          />
+        </Row>
+      </section>
+
+      <section>
+        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.advanced")}</h3>
+        <Separator className="my-2" />
+        <Row
+          label="Provider transport"
+          hint="auto lets the provider choose between SSE and WebSocket"
+        >
+          <Select
+            value={settings.transport}
+            onValueChange={(v) => apply("transport", v)}
+          >
+            <SelectTrigger className="h-8 w-40 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Auto</SelectItem>
+              <SelectItem value="sse">SSE</SelectItem>
+              <SelectItem value="websocket">WebSocket</SelectItem>
+              <SelectItem value="websocket-cached">WebSocket cached</SelectItem>
+            </SelectContent>
+          </Select>
+        </Row>
+        <Row
+          label="Prompt cache warming"
+          hint="Idle warming costs money — off disables all warming"
+        >
+          <Select
+            value={settings.cacheWarming}
+            onValueChange={(v) => apply("cacheWarming", v)}
+          >
+            <SelectTrigger className="h-8 w-36 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">Off</SelectItem>
+              <SelectItem value="streaming">While streaming</SelectItem>
+              <SelectItem value="idle">While idle</SelectItem>
+            </SelectContent>
+          </Select>
+        </Row>
+        <Row
+          label="Default project trust"
+          hint="Decision applied to projects without an explicit trust record"
+        >
+          <Select
+            value={settings.defaultProjectTrust}
+            onValueChange={(v) => apply("defaultProjectTrust", v)}
+          >
+            <SelectTrigger className="h-8 w-32 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ask">Ask</SelectItem>
+              <SelectItem value="always">Always trust</SelectItem>
+              <SelectItem value="never">Never trust</SelectItem>
+            </SelectContent>
+          </Select>
+        </Row>
+        <Row
+          label="External editor"
+          hint="Command used to open files (empty = system default)"
+        >
+          <Input
+            className="h-8 w-64 font-mono text-xs"
+            value={settings.externalEditor ?? ""}
+            placeholder="code"
+            onBlur={(e) => apply("externalEditor", e.target.value)}
+          />
+        </Row>
+      </section>
+
+      <section>
+        <h3 className="mb-1 text-sm font-medium text-foreground">
+          {t("settings.skillsPrompts")}
+        </h3>
+        <Separator className="my-2" />
+        <ToggleRow
+          label="Enable skill slash commands"
+          hint="Expose discovered skills as /skill:name commands"
+          checked={settings.enableSkillCommands}
+          onChange={(v) => apply("enableSkillCommands", v)}
+        />
+        <Row label="Skill paths" hint="Extra directories scanned for skills">
+          <span className="text-muted-foreground text-xs">
+            {settings.skillPaths.length} path(s)
+          </span>
+        </Row>
+        <PathList
+          paths={settings.skillPaths}
+          placeholder="/path/to/skills"
+          onAdd={(path) =>
+            apply("skillPaths", [...settings.skillPaths, path])
+          }
+          onRemove={(path) =>
+            apply(
+              "skillPaths",
+              settings.skillPaths.filter((item) => item !== path),
+            )
+          }
+        />
+        <div className="mt-4" />
+        <Row label="Prompt paths" hint="Extra directories scanned for /prompt templates">
+          <span className="text-muted-foreground text-xs">
+            {settings.promptPaths.length} path(s)
+          </span>
+        </Row>
+        <PathList
+          paths={settings.promptPaths}
+          placeholder="/path/to/prompts"
+          onAdd={(path) =>
+            apply("promptPaths", [...settings.promptPaths, path])
+          }
+          onRemove={(path) =>
+            apply(
+              "promptPaths",
+              settings.promptPaths.filter((item) => item !== path),
+            )
+          }
+        />
       </section>
     </div>
   );
@@ -458,59 +797,151 @@ function ExtensionsTab() {
   );
 }
 
-const KEYBINDINGS: { keys: string[]; action: string }[] = [
-  { keys: ["Enter"], action: "Send message" },
+const FIXED_KEYBINDINGS: { keys: string[]; action: string }[] = [
+  { keys: ["Enter"], action: "Send message (steer while a run is active)" },
+  { keys: ["Alt+Enter"], action: "Queue a follow-up while a run is active" },
   { keys: ["Shift+Enter"], action: "Insert new line" },
   { keys: ["/"], action: "Open slash commands" },
   { keys: ["@"], action: "Reference files in the workspace" },
-  { keys: ["Cmd/Ctrl+F"], action: "Find in chat" },
-  { keys: ["Cmd/Ctrl+K"], action: "Focus the composer" },
-  { keys: ["Cmd/Ctrl+J"], action: "Toggle the terminal panel" },
-  { keys: ["Cmd/Ctrl+N"], action: "Start a new thread" },
-  { keys: ["Cmd/Ctrl+,"], action: "Open / close Settings" },
   { keys: ["Esc"], action: "Close dialogs and search" },
 ];
 
 function KeybindingsTab() {
+  const { bindings, setBinding, resetAll } = useKeybindings();
+  const { t } = useI18n();
+  const [recording, setRecording] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!recording) return;
+    const handler = (e: KeyboardEvent) => {
+      e.preventDefault();
+      // Prevent the app's own global shortcuts from firing while recording.
+      e.stopImmediatePropagation();
+      if (e.key === "Escape") {
+        setRecording(null);
+        setConflict(null);
+        return;
+      }
+      const value = bindingFromEvent(e);
+      if (!value) {
+        setConflict("Hold Cmd/Ctrl (optionally with Shift/Alt)");
+        return;
+      }
+      const other = findKeybindingConflict(recording, value);
+      if (other) {
+        setConflict(`Already used by “${other.label}”`);
+        return;
+      }
+      setBinding(recording, value);
+      setRecording(null);
+      setConflict(null);
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [recording, setBinding]);
+
   return (
     <div className="space-y-6">
-      <p className="text-muted-foreground text-xs leading-relaxed">
-        Keyboard shortcuts available across the app.
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <p className="text-muted-foreground text-xs leading-relaxed">
+          {t("keybindings.hint")}
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setRecording(null);
+            setConflict(null);
+            resetAll();
+          }}
+        >
+          {t("keybindings.resetAll")}
+        </Button>
+      </div>
+
+      {conflict && <p className="text-destructive text-xs">{conflict}</p>}
+
       <div className="flex flex-col gap-1">
-        {KEYBINDINGS.map((kb) => (
+        {KEYBINDING_DEFINITIONS.map((definition) => (
           <div
-            key={kb.action}
+            key={definition.id}
             className="flex items-center justify-between gap-6 py-1.5"
           >
-            <span className="text-sm text-foreground">{kb.action}</span>
+            <span className="text-foreground text-sm">
+              {definition.label}
+            </span>
             <span className="flex items-center gap-1">
-              {kb.keys.map((k) => (
+              {formatBinding(bindings[definition.id]).map((key, index) => (
                 <kbd
-                  key={k}
+                  key={`${key}-${index}`}
                   className="bg-bg-hover border-hairline text-ink-muted rounded-md border px-1.5 py-0.5 font-mono text-[11px]"
                 >
-                  {k}
+                  {key}
                 </kbd>
               ))}
+              <Button
+                size="xs"
+                variant="outline"
+                className="ml-2"
+                onClick={() => {
+                  setConflict(null);
+                  setRecording(definition.id);
+                }}
+              >
+                {recording === definition.id ? t("keybindings.pressKeys") : t("keybindings.change")}
+              </Button>
             </span>
           </div>
         ))}
+      </div>
+
+      <Separator />
+
+      <div>
+        <h3 className="text-foreground mb-2 text-sm font-medium">
+          {t("keybindings.fixed")}
+        </h3>
+        <div className="flex flex-col gap-1">
+          {FIXED_KEYBINDINGS.map((binding) => (
+            <div
+              key={binding.action}
+              className="flex items-center justify-between gap-6 py-1.5"
+            >
+              <span className="text-foreground text-sm">{binding.action}</span>
+              <span className="flex items-center gap-1">
+                {binding.keys.map((key) => (
+                  <kbd
+                    key={key}
+                    className="bg-bg-hover border-hairline text-ink-muted rounded-md border px-1.5 py-0.5 font-mono text-[11px]"
+                  >
+                    {key}
+                  </kbd>
+                ))}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-export default function SettingsView() {
-  const [activeTab, setActiveTab] = useState("general");
-  const active = settingsTabs.find((t) => t.id === activeTab);
+export default function SettingsView({
+  initialTab = "general",
+}: {
+  initialTab?: string;
+}) {
+  const [activeTab, setActiveTab] = useState(initialTab);
+  const { t } = useI18n();
+  const active = settingsTabs.find((tab) => tab.id === activeTab);
 
   return (
     <div className="flex h-full max-h-screen min-w-0 flex-1 flex-col">
       {/* Top bar */}
       <div className="border-hairline flex items-center gap-3 border-b px-4 py-1.5">
         <SidebarTrigger className="shrink-0" />
-        <div className="text-foreground text-sm font-medium">Settings</div>
+        <div className="text-foreground text-sm font-medium">{t("settings.title")}</div>
       </div>
 
       {/* Two-panel body */}
@@ -528,8 +959,8 @@ export default function SettingsView() {
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                 }`}
               >
-                <span className="text-sm font-medium">{tab.label}</span>
-                <span className="text-xs opacity-70">{tab.desc}</span>
+                <span className="text-sm font-medium">{t(tab.labelKey)}</span>
+                <span className="text-xs opacity-70">{t(tab.descKey)}</span>
               </button>
             ))}
           </nav>
@@ -539,12 +970,16 @@ export default function SettingsView() {
         <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
           <div className="mx-auto w-full max-w-2xl px-8 py-8">
             <h2 className="text-foreground mb-1 text-lg font-medium">
-              {active?.label}
+              {active ? t(active.labelKey) : ""}
             </h2>
-            <p className="text-muted-foreground mb-6 text-sm">{active?.desc}</p>
+            <p className="text-muted-foreground mb-6 text-sm">
+              {active ? t(active.descKey) : ""}
+            </p>
 
             {activeTab === "models" ? (
               <ModelsSettings />
+            ) : activeTab === "mcp" ? (
+              <McpSettings />
             ) : activeTab === "general" ? (
               <GeneralTab />
             ) : activeTab === "skills" ? (

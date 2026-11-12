@@ -1,7 +1,7 @@
 import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, FileText } from "lucide-react";
 import type { ContentBlock, DisplayMessage } from "@/hooks/message-reducer";
 import ToolCallCard from "@/components/ToolCallCard";
 import ThinkingBlock from "@/components/ThinkingBlock";
@@ -15,6 +15,19 @@ function imageDataUrl(block: ContentBlock): string {
   }
   const args = block.arguments as { data?: string } | string | undefined;
   return block.text ?? (typeof args === "object" ? args?.data : undefined) ?? "";
+}
+
+/** Split an inlined `<attached_files>` block from the user's prompt text so
+ *  the bubble shows compact file chips instead of the raw file contents. */
+function parseAttachedFiles(content: string): { text: string; files: string[] } {
+  const match = content.match(
+    /^([\s\S]*?)\s*<attached_files>\n([\s\S]*?)\n<\/attached_files>\s*$/,
+  );
+  if (!match) return { text: content, files: [] };
+  const files = [...match[2].matchAll(/<file name="([^"]*)">/g)].map(
+    (item) => item[1],
+  );
+  return { text: match[1].trim(), files };
 }
 
 /** Render a single content block. Memoized: unchanged block references skip
@@ -44,6 +57,7 @@ const BlockRenderer = memo(function BlockRenderer({
           status={block.status}
           result={block.result}
           isError={block.isError}
+          details={block.details}
         />
       );
 
@@ -76,6 +90,8 @@ export const MessageItem = memo(function MessageItem({
   isLast: boolean;
 }) {
   const isLastAi = msg.role === "assistant" && isLast;
+  const userContent =
+    msg.role === "user" ? parseAttachedFiles(msg.content) : null;
   return (
     <div
       {...(isLast ? { "data-msg-last": "true" } : {})}
@@ -88,7 +104,23 @@ export const MessageItem = memo(function MessageItem({
             text={msg.content}
             className="text-codex-faint hover:text-codex-dim absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
           />
-          <div className="break-words whitespace-pre-wrap">{msg.content}</div>
+          <div className="break-words whitespace-pre-wrap">
+            {userContent?.text}
+          </div>
+          {userContent && userContent.files.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {userContent.files.map((name, index) => (
+                <span
+                  key={`${name}-${index}`}
+                  className="border-codex-border bg-codex-inset text-codex-dim inline-flex max-w-[240px] items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]"
+                  title={name}
+                >
+                  <FileText className="text-codex-faint size-3 shrink-0" />
+                  <span className="truncate">{name}</span>
+                </span>
+              ))}
+            </div>
+          )}
           {msg.blocks
             .filter((b) => b.type === "image")
             .map((b, bi) => (
@@ -101,7 +133,7 @@ export const MessageItem = memo(function MessageItem({
             ))}
         </div>
       ) : msg.errorMessage ? (
-        <div className="border-red-200 bg-red-50 relative flex items-start gap-2 rounded-lg border px-4 py-3 text-sm text-red-600">
+        <div className="border-destructive/30 bg-destructive/10 text-destructive relative flex items-start gap-2 rounded-lg border px-4 py-3 text-sm">
           <AlertCircle className="mt-0.5 size-4 shrink-0" />
           <div className="min-w-0 break-words whitespace-pre-wrap">
             {msg.errorMessage}

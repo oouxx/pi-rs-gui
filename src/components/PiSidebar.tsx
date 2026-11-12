@@ -40,10 +40,17 @@ import {
   Loader2,
   Square,
   MessageSquare,
+  Moon,
+  Sun,
+  Archive,
 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useChatContext } from "@/hooks/ChatProvider";
-import { exportSession, renameSession, abortSession } from "@/api/commands";
+import { exportSession, renameSession, abortSession, searchSessions } from "@/api/commands";
+import type { SessionSearchResult } from "@/api/types";
+import { useTheme } from "@/hooks/useTheme";
+import { matchesBinding, useKeybindings } from "@/lib/keybindings";
+import { useI18n } from "@/i18n";
 import type { AppView } from "./AppShell";
 
 interface PiSidebarProps {
@@ -105,15 +112,21 @@ function loadCollapsedGroups(): Set<string> {
 
 export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
   const { toast } = useToast();
+  const { resolved, setTheme } = useTheme();
+  const { bindings } = useKeybindings();
+  const { t } = useI18n();
   const {
     sessions,
     activeSessionId,
     selectSession,
     createSession,
     deleteSession,
+    archiveSession,
     loading,
   } = useChatContext();
   const [search, setSearch] = useState("");
+  const [contentHits, setContentHits] = useState<SessionSearchResult[]>([]);
+  const [searchingContent, setSearchingContent] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -121,6 +134,33 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
   const [collapsedGroups, setCollapsedGroups] =
     useState<Set<string>>(loadCollapsedGroups);
   const prevActiveIdRef = useRef<string | null>(null);
+
+  // Full-text search across message bodies (debounced; titles are filtered
+  // locally below, so this only adds the "Messages" results section).
+  useEffect(() => {
+    const query = search.trim();
+    if (query.length < 2) {
+      setContentHits([]);
+      setSearchingContent(false);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setSearchingContent(true);
+      try {
+        const hits = await searchSessions(query, 30);
+        if (!cancelled) setContentHits(hits ?? []);
+      } catch {
+        if (!cancelled) setContentHits([]);
+      } finally {
+        if (!cancelled) setSearchingContent(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [search]);
 
   // Codex-style project/workspace switcher. The currently selected project is
   // a cwd path (""/"null" = "All conversations"). Persisted across reloads.
@@ -206,10 +246,10 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     [],
   );
 
-  // Cmd/Ctrl+N starts a new thread from anywhere.
+  // Cmd/Ctrl+N starts a new thread from anywhere (customizable).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
+      if (matchesBinding(e, bindings.newThread)) {
         e.preventDefault();
         void createSession(undefined, currentProject ?? undefined).then(() =>
           onModeChange("chat"),
@@ -218,7 +258,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [createSession, onModeChange]);
+  }, [bindings.newThread, createSession, onModeChange, currentProject]);
 
   const matches = (s: { title: string }) =>
     !search.trim() ||
@@ -443,7 +483,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                     e.stopPropagation();
                     handleStop(s.id);
                   }}
-                  title="Stop running"
+                  title={t("session.stopRunning")}
                 >
                   <Square className="size-3 fill-current" />
                 </button>
@@ -466,12 +506,12 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           {s.status === "running" && (
             <ContextMenuItem onSelect={() => handleStop(s.id)}>
               <Square className="text-codex-green size-3.5 fill-current" />
-              Stop running
+              {t("session.stopRunning")}
             </ContextMenuItem>
           )}
           <ContextMenuItem onSelect={() => handleStartRename(s.id, s.title)}>
             <Pencil className="size-3.5" />
-            Rename
+            {t("session.rename")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => handleCopyId(s.id)}>
             {copiedId === s.id ? (
@@ -479,15 +519,19 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             ) : (
               <Copy className="size-3.5" />
             )}
-            {copiedId === s.id ? "Copied!" : "Copy session ID"}
+            {copiedId === s.id ? t("session.copied") : t("session.copyId")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => handleExport(s, "html")}>
             <FileDown className="size-3.5" />
-            Export HTML…
+            {t("session.exportHtml")}
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => handleExport(s, "jsonl")}>
             <FileJson className="size-3.5" />
-            Export JSONL…
+            {t("session.exportJsonl")}
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => archiveSession(s.id)}>
+            <Archive className="size-3.5" />
+            {t("session.archive")}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -520,11 +564,11 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 type="button"
                 onClick={() => setProjectSwitcherOpen((o) => !o)}
                 className="text-codex-text hover:bg-codex-inset flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors"
-                title={activeProject?.path ?? "All conversations"}
+                title={activeProject?.path ?? t("sidebar.allConversations")}
               >
                 <FolderOpen className="text-codex-faint size-3.5 shrink-0" />
                 <span className="min-w-0 flex-1 truncate text-left group-data-[collapsible=icon]:hidden">
-                  {activeProject ? activeProject.label : "All conversations"}
+                  {activeProject ? activeProject.label : t("sidebar.allConversations")}
                 </span>
                 <ChevronDown
                   className={`size-3 shrink-0 transition-transform group-data-[collapsible=icon]:hidden ${
@@ -547,7 +591,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                     }`}
                   >
                     <MessageSquare className="size-3.5 shrink-0" />
-                    <span className="flex-1 truncate">All conversations</span>
+                    <span className="flex-1 truncate">{t("sidebar.allConversations")}</span>
                   </button>
                   <div className="bg-border my-1 h-px" />
                   {projects.map((p) => (
@@ -591,7 +635,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
               className="bg-codex-green text-white hover:bg-codex-green-bright data-[active=true]:bg-codex-green data-[active=true]:text-white"
             >
               <Plus />
-              <span>New conversation</span>
+              <span>{t("sidebar.newThread")}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
@@ -605,10 +649,10 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                   onModeChange(mode === "skills" ? "chat" : "skills")
                 }
                 isActive={mode === "skills"}
-                tooltip="Skills"
+                tooltip={t("nav.skills")}
               >
                 <Code2 />
-                <span>Skills</span>
+                <span>{t("nav.skills")}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
@@ -617,10 +661,10 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                   onModeChange(mode === "extensions" ? "chat" : "extensions")
                 }
                 isActive={mode === "extensions"}
-                tooltip="Extensions"
+                tooltip={t("nav.extensions")}
               >
                 <Puzzle />
-                <span>Extensions</span>
+                <span>{t("nav.extensions")}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -630,7 +674,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             <div className="relative">
               <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
               <Input
-                placeholder="Search sessions..."
+                placeholder={t("sidebar.search")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="h-8 pl-8 text-xs"
@@ -638,6 +682,55 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             </div>
           </div>
         </SidebarGroup>
+        {search.trim().length >= 2 && (
+          <SidebarGroup className="border-codex-border border-t pt-2 group-data-[collapsible=icon]:hidden">
+            <div className="text-codex-faint flex items-center gap-1.5 px-3 pb-1 text-[10px] font-medium tracking-wide uppercase">
+              <MessageSquare className="size-3" />
+              {t("sidebar.messages")}
+              <span className="ml-auto">
+                {searchingContent ? "…" : contentHits.length}
+              </span>
+            </div>
+            {contentHits.length === 0 ? (
+              <div className="text-codex-faint px-3 py-2 text-[11px]">
+                {searchingContent ? t("sidebar.searching") : t("sidebar.noMessageMatches")}
+              </div>
+            ) : (
+              <div className="max-h-64 overflow-y-auto px-1">
+                {contentHits.map((hit, index) => (
+                  <button
+                    key={`${hit.sessionId}-${index}`}
+                    type="button"
+                    onClick={() => selectSession(hit.sessionId)}
+                    className={`hover:bg-codex-panel-2 w-full rounded-md px-2 py-1.5 text-left transition-colors ${
+                      hit.sessionId === activeSessionId
+                        ? "bg-codex-panel-2"
+                        : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 text-[11px]">
+                      <span
+                        className={
+                          hit.role === "user"
+                            ? "text-codex-dim"
+                            : "text-codex-green"
+                        }
+                      >
+                        {hit.role === "user" ? t("sidebar.roleYou") : t("sidebar.roleAI")}
+                      </span>
+                      <span className="text-codex-faint truncate">
+                        {hit.title}
+                      </span>
+                    </div>
+                    <div className="text-codex-dim mt-0.5 line-clamp-2 text-[11px]">
+                      {hit.snippet}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </SidebarGroup>
+        )}
         <SidebarGroup className="min-h-0 flex-1 overflow-y-auto">
           {currentProject ? (
             /* Single-project view: flat session list under the project path */
@@ -662,8 +755,8 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 ) : projectSessions.length === 0 ? (
                   <div className="text-muted-foreground py-8 text-center text-xs">
                     {search.trim()
-                      ? "No matching sessions"
-                      : "No conversations in this project"}
+                      ? t("sidebar.noMatching")
+                      : t("sidebar.noProjectSessions")}
                   </div>
                 ) : (
                   projectSessions.map(renderSessionItem)
@@ -678,7 +771,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 </div>
               ) : visibleSessions.length === 0 ? (
                 <div className="text-muted-foreground py-8 text-center text-xs">
-                  {search.trim() ? "No matching sessions" : "No sessions yet"}
+                  {search.trim() ? t("sidebar.noMatching") : t("sidebar.noSessions")}
                 </div>
               ) : (
                 groups.map((g) => {
@@ -723,13 +816,30 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           <SidebarMenuItem>
             <SidebarMenuButton
               onClick={() =>
+                setTheme(resolved === "dark" ? "light" : "dark")
+              }
+              tooltip={
+                resolved === "dark"
+                  ? t("nav.switchLight")
+                  : t("nav.switchDark")
+              }
+            >
+              {resolved === "dark" ? <Sun /> : <Moon />}
+              <span>
+                {resolved === "dark" ? t("nav.lightMode") : t("nav.darkMode")}
+              </span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={() =>
                 onModeChange(mode === "settings" ? "chat" : "settings")
               }
               isActive={mode === "settings"}
-              tooltip="Settings"
+              tooltip={t("nav.settings")}
             >
               <Settings />
-              <span>Settings</span>
+              <span>{t("nav.settings")}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

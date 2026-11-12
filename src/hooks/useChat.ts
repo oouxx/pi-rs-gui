@@ -9,9 +9,17 @@ import {
   renameSession as apiRenameSession,
   type ComposerImage,
   type DesktopAppState,
+  type QueuedMessage,
+  type StreamingBehavior,
 } from "../api/commands";
 import { tauriListen } from "../api/events";
 import { EVENTS } from "../api/eventNames";
+import type { TextAttachment } from "../lib/attachments";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
 import type { AgentEventPayload, TranscriptPayload } from "../api/types";
 import {
   appendAssistantStep,
@@ -41,12 +49,54 @@ interface SessionItem {
 /** Keep in sync with the backend actor's turn timeout (`actor.rs`). */
 const TURN_TIMEOUT_MS = 300_000;
 
+/** Extract display text + tool-specific details from an `AgentToolResult`. */
+function toolResultPayload(result: unknown): {
+  text: string;
+  details?: unknown;
+} {
+  if (typeof result === "string") return { text: result };
+  if (result && typeof result === "object") {
+    const record = result as Record<string, unknown>;
+    const content = record.content;
+    let text = "";
+    if (Array.isArray(content)) {
+      text = content
+        .map((block) => {
+          if (!block || typeof block !== "object") return "";
+          const item = block as Record<string, unknown>;
+          return item.type === "text" ? String(item.text ?? "") : "";
+        })
+        .join("");
+    }
+    if (!text) text = JSON.stringify(result, null, 2);
+    return { text, details: record.details };
+  }
+  return { text: result == null ? "" : String(result) };
+}
+
+/** OS notification for a background run; best effort when permission is
+ *  missing, and suppressed while the window is focused. */
+async function notifyBackground(title: string, body: string) {
+  try {
+    if (document.hasFocus()) return;
+    let granted = await isPermissionGranted();
+    if (!granted) granted = (await requestPermission()) === "granted";
+    if (granted) sendNotification({ title, body });
+  } catch {
+    /* notifications are optional */
+  }
+}
+
 export function useChat() {
   const { toast } = useToast();
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
+  // Messages accepted while a turn is running (steer / follow-up). They are
+  // delivered by pi-rs and appear in the transcript when the run ends, so the
+  // UI only shows them as pending chips.
+  const [queued, setQueued] = useState<QueuedMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const activeSessionIdRef = useRef<string | null>(null);
   const streamingRef = useRef(false);
@@ -75,16 +125,23 @@ export function useChat() {
       const after = s.status;
       if (before === "running" && after !== "running" && after !== undefined) {
         if (s.id !== activeSessionIdRef.current) {
+          const title = after === "error" ? "Session failed" : "Session finished";
           toast({
-            title: after === "error" ? "Session failed" : "Session finished",
+            title,
             description: s.title || "Untitled",
             variant: after === "error" ? "error" : "default",
           });
+          void notifyBackground(title, s.title || "Untitled");
         }
       }
       prev[s.id] = after;
     }
   }, [sessions, toast]);
+
+  // Pending steer/follow-up messages are delivered by the time the run ends.
+  useEffect(() => {
+    if (!streaming && queued.length > 0) setQueued([]);
+  }, [streaming, queued.length]);
 
   /** Apply a `DesktopState` snapshot (from `get_state` or the change event). */
   const applyState = useCallback((state: DesktopAppState) => {
@@ -305,7 +362,7 @@ export function useChat() {
         } else if (et === "tool_execution_end") {
           // Finalize a tool call with result or error
           const { tool_call_id, result, is_error } = evt.data;
-          const resultStr = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+          const { text: resultStr, details } = toolResultPayload(result);
           setMessages((prev) => {
             if (prev.length === 0) return prev;
             const last = prev[prev.length - 1];
@@ -317,6 +374,7 @@ export function useChat() {
                   status: is_error ? ("error" as const) : ("success" as const),
                   result: resultStr,
                   isError: !!is_error,
+                  details,
                 };
               }
               return b;
@@ -454,20 +512,77 @@ export function useChat() {
   }, []);
 
   const sendMessage = useCallback(
-    async (text: string, attachments?: ComposerImage[]) => {
-      if ((!text.trim() && (!attachments || attachments.length === 0)) || streamingRef.current)
+    async (
+      text: string,
+      attachments?: ComposerImage[],
+      streamingBehavior?: StreamingBehavior,
+      files?: TextAttachment[],
+    ) => {
+      const attachedBlock =
+        files && files.length > 0
+          ? `<attached_files>\n${files
+              .map(
+                (file) =>
+                  `<file name="${file.name.replace(/"/g, "'")}">\n${file.content}\n</file>`,
+              )
+              .join("\n")}\n</attached_files>`
+          : "";
+      const payloadText = [text, attachedBlock].filter(Boolean).join("\n\n");
+      const hasContent =
+        !!text.trim() ||
+        (attachments != null && attachments.length > 0) ||
+        (files != null && files.length > 0);
+      if (!hasContent) return;
+      const wasStreaming = streamingRef.current;
+      if (wasStreaming && !streamingBehavior) return;
+
+      // Queue into the running turn. No optimistic user bubble: streaming
+      // deltas only ever target the last assistant message, so a user message
+      // at the tail would swallow them. The pending chip clears when the run
+      // ends and the real message arrives via the transcript event.
+      if (wasStreaming && streamingBehavior) {
+        setQueued((prev) => [
+          ...prev,
+          {
+            text:
+              text.trim() ||
+              files?.map((file) => file.name).join(", ") ||
+              "(attachment)",
+            mode: streamingBehavior,
+          },
+        ]);
+        try {
+          await submitComposer(payloadText, attachments, streamingBehavior);
+        } catch (e) {
+          setQueued((prev) => prev.slice(0, -1));
+          toast({
+            variant: "error",
+            title: "Could not queue message",
+            description: e instanceof Error ? e.message : String(e),
+          });
+        }
         return;
+      }
 
       // Auto-title: rename "New thread" sessions based on the first message
       const currentSid = activeSessionIdRef.current;
       const currentSession = currentSid ? sessions.find((s) => s.id === currentSid) : null;
-      if (currentSession && currentSession.title === "New thread" && text.trim()) {
-        const autoTitle = text.trim().slice(0, 60);
+      if (
+        currentSession &&
+        currentSession.title === "New thread" &&
+        (text.trim() || files?.length)
+      ) {
+        const autoTitle = (text.trim() || files?.[0]?.name || "Attachment").slice(
+          0,
+          60,
+        );
         apiRenameSession(currentSession.id, autoTitle).catch(() => {});
       }
 
-      // Optimistically add user message (text + attachment thumbnails)
-      const blocks: ContentBlock[] = [{ type: "text", text }];
+      // Optimistically add user message (text + attachment thumbnails).
+      // `payloadText` includes the <attached_files> marker so MessageItem can
+      // render compact file chips instead of the inlined content.
+      const blocks: ContentBlock[] = [{ type: "text", text: payloadText }];
       if (attachments && attachments.length > 0) {
         for (const a of attachments) {
           blocks.push({
@@ -481,7 +596,7 @@ export function useChat() {
       const userMsg: DisplayMessage = {
         id: `msg-opt-${Date.now()}`,
         role: "user",
-        content: text,
+        content: payloadText,
         blocks,
         createdAt: new Date().toISOString(),
       };
@@ -489,7 +604,7 @@ export function useChat() {
       setStreaming(true);
       streamingRef.current = true;
       try {
-        await submitComposer(text, attachments);
+        await submitComposer(payloadText, attachments);
         // Safety net matching the backend's turn timeout. The transcript event
         // normally clears streaming when the turn ends.
         setTimeout(() => {
@@ -527,5 +642,6 @@ export function useChat() {
     stop,
     streaming,
     loading,
+    queued,
   };
 }

@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { useToast } from "@/components/ui/toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Key, CheckCircle, XCircle } from "lucide-react"
 import {
   getProviders, getModels, getModelSettings, listCustomProviders,
+  getScopedModels, setScopedModels,
   setProviderApiKey, setDefaultModel as apiSetDefaultModel,
   setDefaultThinkingLevel as apiSetDefaultThinkingLevel,
   type CustomProviderInfo,
@@ -14,6 +17,7 @@ import PickModel from "./PickModel"
 import type { ProviderInfo, ModelOption } from "./PickModel"
 
 export default function ModelsSettings() {
+  const { toast } = useToast()
   const [providers, setProviders] = useState<ProviderInfo[]>([])
   const [models, setModels] = useState<ModelOption[]>([])
   const [defaultProvider, setDefaultProvider] = useState("")
@@ -21,6 +25,8 @@ export default function ModelsSettings() {
   const [thinkingLevel, setThinkingLevel] = useState("medium")
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({})
   const [customProviders, setCustomProviders] = useState<CustomProviderInfo[]>([])
+  const [scoped, setScoped] = useState<string[]>([])
+  const [scopedSearch, setScopedSearch] = useState("")
   const [loading, setLoading] = useState(true)
 
   const refresh = useCallback(async () => {
@@ -43,6 +49,48 @@ export default function ModelsSettings() {
   }, [])
 
   useEffect(() => { refresh() }, [refresh])
+
+  useEffect(() => {
+    getScopedModels()
+      .then((result) => setScoped(result.patterns ?? []))
+      .catch(() => {})
+  }, [])
+
+  const toggleScoped = useCallback(
+    async (pattern: string) => {
+      const next = scoped.includes(pattern)
+        ? scoped.filter((item) => item !== pattern)
+        : [...scoped, pattern]
+      setScoped(next)
+      try {
+        const result = await setScopedModels(next)
+        setScoped(result.patterns ?? next)
+        if (result.applied === false && result.warning) {
+          toast({
+            title: "Scoped models saved",
+            description: result.warning,
+            variant: "error",
+          })
+        }
+      } catch (e) {
+        toast({
+          title: "Failed to save scoped models",
+          description: e instanceof Error ? e.message : String(e),
+          variant: "error",
+        })
+      }
+    },
+    [scoped, toast],
+  )
+
+  const scopedModels = useMemo(() => {
+    const query = scopedSearch.trim().toLowerCase()
+    return models.filter((model) => {
+      if (!query) return true
+      const pattern = `${model.providerId}/${model.modelId}`
+      return `${pattern} ${model.label}`.toLowerCase().includes(query)
+    })
+  }, [models, scopedSearch])
 
   const setApiKey = useCallback(async (providerId: string) => {
     const key = apiKeys[providerId]
@@ -115,6 +163,52 @@ export default function ModelsSettings() {
             <span className="font-medium text-foreground">{providerMap.get(defaultProvider)?.name ?? defaultProvider}</span>
           </p>
         )}
+      </section>
+
+      <Separator />
+
+      {/* Scoped models — Ctrl/Cmd+P cycling */}
+      <section>
+        <h3 className="mb-1 text-sm font-medium text-foreground">Scoped Models</h3>
+        <p className="text-muted-foreground mb-2 text-xs">
+          Ctrl/Cmd+P cycles through the selected models (Shift to cycle
+          backward). With none selected, all available models are cycled.
+        </p>
+        <Input
+          placeholder="Search models..."
+          value={scopedSearch}
+          onChange={(e) => setScopedSearch(e.target.value)}
+          className="h-8 max-w-sm text-xs"
+        />
+        <div className="border-hairline mt-2 max-h-56 overflow-y-auto rounded-lg border p-1.5">
+          {scopedModels.length === 0 ? (
+            <p className="text-muted-foreground p-2 text-xs">No matching models.</p>
+          ) : (
+            scopedModels.map((model) => {
+              const pattern = `${model.providerId}/${model.modelId}`
+              return (
+                <label
+                  key={pattern}
+                  className="hover:bg-muted/40 flex cursor-pointer items-center gap-2 rounded px-1.5 py-1"
+                >
+                  <Checkbox
+                    checked={scoped.includes(pattern)}
+                    onCheckedChange={() => toggleScoped(pattern)}
+                  />
+                  <span className="text-xs">{model.label}</span>
+                  <span className="text-muted-foreground ml-auto font-mono text-[11px]">
+                    {pattern}
+                  </span>
+                </label>
+              )
+            })
+          )}
+        </div>
+        <p className="text-muted-foreground mt-1 text-[11px]">
+          {scoped.length === 0
+            ? "No scoped models — cycling falls back to all available models."
+            : `${scoped.length} selected`}
+        </p>
       </section>
 
       <Separator />

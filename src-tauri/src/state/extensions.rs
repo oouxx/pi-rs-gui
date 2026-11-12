@@ -13,9 +13,12 @@
 use std::collections::BTreeMap;
 #[cfg(test)]
 use std::collections::HashMap;
+use std::collections::HashMap as Map;
 
 use pi_coding_agent::config;
-use pi_coding_agent::core::extensions::{builtin_extension_registry, ExtensionRegistry};
+use pi_coding_agent::core::extensions::{
+    builtin_extension_registry, ExtensionRegistry, BUILTIN_EXTENSION_IDS,
+};
 use pi_coding_agent::core::settings_manager::SettingsManager;
 use serde_json::{json, Value};
 
@@ -23,23 +26,6 @@ use serde_json::{json, Value};
 #[cfg(test)]
 fn registry_for(enabled: &HashMap<String, bool>) -> ExtensionRegistry {
     builtin_extension_registry(true, enabled, &Default::default()).unwrap_or_default()
-}
-
-/// Build the registry sessions get, honoring the same settings pi-rs uses
-/// (`extensionsEnabled` + `webSearch`). Sessions themselves pass `None` and
-/// let pi-rs construct it; this mirror is for the Extensions view.
-pub fn build_default_registry() -> ExtensionRegistry {
-    let agent_dir = config::get_agent_dir();
-    let mgr = SettingsManager::create(
-        agent_dir.to_string_lossy().as_ref(),
-        Some(agent_dir.to_string_lossy().as_ref()),
-    );
-    builtin_extension_registry(
-        true,
-        &mgr.get_extensions_enabled(),
-        &mgr.get_web_search_config(),
-    )
-    .unwrap_or_default()
 }
 
 /// Derive the extension name from a stamped `<builtin:name>` source path.
@@ -52,8 +38,52 @@ fn extension_name(source_path: &str) -> String {
 
 /// Summarize the registered extensions for the frontend: one entry per
 /// extension, with the tools and slash commands it contributes.
+///
+/// Built-ins are opt-in, but the view lists **all** of them with an
+/// `enabled` flag so the user can turn them on/off. The registry is built
+/// with every id enabled to discover each extension's tools/commands.
 pub fn list_extensions() -> Vec<Value> {
-    summarize(&build_default_registry())
+    let agent_dir = config::get_agent_dir();
+    let mgr = SettingsManager::create(
+        agent_dir.to_string_lossy().as_ref(),
+        Some(agent_dir.to_string_lossy().as_ref()),
+    );
+    let enabled = mgr.get_extensions_enabled();
+    let all_enabled: Map<String, bool> = BUILTIN_EXTENSION_IDS
+        .iter()
+        .map(|id| ((*id).to_string(), true))
+        .collect();
+    let registry = builtin_extension_registry(
+        true,
+        &all_enabled,
+        &mgr.get_web_search_config(),
+    )
+    .unwrap_or_default();
+
+    let mut items = summarize(&registry);
+    for item in &mut items {
+        let name = item["name"].as_str().unwrap_or("");
+        item["enabled"] = json!(enabled.get(name).copied().unwrap_or(false));
+    }
+    items
+}
+
+/// Toggle one built-in extension. Persists `extensionsEnabled` through the
+/// same `SettingsManager` the agent reads; sessions pick it up on the next
+/// actor restart.
+pub fn set_extension_enabled(name: &str, enabled: bool) -> Result<(), String> {
+    if !BUILTIN_EXTENSION_IDS.contains(&name) {
+        return Err(format!("unknown built-in extension '{name}'"));
+    }
+    let agent_dir = config::get_agent_dir();
+    let mut mgr = SettingsManager::create(
+        agent_dir.to_string_lossy().as_ref(),
+        Some(agent_dir.to_string_lossy().as_ref()),
+    );
+    let mut map = mgr.get_extensions_enabled();
+    map.insert(name.to_string(), enabled);
+    mgr.set_global("extensionsEnabled", json!(map));
+    Ok(())
 }
 
 /// One entry per registered extension, with the tools and slash commands it

@@ -14,24 +14,45 @@ A Tauri v2 + React 19 desktop GUI for [pi-rs](https://github.com/oouxx/pi-rs) �
 
 ## Features
 
-- **Chat** — streaming assistant messages, thinking blocks, tool-call cards,
-  Stop button, in-chat search (Cmd/Ctrl+F), copy message/code, draft persistence
+- **Chat** — streaming assistant messages, thinking blocks, tool-call cards
+  with **inline edit diffs** and **open-file-in-editor**, Stop button,
+  **send while a turn is running** (Enter = steer, Alt+Enter = follow-up),
+  context-usage indicator, per-session thinking level, in-chat search
+  (Cmd/Ctrl+F), copy message/code, draft persistence
 - **Composer** — `/` real pi-rs slash commands (grouped, with argument
   completion for `/model` & `/login`), `@` workspace file completion aligned
   with the TS original autocomplete (fuzzy scoring, path scoping, quotes,
-  `~` expansion, directory continuation, Tab trigger)
-- **Sessions** — sidebar with search / rename / copy ID / delete / export
-  (HTML + JSONL) / working-directory picker / relative timestamps; session
-  info panel; Timeline panel for fork-tree navigation
+  `~` expansion, directory continuation, Tab trigger), image attachments and
+  inlined **text/code file attachments** (paste or drop)
+- **Sessions** — sidebar with title + **full-text message search** / rename /
+  copy ID / archive / delete / export (HTML + JSONL) / working-directory
+  picker / relative timestamps; session info panel; Timeline panel for
+  fork-tree navigation
+- **MCP** — Settings → MCP manages `mcp.json` servers (global/project),
+  enable/disable, exposure, add/edit/delete, live status + tools,
+  resource/template browsing and reading, reconnect, OAuth sign-in, and
+  server logs
 - **Model picker** — searchable provider/model selector in the chat header
-  (switches the session model and persists the default)
-- **Skills / Extensions** — real data from pi-rs (skill discovery, configured
-  paths, registered Rust static extensions)
-- **Settings** — General / Models / Skills / Extensions / Keybindings / About
-  (all backed by pi-rs `SettingsManager` where applicable)
+  (switches the session model and persists the default), thinking-level
+  selector driven by the model's supported levels, and **scoped models**
+  (Ctrl/Cmd+P cycling, Shift = backward)
+- **Skills / Extensions** — real data from pi-rs; built-in Rust extensions
+  (subagent, web_search) can be enabled/disabled from the Extensions view.
+  Skills has a **Prompts** tab listing file-based `/prompt` templates with
+  open-in-editor; skill files can be opened directly in the external editor
+- **Settings** — General / Models / MCP / Skills / Extensions / Keybindings /
+  About. General covers compaction budgets, steering/follow-up modes,
+  transport, cache warming, project-trust default, external editor, shell
+  prefix, and skill/prompt resource paths — all backed by pi-rs
+  `SettingsManager`. Keybindings are customizable (record a new Cmd/Ctrl
+  combination, conflict-checked, persisted)
+- **Appearance** — system / light / dark themes (sidebar toggle or Settings)
+- **Internationalization** — English and 简体中文 dictionaries with system
+  detection; language is selectable in Settings → General
 - **Terminal** — embedded xterm.js shell (spawns `$SHELL` in the session cwd)
+- **Notifications** — OS notification when a background session finishes
 - **Global shortcuts** — Cmd/Ctrl+N new thread, Cmd/Ctrl+K focus composer,
-  Cmd/Ctrl+, settings, Cmd/Ctrl+F find in chat
+  Cmd/Ctrl+P cycle scoped models, Cmd/Ctrl+, settings, Cmd/Ctrl+F find in chat
 
 ## Architecture
 

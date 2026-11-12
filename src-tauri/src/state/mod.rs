@@ -6,6 +6,7 @@ pub(crate) mod export;
 pub(crate) mod extensions;
 pub(crate) mod files;
 pub(crate) mod lifecycle;
+pub(crate) mod mcp;
 pub(crate) mod model;
 pub(crate) mod providers;
 pub(crate) mod runtime;

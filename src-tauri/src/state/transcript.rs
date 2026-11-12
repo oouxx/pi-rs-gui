@@ -197,13 +197,14 @@ pub fn serialize_session_event(event: &AgentSessionEvent) -> (String, serde_json
 /// both after a turn completes and on session reload.
 pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value> {
     // First pass: collect tool results keyed by tool_call_id.
-    let mut tool_results: std::collections::HashMap<String, (String, bool)> =
+    let mut tool_results: std::collections::HashMap<String, (String, bool, serde_json::Value)> =
         std::collections::HashMap::new();
     for msg in msgs {
         if let AgentMessage::ToolResult {
             tool_call_id,
             content,
             is_error,
+            details,
             ..
         } = msg
         {
@@ -217,7 +218,7 @@ pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value>
                     }
                 })
                 .collect();
-            tool_results.insert(tool_call_id.clone(), (text, *is_error));
+            tool_results.insert(tool_call_id.clone(), (text, *is_error, details.clone()));
         }
     }
 
@@ -245,10 +246,12 @@ pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value>
             for b in arr.iter_mut() {
                 if b.get("type").and_then(|t| t.as_str()) == Some("toolCall") {
                     if let Some(id) = b.get("id").and_then(|i| i.as_str()) {
-                        if let Some((result, is_error)) = tool_results.get(id) {
+                        if let Some((result, is_error, details)) = tool_results.get(id) {
                             b["status"] = json!(if *is_error { "error" } else { "success" });
                             b["result"] = json!(result);
                             b["isError"] = json!(is_error);
+                            // Tool-specific payload (edit diff/patch, …).
+                            b["details"] = details.clone();
                         }
                     }
                 }

@@ -1,4 +1,4 @@
-//! State persistence — stores only the active session ID.
+//! State persistence — active session ID + scoped-model patterns.
 
 use std::path::PathBuf;
 use serde_json::{json, Value};
@@ -12,11 +12,13 @@ fn get_state_path() -> Option<PathBuf> {
     Some(dir.join("ui-state.json"))
 }
 
-/// Persist only the active session ID.
+/// Persist the active session ID and the scoped-model patterns used for
+/// Ctrl/Cmd+P cycling (pi-rs has no settings key for the latter).
 pub fn persist_state(state: &DesktopState) {
     if let Some(path) = get_state_path() {
         let slim = json!({
             "selectedSessionId": state.selected_session_id,
+            "enabledModelPatterns": state.global_model_settings.enabled_model_patterns,
         });
         if let Ok(json) = serde_json::to_string_pretty(&slim) {
             let _ = std::fs::write(&path, &json);
@@ -33,6 +35,12 @@ pub fn restore_state() -> DesktopState {
     if let Some(p) = persisted {
         if let Some(sid) = p["selectedSessionId"].as_str().filter(|x| !x.is_empty()) {
             state.selected_session_id = sid.to_string();
+        }
+        if let Some(patterns) = p["enabledModelPatterns"].as_array() {
+            state.global_model_settings.enabled_model_patterns = patterns
+                .iter()
+                .filter_map(|value| value.as_str().map(str::to_string))
+                .collect();
         }
     }
     state

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -12,7 +12,9 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  ExternalLink,
 } from "lucide-react";
+import { getActiveSessionCwd, openFile } from "@/api/commands";
 
 interface ToolCallCardProps {
   name: string;
@@ -20,6 +22,8 @@ interface ToolCallCardProps {
   status?: "running" | "success" | "error";
   result?: string;
   isError?: boolean;
+  /** ToolResult details (edit: diff/patch/firstChangedLine). */
+  details?: unknown;
 }
 
 // ── Per-tool metadata (icon + human label), matching Codex CLI ──
@@ -115,12 +119,111 @@ function formatElapsed(ms: number): string {
   return `${m}m ${String(s).padStart(2, "0")}s`;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  let parsed = value;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return null;
+    }
+  }
+  return parsed && typeof parsed === "object"
+    ? (parsed as Record<string, unknown>)
+    : null;
+}
+
+/**
+ * Render pi-rs's display-oriented diff (`details.diff`):
+ * `" 12 context"`, `"-12 removed"`, `"+12 added"`.
+ */
+function DiffView({
+  text,
+  truncated,
+}: {
+  text: string;
+  truncated?: boolean;
+}) {
+  const lines = text.split("\n").slice(0, 600);
+  return (
+    <div className="border-codex-border bg-codex-inset mt-1 overflow-hidden rounded-lg border">
+      <div className="max-h-80 overflow-auto font-mono text-[12px] leading-relaxed">
+        {lines.map((line, index) => {
+          const marker = line[0];
+          const kind =
+            marker === "+" ? "add" : marker === "-" ? "del" : "ctx";
+          const match = line.slice(1).match(/^(\s*\d+)\s(.*)$/s);
+          const number = match?.[1]?.trim() ?? "";
+          const content = match ? match[2] : line.slice(1);
+          const tone =
+            kind === "add"
+              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              : kind === "del"
+                ? "bg-red-500/10 text-red-700 dark:text-red-300"
+                : "text-codex-dim";
+          return (
+            <div key={index} className={`flex ${tone}`}>
+              <span className="w-10 shrink-0 pr-2 text-right opacity-50 select-none">
+                {number}
+              </span>
+              <span className="w-4 shrink-0 select-none">
+                {kind === "add" ? "+" : kind === "del" ? "-" : " "}
+              </span>
+              <span className="min-w-0 flex-1 pr-3 break-all whitespace-pre-wrap">
+                {content}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      {truncated && (
+        <div className="text-codex-faint border-codex-border border-t px-3 py-1 text-[11px]">
+          … truncated
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Build the diff shown for edit/write tool calls. */
+function diffFor(
+  name: string,
+  args: unknown,
+  details: unknown,
+): { text: string; truncated: boolean } {
+  const detailsRecord = asRecord(details);
+  if (name === "edit" || name === "edit_diff") {
+    const diff = detailsRecord?.diff;
+    return {
+      text: typeof diff === "string" ? diff : "",
+      truncated: false,
+    };
+  }
+  if (name === "write") {
+    const argsRecord = asRecord(args);
+    const content =
+      typeof argsRecord?.content === "string" ? argsRecord.content : "";
+    if (!content) return { text: "", truncated: false };
+    const lines = content.split("\n");
+    const shown = lines.slice(0, 400);
+    const width = String(shown.length).length;
+    return {
+      text: shown
+        .map((line, index) => `+${String(index + 1).padStart(width)} ${line}`)
+        .join("\n"),
+      truncated: lines.length > shown.length,
+    };
+  }
+  return { text: "", truncated: false };
+}
+
 export default function ToolCallCard({
   name,
   args,
   status,
   result,
   isError,
+  details,
 }: ToolCallCardProps) {
   const [showDetails, setShowDetails] = useState(false);
   // Elapsed timer — the TS original's TUI re-renders every second while a
@@ -162,6 +265,28 @@ export default function ToolCallCard({
       ? result.slice(0, 240) + "…"
       : result
     : "";
+  const diff = diffFor(name, args, details);
+  const argsRecord = asRecord(args);
+  const filePath =
+    typeof argsRecord?.path === "string"
+      ? argsRecord.path
+      : typeof argsRecord?.file_path === "string"
+        ? argsRecord.file_path
+        : "";
+
+  const handleOpenFile = useCallback(
+    async (event: React.MouseEvent) => {
+      event.stopPropagation();
+      if (!filePath) return;
+      try {
+        const cwd = await getActiveSessionCwd();
+        await openFile(filePath, cwd);
+      } catch (error) {
+        console.error("[openFile]", error);
+      }
+    },
+    [filePath],
+  );
 
   return (
     <div className="my-2">
@@ -169,6 +294,16 @@ export default function ToolCallCard({
       <div className="flex items-center gap-2 text-sm">
         <span className={`shrink-0 ${st.color}`}>{meta.icon}</span>
         <span className="text-codex-dim font-medium">{name}</span>
+        {filePath && (
+          <button
+            type="button"
+            onClick={handleOpenFile}
+            className="text-codex-faint hover:text-codex-dim shrink-0"
+            title="Open in editor"
+          >
+            <ExternalLink className="size-3" />
+          </button>
+        )}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <span className={st.color}>{st.icon}</span>
           <span className="text-codex-faint text-xs">{st.label}</span>
@@ -245,16 +380,21 @@ export default function ToolCallCard({
               {summary}
             </div>
           )}
-          {resultPreview && !showDetails && (
-            <div
-              className={`mt-0.5 truncate text-xs ${
-                effError ? "text-codex-red" : "text-codex-faint"
-              }`}
-              title={result}
-            >
-              {effError ? "✗ " : ""}
-              {resultPreview}
-            </div>
+          {diff.text ? (
+            <DiffView text={diff.text} truncated={diff.truncated} />
+          ) : (
+            resultPreview &&
+            !showDetails && (
+              <div
+                className={`mt-0.5 truncate text-xs ${
+                  effError ? "text-codex-red" : "text-codex-faint"
+                }`}
+                title={result}
+              >
+                {effError ? "✗ " : ""}
+                {resultPreview}
+              </div>
+            )
           )}
           {(argsStr || result) && (
             <button

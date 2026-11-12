@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Send, Folder, X, Paperclip, Square } from "lucide-react";
+import { Send, Folder, X, Paperclip, Square, FileText } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,8 +19,12 @@ import {
   listSlashCommands,
   type ComposerImage,
   type FileCompletion,
+  type QueuedMessage,
+  type StreamingBehavior,
 } from "@/api/commands";
 import type { ModelOption, ProviderInfo, SlashCommandInfo } from "@/api/types";
+import { matchesBinding, useKeybindings } from "@/lib/keybindings";
+import { useI18n } from "@/i18n";
 import {
   extractAtPrefix,
   extractCompletionToken,
@@ -31,7 +35,12 @@ import {
 import {
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_BYTES,
+  MAX_TEXT_ATTACHMENTS,
+  MAX_TEXT_ATTACHMENT_BYTES,
   fileToComposerImage,
+  fileToTextAttachment,
+  isTextFile,
+  type TextAttachment,
 } from "@/lib/attachments";
 
 interface ComposerProps {
@@ -39,7 +48,13 @@ interface ComposerProps {
   cwd: string | null;
   loading: boolean;
   streaming: boolean;
-  onSend: (text: string, images?: ComposerImage[]) => void | Promise<void>;
+  queued: QueuedMessage[];
+  onSend: (
+    text: string,
+    images?: ComposerImage[],
+    streamingBehavior?: StreamingBehavior,
+    files?: TextAttachment[],
+  ) => void | Promise<void>;
   onStop: () => void;
   /** Returns true when a builtin slash command was handled locally. */
   onSlashCommand: (text: string) => Promise<boolean>;
@@ -55,14 +70,18 @@ export default function Composer({
   cwd,
   loading,
   streaming,
+  queued,
   onSend,
   onStop,
   onSlashCommand,
 }: ComposerProps) {
   const { toast } = useToast();
+  const { bindings } = useKeybindings();
+  const { t } = useI18n();
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<ComposerImage[]>([]);
   const [attachmentNames, setAttachmentNames] = useState<string[]>([]);
+  const [textAttachments, setTextAttachments] = useState<TextAttachment[]>([]);
   const [showSlash, setShowSlash] = useState(false);
   const [showMention, setShowMention] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -156,10 +175,10 @@ export default function Composer({
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, [showSlash]);
 
-  // Cmd/Ctrl+K focuses the composer.
+  // Cmd/Ctrl+K focuses the composer (customizable).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if (matchesBinding(e, bindings.focusComposer)) {
         e.preventDefault();
         const ta = textareaRef.current;
         if (ta) {
@@ -171,7 +190,7 @@ export default function Composer({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [bindings.focusComposer]);
 
   // @ mention / Tab file completion — live workspace lookup (debounced)
   useEffect(() => {
@@ -194,40 +213,91 @@ export default function Composer({
     async (files: FileList | File[]) => {
       const all = Array.from(files);
       const images = all.filter((f) => f.type.startsWith("image/"));
-      if (all.length > 0 && images.length === 0) {
-        toast({ variant: "error", title: "Only images can be attached" });
-        return;
+      const textFiles = all.filter(
+        (f) => !f.type.startsWith("image/") && isTextFile(f),
+      );
+      if (images.length + textFiles.length < all.length) {
+        toast({
+          variant: "error",
+          title: "Unsupported file",
+          description: "Only images and text/code files can be attached",
+        });
       }
-      const room = MAX_ATTACHMENTS - attachments.length;
-      if (images.length > room) {
+
+      const imageRoom = MAX_ATTACHMENTS - attachments.length;
+      const pickedImages = images.slice(0, Math.max(0, imageRoom));
+      if (images.length > imageRoom) {
         toast({
           variant: "error",
           title: "Too many attachments",
           description: `At most ${MAX_ATTACHMENTS} images can be attached`,
         });
       }
-      const picked = images.slice(0, Math.max(0, room));
-      const tooBig = picked.filter((f) => f.size > MAX_ATTACHMENT_BYTES);
-      if (tooBig.length > 0) {
+      const tooBigImages = pickedImages.filter(
+        (f) => f.size > MAX_ATTACHMENT_BYTES,
+      );
+      if (tooBigImages.length > 0) {
         toast({
           variant: "error",
           title: "File too large",
           description: "Images must be smaller than 10 MB",
         });
       }
-      const ok = picked.filter((f) => f.size <= MAX_ATTACHMENT_BYTES);
-      if (ok.length === 0) return;
+
+      const textRoom = MAX_TEXT_ATTACHMENTS - textAttachments.length;
+      const pickedText = textFiles.slice(0, Math.max(0, textRoom));
+      if (textFiles.length > textRoom) {
+        toast({
+          variant: "error",
+          title: "Too many files",
+          description: `At most ${MAX_TEXT_ATTACHMENTS} text files can be attached`,
+        });
+      }
+      const tooBigText = pickedText.filter(
+        (f) => f.size > MAX_TEXT_ATTACHMENT_BYTES,
+      );
+      if (tooBigText.length > 0) {
+        toast({
+          variant: "error",
+          title: "File too large",
+          description: "Text files must be smaller than 256 KB",
+        });
+      }
+
+      const okImages = pickedImages.filter(
+        (f) => f.size <= MAX_ATTACHMENT_BYTES,
+      );
+      const okText = pickedText.filter(
+        (f) => f.size <= MAX_TEXT_ATTACHMENT_BYTES,
+      );
+      if (okImages.length === 0 && okText.length === 0) return;
+
       try {
-        const converted = await Promise.all(ok.map(fileToComposerImage));
-        setAttachments((prev) => [...prev, ...converted].slice(0, MAX_ATTACHMENTS));
-        setAttachmentNames((prev) =>
-          [...prev, ...ok.map((f) => f.name)].slice(0, MAX_ATTACHMENTS),
-        );
+        const [convertedImages, convertedText] = await Promise.all([
+          Promise.all(okImages.map(fileToComposerImage)),
+          Promise.all(okText.map(fileToTextAttachment)),
+        ]);
+        if (convertedImages.length > 0) {
+          setAttachments((prev) =>
+            [...prev, ...convertedImages].slice(0, MAX_ATTACHMENTS),
+          );
+          setAttachmentNames((prev) =>
+            [...prev, ...okImages.map((f) => f.name)].slice(
+              0,
+              MAX_ATTACHMENTS,
+            ),
+          );
+        }
+        if (convertedText.length > 0) {
+          setTextAttachments((prev) =>
+            [...prev, ...convertedText].slice(0, MAX_TEXT_ATTACHMENTS),
+          );
+        }
       } catch {
-        toast({ variant: "error", title: "Failed to read image" });
+        toast({ variant: "error", title: "Failed to read attachment" });
       }
     },
-    [attachments.length, toast],
+    [attachments.length, textAttachments.length, toast],
   );
 
   const handleAttachClick = useCallback(() => {
@@ -374,26 +444,53 @@ export default function Composer({
     prevInputRef.current = "";
     setAttachments([]);
     setAttachmentNames([]);
+    setTextAttachments([]);
     saveDraft(sessionId, "");
   }, [sessionId, saveDraft]);
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim();
-    if ((!text && attachments.length === 0) || streaming) return;
-    if (text.startsWith("/") && (await onSlashCommand(text))) {
+  const handleSend = useCallback(
+    async (followUp = false) => {
+      const text = input.trim();
+      if (!text && attachments.length === 0 && textAttachments.length === 0)
+        return;
+      if (text.startsWith("/") && (await onSlashCommand(text))) {
+        clearComposer();
+        return;
+      }
+      const imgs = attachments;
+      const files = textAttachments;
+      // While a turn runs: Enter steers (delivered at the next boundary),
+      // Alt+Enter queues a follow-up (delivered after the run), matching the
+      // TUI's Enter / Alt+Enter behavior.
+      const behavior: StreamingBehavior | undefined = streaming
+        ? followUp
+          ? "followUp"
+          : "steer"
+        : undefined;
       clearComposer();
-      return;
-    }
-    const imgs = attachments;
-    clearComposer();
-    await onSend(text, imgs.length > 0 ? imgs : undefined);
-  }, [input, attachments, streaming, onSend, onSlashCommand, clearComposer]);
+      await onSend(
+        text,
+        imgs.length > 0 ? imgs : undefined,
+        behavior,
+        files.length > 0 ? files : undefined,
+      );
+    },
+    [
+      input,
+      attachments,
+      textAttachments,
+      streaming,
+      onSend,
+      onSlashCommand,
+      clearComposer,
+    ],
+  );
 
   const onInputKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        handleSend();
+        handleSend(e.altKey);
         return;
       }
       if (e.key === "Escape") {
@@ -648,6 +745,53 @@ export default function Composer({
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleDrop}
         >
+          {/* Queued steer / follow-up messages */}
+          {queued.length > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              {queued.map((q, idx) => (
+                <span
+                  key={`${q.mode}-${idx}`}
+                  className="border-codex-border bg-codex-inset text-codex-dim inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                  title={q.text}
+                >
+                  <span className="text-codex-faint">
+                    {q.mode === "steer"
+                      ? t("composer.steer")
+                      : t("composer.queued")}
+                  </span>
+                  <span className="max-w-[240px] truncate">{q.text}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          {/* Text/code attachment chips */}
+          {textAttachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              {textAttachments.map((file, idx) => (
+                <div
+                  key={`${file.name}-${idx}`}
+                  className="border-codex-border bg-codex-inset text-codex-dim flex max-w-[240px] items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px]"
+                >
+                  <FileText className="text-codex-faint size-3 shrink-0" />
+                  <span className="truncate" title={file.name}>
+                    {file.name}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-codex-faint hover:text-codex-dim shrink-0"
+                    onClick={() =>
+                      setTextAttachments((prev) =>
+                        prev.filter((_, index) => index !== idx),
+                      )
+                    }
+                    title="Remove file"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           {/* Attachment preview chips */}
           {attachments.length > 0 && (
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -680,7 +824,7 @@ export default function Composer({
             onChange={onInputChange}
             onKeyDown={onInputKeyDown}
             onPaste={handlePaste}
-            placeholder="Ask anything...  (/ for commands, @ to reference files, paste or drop images)"
+            placeholder={t("composer.placeholder")}
             disabled={loading}
             className="border-codex-border focus:border-codex-border-strong bg-codex-bg text-codex-text placeholder:text-codex-faint max-h-[120px] min-h-[44px] resize-none rounded-xl border pl-10 pr-14 text-[15px] shadow-sm"
             rows={1}
@@ -688,7 +832,7 @@ export default function Composer({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,text/*,.md,.json,.ts,.tsx,.js,.jsx,.py,.rs,.go,.toml,.yaml,.yml,.sh,.css,.html,.csv,.sql,.xml"
             multiple
             className="hidden"
             onChange={handleFileChange}
@@ -698,27 +842,45 @@ export default function Composer({
             variant="ghost"
             className="text-codex-faint hover:text-codex-dim absolute bottom-1.5 left-1.5 size-8"
             onClick={handleAttachClick}
-            disabled={loading || streaming}
-            title="Attach image"
+            disabled={loading}
+            title={t("composer.attach")}
           >
             <Paperclip className="size-4" />
           </Button>
           {streaming ? (
-            <Button
-              size="icon"
-              variant="secondary"
-              className="bg-codex-panel-2 text-codex-dim absolute right-1.5 bottom-1.5 size-8 hover:bg-codex-panel-3"
-              onClick={onStop}
-              title="Stop generating"
-            >
-              <Square className="size-3.5 fill-current" />
-            </Button>
+            <>
+              {(input.trim() ||
+                attachments.length > 0 ||
+                textAttachments.length > 0) && (
+                <Button
+                  size="icon"
+                  className="bg-codex-text text-codex-bg absolute right-11 bottom-1.5 size-8 hover:opacity-90"
+                  onClick={() => handleSend()}
+                  title="Send as steering message"
+                >
+                  <Send className="size-4" />
+                </Button>
+              )}
+              <Button
+                size="icon"
+                variant="secondary"
+                className="bg-codex-panel-2 text-codex-dim absolute right-1.5 bottom-1.5 size-8 hover:bg-codex-panel-3"
+                onClick={onStop}
+                title="Stop generating"
+              >
+                <Square className="size-3.5 fill-current" />
+              </Button>
+            </>
           ) : (
             <Button
               size="icon"
-              className="bg-black text-white absolute right-1.5 bottom-1.5 size-8 hover:bg-neutral-800"
-              onClick={handleSend}
-              disabled={!input.trim() && attachments.length === 0}
+              className="bg-codex-text text-codex-bg absolute right-1.5 bottom-1.5 size-8 hover:opacity-90"
+              onClick={() => handleSend()}
+              disabled={
+                !input.trim() &&
+                attachments.length === 0 &&
+                textAttachments.length === 0
+              }
               title="Send"
             >
               <Send className="size-4" />
@@ -728,10 +890,20 @@ export default function Composer({
         {/* Status line — Codex desktop composer footer */}
         <div className="mt-2 flex items-center justify-end gap-2">
           <span className="text-codex-faint hidden items-center gap-2 text-[11px] md:flex">
-            {streaming ? <span className="animate-pulse">running…</span> : null}
-            <span>Enter to send</span>
-            <span>·</span>
-            <span>Shift+Enter newline</span>
+            {streaming ? (
+              <>
+                <span className="animate-pulse">{t("composer.running")}</span>
+                <span>{t("composer.enterSteers")}</span>
+                <span>·</span>
+                <span>{t("composer.altEnterQueues")}</span>
+              </>
+            ) : (
+              <>
+                <span>{t("composer.enterSend")}</span>
+                <span>·</span>
+                <span>{t("composer.shiftEnter")}</span>
+              </>
+            )}
           </span>
         </div>
       </div>

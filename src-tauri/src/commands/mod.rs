@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use pi_agent_core::pi_ai_types::ContentBlock;
 use crate::state::*;
-use crate::state::{model, providers, session, settings};
+use crate::state::{mcp, model, providers, session, settings};
 use crate::state::actor::SessionCommand;
 use serde_json::json;
 use tauri::{AppHandle, State};
@@ -137,7 +137,15 @@ pub async fn submit_composer(
     text: String,
     options: Option<serde_json::Value>,
 ) -> Result<DesktopState, String> {
-    // options: { images: [{ data: <raw base64>, mimeType: "image/png" }] }
+    // options: {
+    //   images: [{ data: <raw base64>, mimeType: "image/png" }],
+    //   streamingBehavior: "steer" | "followUp"
+    // }
+    let streaming_behavior = options
+        .as_ref()
+        .and_then(|o| o.get("streamingBehavior"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     let images: Option<Vec<ContentBlock>> = options
         .and_then(|o| o.get("images").and_then(|v| v.as_array()).cloned())
         .map(|arr| {
@@ -162,7 +170,7 @@ pub async fn submit_composer(
         })
         .filter(|v: &Vec<ContentBlock>| !v.is_empty());
     store
-        .send_message(&app, &text, images)
+        .send_message(&app, &text, images, streaming_behavior)
         .await
         .map_err(|e| e.to_string())?;
     Ok(store.state.lock().await.clone())
@@ -670,6 +678,22 @@ pub async fn get_session_model(
     Ok(store.get_session_model().await)
 }
 
+#[tauri::command]
+pub async fn set_session_thinking_level(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    level: String,
+) -> Result<serde_json::Value, String> {
+    store.set_session_thinking_level(&app, &level).await
+}
+
+#[tauri::command]
+pub async fn get_session_usage(
+    store: State<'_, Arc<Store>>,
+) -> Result<Option<serde_json::Value>, String> {
+    Ok(store.get_session_usage().await)
+}
+
 // ── Session info ──
 
 #[tauri::command]
@@ -738,4 +762,260 @@ pub async fn set_project_trust(
 ) -> Result<serde_json::Value, String> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
     Ok(crate::state::trust::set_project_trust(&cwd, decision))
+}
+
+// ── MCP servers ──
+
+/// List configured MCP servers with live connection state from the selected
+/// session. `cwd` scopes the project `mcp.json` lookup.
+#[tauri::command]
+pub async fn list_mcp_servers(
+    store: State<'_, Arc<Store>>,
+    cwd: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
+    let runtime = store.mcp_snapshot().await;
+    Ok(mcp::list_servers(&cwd, &runtime))
+}
+
+/// Add or replace an MCP server, then restart the selected session so pi-rs
+/// reloads its connections. A running turn blocks the restart; the config is
+/// still saved and the returned `warning` says so.
+#[tauri::command]
+pub async fn save_mcp_server(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    name: String,
+    config: serde_json::Value,
+    scope: Option<String>,
+    cwd: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
+    mcp::save_server(&name, &config, scope.as_deref().unwrap_or("global"), &cwd)?;
+    apply_mcp_change(&app, &store, &cwd).await
+}
+
+#[tauri::command]
+pub async fn delete_mcp_server(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    name: String,
+    cwd: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
+    mcp::delete_server(&name, &cwd)?;
+    apply_mcp_change(&app, &store, &cwd).await
+}
+
+#[tauri::command]
+pub async fn update_mcp_server(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    name: String,
+    enabled: Option<bool>,
+    exposure: Option<String>,
+    cwd: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
+    mcp::update_server(&name, enabled, exposure.as_deref(), &cwd)?;
+    apply_mcp_change(&app, &store, &cwd).await
+}
+
+/// Reconnect one server in the live session (no config change).
+#[tauri::command]
+pub async fn reconnect_mcp_server(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    name: String,
+) -> Result<(), String> {
+    store.ensure_selected_actor(&app).await?;
+    store.reconnect_mcp(&name).await
+}
+
+/// Run the pi-rs OAuth sign-in flow, then reconnect the live connection.
+#[tauri::command]
+pub async fn sign_in_mcp_server(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    name: String,
+    cwd: Option<String>,
+) -> Result<(), String> {
+    let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
+    mcp::sign_in(&name, &cwd).await?;
+    store.ensure_selected_actor(&app).await.ok();
+    // Best effort: the session may not have an actor/connection yet.
+    let _ = store.reconnect_mcp(&name).await;
+    Ok(())
+}
+
+/// Tail of `mcp.log` for one server.
+#[tauri::command]
+pub async fn get_mcp_log(name: String, limit: Option<usize>) -> Result<String, String> {
+    Ok(mcp::read_log(&name, limit.unwrap_or(200)))
+}
+
+/// Restart the selected actor (best effort) and return the refreshed list.
+async fn apply_mcp_change(
+    app: &AppHandle,
+    store: &State<'_, Arc<Store>>,
+    cwd: &str,
+) -> Result<serde_json::Value, String> {
+    let restart = store.restart_selected_actor(app).await;
+    let runtime = store.mcp_snapshot().await;
+    let mut payload = mcp::list_servers(cwd, &runtime);
+    payload["applied"] = serde_json::json!(restart.is_ok());
+    if let Err(error) = restart {
+        payload["warning"] = serde_json::json!(error);
+    }
+    Ok(payload)
+}
+
+// ── Scoped models (Ctrl/Cmd+P cycling) ──
+
+/// `provider/modelId` patterns persisted in `ui-state.json`.
+#[tauri::command]
+pub async fn get_scoped_models(
+    store: State<'_, Arc<Store>>,
+) -> Result<serde_json::Value, String> {
+    let state = store.state.lock().await;
+    Ok(serde_json::json!({
+        "patterns": state.global_model_settings.enabled_model_patterns,
+    }))
+}
+
+/// Persist the scoped-model patterns and restart the selected actor so the
+/// new list is picked up. A running turn blocks the restart (config is still
+/// saved; `warning` explains it).
+#[tauri::command]
+pub async fn set_scoped_models(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    patterns: Vec<String>,
+) -> Result<serde_json::Value, String> {
+    store
+        .mutate(&app, |state| {
+            state.global_model_settings.enabled_model_patterns = patterns;
+        })
+        .await;
+    let restart = store.restart_selected_actor(&app).await;
+    let state = store.state.lock().await;
+    let mut out = serde_json::json!({
+        "patterns": state.global_model_settings.enabled_model_patterns,
+        "applied": restart.is_ok(),
+    });
+    if let Err(error) = restart {
+        out["warning"] = serde_json::json!(error);
+    }
+    Ok(out)
+}
+
+/// Cycle the selected session's model forward/backward.
+#[tauri::command]
+pub async fn cycle_scoped_model(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    direction: String,
+) -> Result<Option<serde_json::Value>, String> {
+    store.ensure_selected_actor(&app).await?;
+    store.cycle_model(&direction).await
+}
+
+// ── Full-text session search ──
+
+/// Search user/assistant message text across all non-archived sessions.
+/// Runs on a blocking worker because it reads every JSONL file.
+#[tauri::command]
+pub async fn search_sessions(
+    store: State<'_, Arc<Store>>,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<serde_json::Value>, String> {
+    if query.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let sessions: Vec<(String, String, String)> = {
+        let state = store.state.lock().await;
+        state
+            .sessions
+            .iter()
+            .filter(|session| session.archived_at.is_none())
+            .filter_map(|session| {
+                let file = session
+                    .session_file
+                    .as_ref()
+                    .filter(|file| !file.is_empty())?
+                    .clone();
+                Some((session.id.clone(), session.title.clone(), file))
+            })
+            .collect()
+    };
+    let limit = limit.unwrap_or(50).clamp(1, 200);
+    tokio::task::spawn_blocking(move || {
+        crate::state::session::search_session_texts(&sessions, &query, limit)
+    })
+    .await
+    .map_err(|error| error.to_string())
+}
+
+// ── Built-in extensions ──
+
+/// Toggle a built-in extension (`subagent`, `web_search`) and restart the
+/// selected actor so the new registry is picked up.
+#[tauri::command]
+pub async fn set_extension_enabled(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    name: String,
+    enabled: bool,
+) -> Result<serde_json::Value, String> {
+    crate::state::extensions::set_extension_enabled(&name, enabled)?;
+    let restart = store.restart_selected_actor(&app).await;
+    let mut out = serde_json::json!({ "applied": restart.is_ok() });
+    if let Err(error) = restart {
+        out["warning"] = serde_json::json!(error);
+    }
+    Ok(out)
+}
+
+// ── MCP resources ──
+
+#[tauri::command]
+pub async fn get_mcp_resources(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    name: String,
+) -> Result<serde_json::Value, String> {
+    store.ensure_selected_actor(&app).await?;
+    store.mcp_resources(&name).await
+}
+
+#[tauri::command]
+pub async fn read_mcp_resource(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    name: String,
+    uri: String,
+) -> Result<serde_json::Value, String> {
+    store.ensure_selected_actor(&app).await?;
+    store.read_mcp_resource(&name, &uri).await
+}
+
+// ── Open files in the external editor ──
+
+#[tauri::command]
+pub async fn open_file(path: String, cwd: Option<String>) -> Result<(), String> {
+    let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
+    crate::state::files::open_in_editor(&path, &cwd)
+}
+
+// ── Prompt templates ──
+
+#[tauri::command]
+pub async fn list_prompt_templates(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    // The selected session's actor may not exist yet (fresh launch).
+    store.ensure_selected_actor(&app).await.ok();
+    Ok(store.list_prompt_templates().await)
 }

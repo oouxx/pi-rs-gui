@@ -347,3 +347,113 @@ pub fn rename_session_by_id(state: &mut DesktopState, session_id: &str, title: &
     }
 }
 
+
+/// Full-text search across session message text (user + assistant).
+///
+/// `sessions` is `(id, title, session_file)`. Returns matching snippets in
+/// file order, capped at `limit` overall and 3 matches per session.
+ pub fn search_session_texts(
+    sessions: &[(String, String, String)],
+    query: &str,
+    limit: usize,
+) -> Vec<serde_json::Value> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() || limit == 0 {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    for (session_id, title, file) in sessions {
+        if out.len() >= limit {
+            break;
+        }
+        let Ok(text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        let mut per_session = 0usize;
+        for line in text.lines() {
+            if out.len() >= limit || per_session >= 3 {
+                break;
+            }
+            if !line.starts_with("{\"type\":\"message\"") {
+                continue;
+            }
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            let Some(message) = value.get("message") else {
+                continue;
+            };
+            let role = message.get("role").and_then(|r| r.as_str()).unwrap_or("");
+            if role != "user" && role != "assistant" {
+                continue;
+            }
+            let mut message_text = String::new();
+            if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
+                for block in content {
+                    if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                        if let Some(part) = block.get("text").and_then(|t| t.as_str()) {
+                            message_text.push_str(part);
+                            message_text.push('\n');
+                        }
+                    }
+                }
+            }
+            if !message_text.to_lowercase().contains(&query) {
+                continue;
+            }
+            // Snippet: a readable prefix around the message start.
+            let snippet: String = message_text
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .chars()
+                .take(180)
+                .collect();
+            let timestamp = message.get("timestamp").and_then(|t| t.as_i64());
+            out.push(serde_json::json!({
+                "sessionId": session_id,
+                "title": title,
+                "role": role,
+                "snippet": snippet,
+                "timestamp": timestamp,
+            }));
+            per_session += 1;
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn search_finds_message_text_and_snippets() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("session.jsonl");
+        std::fs::write(
+            &file,
+            concat!(
+                "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Hello world\"}],\"timestamp\":1}}\n",
+                "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"The QUICK brown fox\"}],\"timestamp\":2}}\n",
+                "{\"type\":\"message\",\"message\":{\"role\":\"toolResult\",\"content\":[{\"type\":\"text\",\"text\":\"quick ignored\"}],\"timestamp\":3}}\n"
+            ),
+        )
+        .expect("write");
+
+        let sessions = vec![(
+            "session-id".to_string(),
+            "Title".to_string(),
+            file.to_string_lossy().to_string(),
+        )];
+        let hits = search_session_texts(&sessions, "quick", 10);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0]["role"], "assistant");
+        assert_eq!(hits[0]["sessionId"], "session-id");
+        assert!(hits[0]["snippet"]
+            .as_str()
+            .expect("snippet")
+            .contains("QUICK"));
+    }
+}

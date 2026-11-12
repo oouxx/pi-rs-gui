@@ -107,13 +107,35 @@ impl Store {
                     let result_cwd = services.cwd.clone();
                     let result_agent_dir = services.agent_dir.clone();
 
+                    // Scoped models (Ctrl/Cmd+P cycling) come from the UI
+                    // state, persisted in ui-state.json — pi-rs has no
+                    // settings key for them. Patterns are `provider/modelId`.
+                    let scoped_models = {
+                        let patterns = {
+                            let state = store.state.lock().await;
+                            state
+                                .global_model_settings
+                                .enabled_model_patterns
+                                .clone()
+                        };
+                        let models: Vec<_> = patterns
+                            .iter()
+                            .filter_map(|pattern| {
+                                let (provider, model_id) = pattern.split_once('/')?;
+                                services.model_registry.find(provider, model_id)
+                            })
+                            .map(|model| (model, None))
+                            .collect();
+                        (!models.is_empty()).then_some(models)
+                    };
+
                     let (session, _services, result) =
                         create_agent_session_from_services(CreateAgentSessionFromServicesOptions {
                             services,
                             session_manager: params.session_manager,
                             model: Some(model),
                             thinking_level: thinking_level,
-                            scoped_models: None,
+                            scoped_models,
                             tools: None,
                             no_tools: None,
                             exclude_tools: None,
