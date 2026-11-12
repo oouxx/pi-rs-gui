@@ -10,11 +10,6 @@ use tauri::{AppHandle, State};
 // ── Core ──
 
 #[tauri::command]
-pub async fn ping() -> String {
-    "pong".into()
-}
-
-#[tauri::command]
 pub async fn get_state(store: State<'_, Arc<Store>>) -> Result<DesktopState, String> {
     Ok(store.state.lock().await.clone())
 }

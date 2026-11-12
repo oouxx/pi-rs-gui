@@ -214,26 +214,3 @@ pub fn clear_provider_auth(provider_id: &str) {
     let mut storage = auth_storage();
     storage.remove(provider_id);
 }
-
-
-#[cfg(test)]
-mod smoke_tmp2 {
-    use super::*;
-
-    #[test]
-    fn smoke_auth_after_set_key() {
-        std::env::set_var("PI_CODING_AGENT_DIR", "/tmp/pi-gui-auth-smoke");
-        // Use a provider whose env var is unset here so only auth.json counts.
-        // (openrouter has OPENROUTER_API_KEY set in CI/dev shells, which would
-        // make has_auth true even after clearing auth.json.)
-        let provider = "anthropic";
-        if std::env::var("ANTHROPIC_API_KEY").map(|v| !v.is_empty()).unwrap_or(false) {
-            eprintln!("skipping: ANTHROPIC_API_KEY set in environment");
-            return;
-        }
-        set_provider_api_key(provider, "sk-test-123").unwrap();
-        assert!(has_provider_auth(provider), "stored key should count as auth");
-        clear_provider_auth(provider);
-        assert!(!has_provider_auth(provider), "after clear no auth");
-    }
-}

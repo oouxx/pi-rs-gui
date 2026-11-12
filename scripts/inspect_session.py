@@ -19,7 +19,6 @@ Output sections:
   orphans — toolCalls with no matching toolResult (interrupted/aborted)
 """
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Optional

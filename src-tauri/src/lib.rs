@@ -23,7 +23,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            commands::ping,
             commands::get_state,
             commands::select_session,
             commands::create_session,

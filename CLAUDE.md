@@ -1,92 +1,35 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## 基本原则
 
-## Build & Dev Commands
+- 先读代码和相关文档，再动手修改；遵循现有风格、命名和目录结构。
+- 只改与任务相关的代码，不做无关重构、格式化或依赖升级。
+- 优先复用已有实现和依赖；新增依赖需要明确理由。
+- 不确定的行为先查源码、文档或运行验证，不凭猜测下结论。
 
-```bash
-bun run dev              # Vite dev server (frontend only)
-bun run build            # Vite production build
-bun run typecheck        # tsc --noEmit (also catches IPC type drift)
-bun test                 # Bun test runner (pure frontend logic)
-bun run tauri:dev        # Tauri dev mode (full desktop app, requires Rust toolchain)
-bun run tauri:build      # Production Tauri build
-bunx shadcn@latest add <component>  # Add a shadcn/ui component
-```
+## 代码质量
 
-- Rust tests: `cd src-tauri && cargo test`
-- Frontend tests: `bun test` (currently the message reducer; no DOM harness)
+- 改动保持最小、可读、可维护；避免过度抽象、重复逻辑和无用代码。
+- 错误处理要明确：不吞异常；用户可见的错误要有反馈；日志不得泄露密钥、token、个人路径等敏感信息。
+- 不提交凭据、临时调试代码、注释掉的代码块和无说明的 TODO。
+- 生成物和锁文件按项目约定处理，不手工修改生成文件。
+- 公共接口、配置格式或数据结构变更时，同步更新类型定义、调用方和文档。
 
-## Architecture
+## 验证
 
-**Tauri v2 app** — Rust backend (`src-tauri/`) + React 19 frontend (`src/`) connected via Tauri IPC.
+- 汇报或提交前，运行项目现有的格式化、类型检查、测试和构建命令。
+- 新逻辑补充必要测试；修复 bug 优先补回归测试。
+- 测试失败或步骤未执行时必须如实说明，不声称验证过未运行的内容。
 
-### State Flow
+## Git
 
-1. Frontend calls a command wrapper in `commands.ts` → Tauri invoke → Rust command handler
-2. Rust handler calls `Store::mutate()` which modifies state, increments `revision`, emits `pi-gui:state-changed` event, and persists to disk
-3. Frontend listens for `pi-gui:state-changed` via `setupStateListener()` and re-renders
-4. Agent streaming: `send_message()` spawns a tokio task → agent emits `AgentEvent`s → serialized to `agent-event` Tauri events → transcript updates emitted as `pi-gui:selected-transcript-changed`
+- 未明确要求时，不提交、不推送、不打 tag。
+- 在默认分支上提交前先建分支。
+- 提交信息简洁，说明改了什么和为什么。
+- 不覆盖或回滚他人未提交的改动。
 
-### Key Dependencies
+## 交互与安全
 
-- **pi-rs crates** (`pi-coding-agent`, `pi-agent-core`, `pi-ai`; current git tag pinned in `src-tauri/Cargo.toml`): agent session, agent loop, tool execution, model registry, providers, session persistence
-- **Config**: `~/.pi-rs/agent/settings.json` for default provider/model/thinking level
-- **Sessions**: Stored as JSONL files in `~/.pi-rs/agent/sessions/`
-- **State persistence**: `~/.pi-rs/agent/ui-state.json` (active IDs only)
-- **API keys**: Environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.)
-
-### Backend module layout (`src-tauri/src/state/`)
-
-- `store.rs` — `DesktopState` + `mutate()` (single writer; emits `pi-gui:state-changed`, persists `ui-state.json` only when the selected id changes)
-- `actors.rs` — `ActorRegistry`: session id → mailbox; owns `send_cmd`
-- `runtime.rs` — pi-rs runtime factory, spawn / ensure / shutdown actor
-- `lifecycle.rs` — session CRUD, fork/import/clone, cwd switch, model switch, messaging
-- `transcript.rs` — `AgentSessionEvent` serialization + display-transcript merge (unit-tested)
-- `mcp.rs` — MCP server config CRUD (delegates to pi-rs `core::mcp_config`) + OAuth sign-in + log tail
-- `events.rs` — Tauri event channel constants (mirror `src/api/eventNames.ts`)
-
-### Frontend layout
-
-- `hooks/ChatProvider.tsx` — the single `useChat` instance shared by sidebar and chat (do not call `useChat()` directly in components)
-- `hooks/useChat.ts` — session list, transcript loading, streaming orchestration
-- `hooks/message-reducer.ts` — pure message merge / delta logic (tested with `bun test`)
-- `components/chat/` — `Composer`, `MessageItem`, `TimelinePanel`, markdown renderer
-- `components/McpSettings.tsx` — MCP server management (Settings → MCP)
-- `hooks/useTheme.ts` — system/light/dark theme preference
-- `lib/keybindings.ts` — customizable shortcut registry (localStorage-backed)
-- `lib/attachments.ts` — image + text/code file attachment helpers
-- `i18n/` — English / 简体中文 dictionaries + `useI18n()` hook
-- `api/types.ts` — IPC contract types; keep in sync with the Rust serializers
-
-### 职责划分：pi-rs vs pi-rs-gui
-
-**pi-rs**（独立仓库 `../pi-rs`，tag 化发布）负责**核心功能**，按 crate 划分：
-
-- **`pi-ai`**：统一多 provider LLM API（OpenAI / Anthropic / Google / OpenRouter 等）、模型注册（`api_registry`/`models`）、流式 `AssistantMessageEvent`、`ContentBlock` / `Usage` / `StopReason` 等类型、env API keys。
-- **`pi-agent-core`**：agent 运行时——`AgentSession` 状态机（`agent.rs`）、`agent_loop`（工具调用循环 + `AgentEvent` 事件流）、`AgentMessage` / `AgentToolCall` / `AgentToolResult` 类型、MCP 支持（`mcp.rs`）、proxy。
-- **`pi-coding-agent`**：coding agent 层——
-  - **session**：`session_manager`（JSONL 持久化、`fork_from`）、`session_cwd`（cwd 解析 / 校验）、`agent_session` + `sdk`（`create_agent_session` / `CreateAgentSessionOptions`）、`compaction`、`settings_manager`、`auth_storage`、`trust_manager` / `project_trust`。
-  - **工具**：`core/tools/`（`bash`、`edit`、`edit_diff`、`read`、`write`、`grep`、`find`、`ls`、`output_accumulator`、`truncate`、`file_mutation_queue` 等）。
-  - **其它**：`model_registry` / `model_resolver`、`system_prompt`、`skills`、`slash_commands`、`extensions`、`modes`（interactive / print / rpc）、`cli`。
-- **`pi-tui`**：终端 UI（pi-rs-gui 不使用）。
-
-**pi-rs-gui**（本仓库）只负责 **UI 层面**：Tauri IPC 命令封装、React 组件与渲染、UI 状态管理（`DesktopState` / `SessionRecord` 只存 UI 需要的元数据 + 透传字段，如 `cwd`）、把用户操作翻译成对 pi-rs SDK 的调用、订阅 `AgentEvent` 并在前端展示。
-
-**原则**：pi-rs-gui **不重新实现** pi-rs 已有的核心能力（fork、cwd 校验、工具执行、消息序列化、session 持久化、model 解析等）。需要新核心能力或修核心 bug 时，先在 pi-rs 实现，pi-gui 只调用。
-
-### pi-rs bug 工作流
-
-当问题定位到 pi-rs（核心功能）而非 UI 时，按以下流程：
-
-1. **先对照 TS 原版**：pi-rs 是 `../pi`（github.com/earendil-works/pi）的 Rust 复刻（见 pi-rs 的 `pi-rust-port-spec.md`）。找到对应模块——`packages/ai`→`pi-ai`、`packages/agent`→`pi-agent-core`、`packages/coding-agent`→`pi-coding-agent`——看 TS 原版如何实现 / 处理该场景，再对照 pi-rs 的 Rust 实现定位差异（复刻遗漏或语义偏差常是 bug 根源）。
-2. 进入 `../pi-rs` 修复（不要在 pi-gui 里绕过或重写核心逻辑）
-3. 本地验证：`cargo test -p pi-coding-agent`（及相关 crate），必要时加 / 跑对应测试
-4. 提交修复
-5. 打新 tag，递增 patch 版本（如 `v1.79.3` → `v1.79.4`）：`git tag vX.Y.Z`
-6. 推送 pi-rs 的 `main` 和新 tag：`git push origin main && git push origin vX.Y.Z`
-7. 回到 pi-rs-gui，把 `src-tauri/Cargo.toml` 里三个 pi-rs crate 的 `tag = "vX.Y.Z"` 升到新 tag
-8. `cd src-tauri && cargo update -p pi-coding-agent -p pi-agent-core -p pi-ai`，再 `cargo test` 验证
-9. 提交 `src-tauri/Cargo.toml` + `src-tauri/Cargo.lock`，推送 pi-rs-gui
-
-排查工具执行等问题时，先看 `~/.pi-rs/agent/sessions/*.jsonl`（session 头的 `cwd`、`toolCall`/`toolResult` 记录），并用 `scripts/inspect_session.py` 快速汇总；运行时日志见 `[CWD]` / `[TOOL]` 前缀（`src-tauri/src/state/internal.rs`）。
+- 需求不明确时先问关键问题，不自行扩大范围。
+- 汇报时说明：改了什么、如何验证、剩余风险。
+- 破坏性或不可逆操作（删除、重置、强制推送、发布、发送外部数据）先确认。
