@@ -19,6 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { useI18n } from "@/i18n";
 import { useChatContext } from "@/hooks/ChatProvider";
 import {
   getActiveSessionCwd,
@@ -39,23 +40,24 @@ interface Skill {
 }
 
 const CATEGORIES = [
-  { id: "all", label: "All Skills" },
-  { id: "global", label: "Global" },
-  { id: "workspace", label: "Workspace" },
-  { id: "custom", label: "Custom Paths" },
+  { id: "all", labelKey: "skills.all" },
+  { id: "global", labelKey: "skills.global" },
+  { id: "workspace", labelKey: "skills.workspace" },
+  { id: "custom", labelKey: "skills.customPaths" },
 ] as const;
 
 type CatId = (typeof CATEGORIES)[number]["id"];
 
-const SCOPE_LABEL: Record<string, string> = {
-  global: "Global",
-  workspace: "Workspace",
-  custom: "Custom",
+const SCOPE_LABEL_KEY: Record<string, "skills.global" | "skills.workspace" | "skills.custom"> = {
+  global: "skills.global",
+  workspace: "skills.workspace",
+  custom: "skills.custom",
 };
 
 export default function SkillsView() {
   const { activeSessionId, activeSessionCwd } = useChatContext();
   const { toast } = useToast();
+  const { t } = useI18n();
   const [view, setView] = useState<"skills" | "prompts">("skills");
   const [activeCat, setActiveCat] = useState<CatId>("all");
   const [search, setSearch] = useState("");
@@ -165,12 +167,12 @@ export default function SkillsView() {
       } catch (e) {
         toast({
           variant: "error",
-          title: "Failed to open file",
+          title: t("skills.failedToOpen"),
           description: e instanceof Error ? e.message : String(e),
         });
       }
     },
-    [toast],
+    [toast, t],
   );
 
   return (
@@ -179,7 +181,7 @@ export default function SkillsView() {
       <div className="border-hairline flex items-center gap-3 border-b px-4 py-1.5">
         <SidebarTrigger className="shrink-0" />
         <div className="text-foreground text-sm font-medium">
-          {view === "skills" ? "Skills" : "Prompts"}
+          {t(view === "skills" ? "skills.title" : "skills.promptsTitle")}
         </div>
         <div className="border-hairline ml-auto flex items-center gap-0.5 rounded-md border p-0.5">
           {(["skills", "prompts"] as const).map((item) => (
@@ -192,11 +194,11 @@ export default function SkillsView() {
               }}
               className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
                 view === item
-                  ? "bg-accent/10 text-accent font-medium"
+                  ? "bg-accent text-accent-foreground font-medium"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {item === "skills" ? "Skills" : "Prompts"}
+              {t(item === "skills" ? "skills.title" : "skills.promptsTitle")}
             </button>
           ))}
         </div>
@@ -214,11 +216,11 @@ export default function SkillsView() {
                 onClick={() => setActiveCat(cat.id)}
                 className={`flex items-center justify-between rounded-md px-3 py-1.5 text-left text-sm transition-colors ${
                   activeCat === cat.id
-                    ? "bg-accent/10 text-accent font-medium"
+                    ? "bg-accent text-accent-foreground font-medium"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                 }`}
               >
-                <span>{cat.label}</span>
+                <span>{t(cat.labelKey)}</span>
                 <span className="text-muted-foreground text-xs">{counts[cat.id]}</span>
               </button>
             ))}
@@ -233,9 +235,9 @@ export default function SkillsView() {
             <div className="relative max-w-sm flex-1">
               <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
               <Input
-                placeholder={
-                  view === "skills" ? "Search skills..." : "Search prompts..."
-                }
+                placeholder={t(
+                  view === "skills" ? "skills.search" : "skills.searchPrompts",
+                )}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="h-8 pl-8 text-xs"
@@ -251,12 +253,12 @@ export default function SkillsView() {
                 <RefreshCw
                   className={`size-3.5 ${loading ? "animate-spin" : ""}`}
                 />
-                <span>Refresh</span>
+                <span>{t("common.refresh")}</span>
               </Button>
             ) : (
               <Button size="sm" variant="outline" onClick={refreshPrompts}>
                 <RefreshCw className="size-3.5" />
-                <span>Refresh</span>
+                <span>{t("common.refresh")}</span>
               </Button>
             )}
           </div>
@@ -266,13 +268,13 @@ export default function SkillsView() {
             {view === "prompts" ? (
               promptsLoading ? (
                 <div className="text-muted-foreground flex h-full items-center justify-center text-xs">
-                  Loading prompts...
+                  {t("skills.loadingPrompts")}
                 </div>
               ) : promptsError ? (
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
                   <div className="text-destructive text-xs">{promptsError}</div>
                   <Button size="sm" variant="outline" onClick={refreshPrompts}>
-                    Retry
+                    {t("common.retry")}
                   </Button>
                 </div>
               ) : filteredPrompts.length === 0 ? (
@@ -282,11 +284,10 @@ export default function SkillsView() {
                       <FileCode className="text-muted-foreground size-8" />
                     </div>
                     <h3 className="text-foreground mb-1 text-sm font-medium">
-                      No prompt templates found
+                      {t("skills.emptyPromptsTitle")}
                     </h3>
                     <p className="text-muted-foreground text-xs leading-relaxed">
-                      Prompts are Markdown files in the agent or project prompt
-                      directories. Add more through the Prompt paths setting.
+                      {t("skills.emptyPromptsHint")}
                     </p>
                   </div>
                 </div>
@@ -308,8 +309,8 @@ export default function SkillsView() {
                           {prompt.source}
                         </span>
                         {prompt.append && (
-                          <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] text-blue-600 dark:text-blue-400">
-                            append
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
+                            {t("skills.append")}
                           </span>
                         )}
                         <div className="ml-auto flex items-center gap-1.5">
@@ -320,7 +321,7 @@ export default function SkillsView() {
                               openPreview(`/${prompt.name}`, prompt.filePath);
                             }}
                             className="text-muted-foreground hover:text-foreground"
-                            title="Preview"
+                            title={t("common.preview")} aria-label={t("common.preview")}
                           >
                             <Eye className="size-3.5" />
                           </button>
@@ -331,7 +332,7 @@ export default function SkillsView() {
                               openFileInEditor(prompt.filePath);
                             }}
                             className="text-muted-foreground hover:text-foreground"
-                            title="Open in editor"
+                            title={t("common.openInEditor")} aria-label={t("common.openInEditor")}
                           >
                             <ExternalLink className="size-3.5" />
                           </button>
@@ -354,13 +355,13 @@ export default function SkillsView() {
               )
             ) : loading ? (
               <div className="flex h-full items-center justify-center text-muted-foreground text-xs">
-                Loading skills...
+                {t("skills.loading")}
               </div>
             ) : error ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
                 <div className="text-destructive text-xs">{error}</div>
                 <Button size="sm" variant="outline" onClick={refresh}>
-                  Retry
+                  {t("common.retry")}
                 </Button>
               </div>
             ) : filtered.length === 0 ? (
@@ -369,11 +370,11 @@ export default function SkillsView() {
                   <div className="bg-muted/30 mx-auto mb-4 flex size-16 items-center justify-center rounded-full">
                     <BookOpen className="text-muted-foreground size-8" />
                   </div>
-                  <h3 className="text-foreground mb-1 text-sm font-medium">No skills found</h3>
+                  <h3 className="text-foreground mb-1 text-sm font-medium">
+                    {t("skills.emptyTitle")}
+                  </h3>
                   <p className="text-muted-foreground text-xs leading-relaxed">
-                    Skills extend pi-gui's capabilities with custom prompts and
-                    tools. Add SKILL.md under the agent or project skills
-                    directory.
+                    {t("skills.emptyHint")}
                   </p>
                 </div>
               </div>
@@ -390,11 +391,11 @@ export default function SkillsView() {
                         {s.name}
                       </span>
                       <span className="bg-muted text-foreground/70 rounded-full px-2 py-0.5 text-[10px] uppercase">
-                        {SCOPE_LABEL[s.scope] ?? s.scope}
+                        {SCOPE_LABEL_KEY[s.scope] ? t(SCOPE_LABEL_KEY[s.scope]) : s.scope}
                       </span>
                       {s.disableModelInvocation && (
-                        <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-600 dark:text-amber-400">
-                          manual only
+                        <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[10px] text-warning">
+                          {t("skills.manualOnly")}
                         </span>
                       )}
                       <div className="ml-auto flex items-center gap-1.5">
@@ -405,7 +406,7 @@ export default function SkillsView() {
                             openPreview(s.name, s.filePath);
                           }}
                           className="text-muted-foreground hover:text-foreground"
-                          title="Preview"
+                          title={t("common.preview")} aria-label={t("common.preview")}
                         >
                           <Eye className="size-3.5" />
                         </button>
@@ -416,7 +417,7 @@ export default function SkillsView() {
                             openFileInEditor(s.filePath);
                           }}
                           className="text-muted-foreground hover:text-foreground"
-                          title="Open in editor"
+                          title={t("common.openInEditor")} aria-label={t("common.openInEditor")}
                         >
                           <ExternalLink className="size-3.5" />
                         </button>
@@ -455,7 +456,7 @@ export default function SkillsView() {
           {previewLoading ? (
             <div className="text-muted-foreground flex items-center gap-2 p-6 text-sm">
               <Loader2 className="size-4 animate-spin" />
-              Loading…
+              {t("common.loading")}
             </div>
           ) : previewError ? (
             <div className="text-destructive text-xs break-words">

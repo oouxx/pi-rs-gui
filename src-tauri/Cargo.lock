@@ -3850,12 +3850,11 @@ dependencies = [
 
 [[package]]
 name = "pi-rs-gui"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "futures",
  "ignore",
- "once_cell",
  "open",
  "pi-agent-core",
  "pi-ai",

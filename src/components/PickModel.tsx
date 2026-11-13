@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Search, Check } from "lucide-react"
+import { useI18n } from "@/i18n"
 
 export interface ProviderInfo {
   id: string
@@ -33,8 +34,9 @@ export default function PickModel({
   providerId,
   modelId,
   onSelect,
-  placeholder = "Type to search models...",
+  placeholder,
 }: PickModelProps) {
+  const { t } = useI18n()
   const [query, setQuery] = useState("")
   const [show, setShow] = useState(false)
   const [selIdx, setSelIdx] = useState(0)
@@ -57,7 +59,7 @@ export default function PickModel({
   }, [providers])
 
   // Search results. With an empty query we show the whole catalogue grouped
-  // by provider (Codex desktop behaviour); typing narrows it down.
+  // by provider; typing narrows it down.
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return models.slice(0, 120)
@@ -140,20 +142,20 @@ export default function PickModel({
       <button
         key={`${m.providerId}/${m.modelId}`}
         className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors ${
-          isSelected ? "bg-ai-muted text-foreground" : "hover:bg-muted"
+          isSelected ? "bg-primary/10 text-foreground" : "hover:bg-muted"
         }`}
         onClick={() => handleSelect(m)}
         onMouseEnter={() => setSelIdx(results.indexOf(m))}
       >
         <span className="flex-1 truncate">
-          <span className={`font-medium ${isSelected ? "text-ai" : ""}`}>
+          <span className={`font-medium ${isSelected ? "text-primary" : ""}`}>
             {m.label}
           </span>
           <span className="text-muted-foreground ml-1.5">
             {prov?.name ?? m.providerId}
           </span>
         </span>
-        {isSelected && <Check className="size-3 shrink-0 text-ai" />}
+        {isSelected && <Check className="size-3 shrink-0 text-primary" />}
       </button>
     )
   }
@@ -167,7 +169,7 @@ export default function PickModel({
           onChange={handleChange}
           onFocus={() => setShow(true)}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
+          placeholder={placeholder ?? t("models.typeToSearch")}
           className="h-8 pl-8 text-xs"
         />
       </div>
@@ -190,12 +192,12 @@ export default function PickModel({
       )}
       {show && query.trim() && results.length === 0 && (
         <div className="bg-popover border-hairline absolute z-50 mt-1 w-full rounded-lg border p-3 text-center text-xs text-muted-foreground shadow-md">
-          No models match "{query}"
+          {t("models.noMatchQuery", { query })}
         </div>
       )}
       {show && !query.trim() && models.length === 0 && (
         <div className="bg-popover border-hairline absolute z-50 mt-1 w-full rounded-lg border p-3 text-center text-xs text-muted-foreground shadow-md">
-          No models configured
+          {t("models.noModels")}
         </div>
       )}
     </div>

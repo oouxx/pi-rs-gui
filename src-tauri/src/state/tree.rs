@@ -33,10 +33,7 @@ fn message_info(message: &Value) -> (Option<String>, String) {
                     }
                 }
                 Some("toolCall") => {
-                    let name = block
-                        .get("name")
-                        .and_then(|n| n.as_str())
-                        .unwrap_or("tool");
+                    let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("tool");
                     text.push_str(&format!("[tool: {name}] "));
                 }
                 _ => {}
@@ -58,10 +55,7 @@ fn entry_info(entry: &SessionEntry) -> (String, String) {
             let (_role, label) = message_info(message);
             ("message".to_string(), label)
         }
-        SessionEntry::Usage { kind, .. } => (
-            "usage".to_string(),
-            format!("Usage: {kind}"),
-        ),
+        SessionEntry::Usage { kind, .. } => ("usage".to_string(), format!("Usage: {kind}")),
         SessionEntry::ContextEdit { target_id, .. } => (
             "context_edit".to_string(),
             format!("Context edit: {}", truncate(target_id, 80)),
@@ -84,10 +78,9 @@ fn entry_info(entry: &SessionEntry) -> (String, String) {
             "branch_summary".to_string(),
             format!("Branch: {}", truncate(summary, 80)),
         ),
-        SessionEntry::Custom { custom_type, .. } => (
-            "custom".to_string(),
-            format!("Event: {custom_type}"),
-        ),
+        SessionEntry::Custom { custom_type, .. } => {
+            ("custom".to_string(), format!("Event: {custom_type}"))
+        }
         SessionEntry::CustomMessage {
             custom_type,
             content,
@@ -137,4 +130,3 @@ pub fn tree_from_session_file(session_file: &str) -> Vec<Value> {
     let mgr = SessionManager::open(session_file, None, None);
     tree_json(&mgr.get_tree(), mgr.get_leaf_id())
 }
-

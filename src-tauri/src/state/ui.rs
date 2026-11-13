@@ -1,14 +1,17 @@
 //! State persistence — active session ID + scoped-model patterns.
 
-use std::path::PathBuf;
-use serde_json::{json, Value};
 use crate::state::DesktopState;
+use serde_json::{json, Value};
+use std::path::PathBuf;
 
 /// `ui-state.json` lives next to pi-rs's own state files. Resolve the agent
 /// dir through pi-rs so env/dir overrides are honored (never hardcode `$HOME`).
 fn get_state_path() -> Option<PathBuf> {
     let dir = pi_coding_agent::config::get_agent_dir();
-    let _ = std::fs::create_dir_all(&dir);
+    if let Err(error) = std::fs::create_dir_all(&dir) {
+        eprintln!("[ui-state] cannot create {}: {error}", dir.display());
+        return None;
+    }
     Some(dir.join("ui-state.json"))
 }
 
@@ -20,8 +23,13 @@ pub fn persist_state(state: &DesktopState) {
             "selectedSessionId": state.selected_session_id,
             "enabledModelPatterns": state.global_model_settings.enabled_model_patterns,
         });
-        if let Ok(json) = serde_json::to_string_pretty(&slim) {
-            let _ = std::fs::write(&path, &json);
+        match serde_json::to_string_pretty(&slim) {
+            Ok(json) => {
+                if let Err(error) = std::fs::write(&path, &json) {
+                    eprintln!("[ui-state] cannot write {}: {error}", path.display());
+                }
+            }
+            Err(error) => eprintln!("[ui-state] cannot serialize state: {error}"),
         }
     }
 }

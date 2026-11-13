@@ -59,6 +59,16 @@ export function t(
   return translate(resolveLanguage(), key, params);
 }
 
+function applyDocumentLanguage(language: Language) {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+}
+
+/** Apply the resolved language to `<html lang>` at startup. */
+export function initLanguage() {
+  applyDocumentLanguage(resolveLanguage());
+}
+
 export function setLanguagePreference(preference: LanguagePreference) {
   currentPreference = preference;
   try {
@@ -66,6 +76,7 @@ export function setLanguagePreference(preference: LanguagePreference) {
   } catch {
     /* ignore */
   }
+  applyDocumentLanguage(resolveLanguage(preference));
   listeners.forEach((listener) => listener());
 }
 

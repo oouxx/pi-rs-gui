@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Components } from "react-markdown";
 import { Copy, Check } from "lucide-react";
+import { useI18n } from "@/i18n";
 
 /** Flatten a React node tree to its text (for code-block copy buttons). */
 export function nodeText(node: React.ReactNode): string {
@@ -24,10 +25,12 @@ export function CopyButton({
   label?: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const { t } = useI18n();
   return (
     <button
       type="button"
-      title={copied ? "Copied!" : label ?? "Copy"}
+      title={copied ? t("common.copied") : label ?? t("common.copy")}
+      aria-label={copied ? t("common.copied") : label ?? t("common.copy")}
       onClick={() => {
         navigator.clipboard?.writeText(text).catch(() => {});
         setCopied(true);
@@ -38,7 +41,7 @@ export function CopyButton({
         "text-muted-foreground hover:text-foreground rounded p-1 transition-colors"
       }
     >
-      {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+      {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
     </button>
   );
 }
@@ -54,7 +57,7 @@ export const mdComponents: Components = {
     if (isInline) {
       return (
         <code
-          className="bg-codex-inset text-codex-text rounded-md px-1.5 py-0.5 font-mono text-[12px]"
+          className="bg-muted text-foreground rounded-md px-1.5 py-0.5 font-mono text-[12px]"
           {...props}
         >
           {children}
@@ -69,12 +72,12 @@ export const mdComponents: Components = {
   },
   pre: ({ children }) => (
     <div className="group/code relative my-2">
-      <pre className="text-codex-dim border-codex-border bg-codex-inset overflow-x-auto rounded-lg border p-3 pr-10 font-mono text-xs leading-relaxed">
+      <pre className="text-foreground border-border bg-muted overflow-x-auto rounded-lg border p-3 pr-10 font-mono text-xs leading-relaxed">
         {children}
       </pre>
       <CopyButton
         text={nodeText(children)}
-        className="text-codex-faint hover:text-codex-dim absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover/code:opacity-100"
+        className="text-subtle-foreground hover:text-muted-foreground absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover/code:opacity-100"
       />
     </div>
   ),
@@ -84,17 +87,17 @@ export const mdComponents: Components = {
     </div>
   ),
   th: ({ children }) => (
-    <th className="text-codex-dim border-codex-border border-b bg-codex-inset px-3 py-2 text-left font-medium">
+    <th className="text-muted-foreground border-border border-b bg-muted px-3 py-2 text-left font-medium">
       {children}
     </th>
   ),
   td: ({ children }) => (
-    <td className="text-codex-dim border-codex-border border-b px-3 py-2">{children}</td>
+    <td className="text-muted-foreground border-border border-b px-3 py-2">{children}</td>
   ),
   a: ({ children, href }) => (
     <a
       href={href}
-      className="text-codex-green hover:underline"
+      className="text-primary font-medium hover:underline"
       target="_blank"
       rel="noreferrer"
     >
@@ -110,5 +113,5 @@ export const mdComponents: Components = {
   h5: ({ children }) => <h5 className="mt-1 text-xs font-medium">{children}</h5>,
   h6: ({ children }) => <h6 className="mt-1 text-xs font-medium">{children}</h6>,
   p: ({ children }) => <p className="my-1.5">{children}</p>,
-  hr: () => <hr className="border-codex-border my-3" />,
+  hr: () => <hr className="border-border my-3" />,
 };

@@ -33,3 +33,32 @@
 - 需求不明确时先问关键问题，不自行扩大范围。
 - 汇报时说明：改了什么、如何验证、剩余风险。
 - 破坏性或不可逆操作（删除、重置、强制推送、发布、发送外部数据）先确认。
+
+
+## Frontend Architecture & Design System Guidelines
+
+Prioritize mature, battle-tested libraries, keep component source code accessible and under control, maintain a consistent design language, and strictly limit duplicate dependencies.
+
+With the right libraries and clear constraints in place, even a one-shot implementation can produce excellent frontend results.
+
+Use the following libraries consistently across the project:
+
+- **UI components and design system:** shadcn/ui
+- **Icons:** Lucide
+- **Animations:** Motion
+- **Resizable layouts:** react-resizable-panels
+- **Drag and drop:** dnd-kit
+- **State management:** Zustand
+
+---
+## UI/UX Design Principles
+- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
+- Prefer clarity and simplicity over information density.
+- Do not repeat information that is already clear from the page context, navigation, or surrounding components.
+- Every label, icon, badge, card, and description must serve a clear user purpose.
+- Prioritize essential information and use progressive disclosure for secondary details.
+- Preserve visual consistency across existing screens, including typography, spacing, colors, and component styles.
+- Avoid decorative UI elements, excessive borders, nested cards, and unnecessary status indicators.
+- For industrial monitoring interfaces, make critical states immediately recognizable without adding visual noise.
+- Show additional explanations only when they help users understand an abnormal state or take action.
+- Before adding a new UI element, consider whether removing or simplifying an existing element would achieve the same goal.

@@ -389,10 +389,7 @@ impl Store {
 
     /// Cycle the selected session's model (scoped list first, otherwise all
     /// available models) and return the new selection.
-    pub async fn cycle_model(
-        &self,
-        direction: &str,
-    ) -> Result<Option<serde_json::Value>, String> {
+    pub async fn cycle_model(&self, direction: &str) -> Result<Option<serde_json::Value>, String> {
         let sid = self.state.lock().await.selected_session_id.clone();
         if sid.is_empty() {
             return Err("No session selected".to_string());
@@ -633,10 +630,7 @@ impl Store {
     /// Restart the selected session's actor so config changes (MCP servers,
     /// extensions, …) are picked up. Refuses while a turn is running — the
     /// actor's shutdown would abort it.
-    pub async fn restart_selected_actor(
-        self: &Arc<Self>,
-        app: &AppHandle,
-    ) -> Result<(), String> {
+    pub async fn restart_selected_actor(self: &Arc<Self>, app: &AppHandle) -> Result<(), String> {
         let (sid, running) = {
             let state = self.state.lock().await;
             let sid = state.selected_session_id.clone();

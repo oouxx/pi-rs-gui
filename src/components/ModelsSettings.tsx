@@ -15,9 +15,11 @@ import {
 } from "../api/commands"
 import PickModel from "./PickModel"
 import type { ProviderInfo, ModelOption } from "./PickModel"
+import { useI18n } from "@/i18n"
 
 export default function ModelsSettings() {
   const { toast } = useToast()
+  const { t } = useI18n()
   const [providers, setProviders] = useState<ProviderInfo[]>([])
   const [models, setModels] = useState<ModelOption[]>([])
   const [defaultProvider, setDefaultProvider] = useState("")
@@ -44,9 +46,15 @@ export default function ModelsSettings() {
       setDefaultModel(settings.settings?.defaultModelId ?? "")
       setThinkingLevel(settings.settings?.defaultThinkingLevel ?? "medium")
       setCustomProviders(custom)
-    } catch (e) { console.error("Failed to load model settings", e) }
+    } catch (e) {
+      toast({
+        title: t("models.loadFailed"),
+        description: e instanceof Error ? e.message : String(e),
+        variant: "error",
+      })
+    }
     setLoading(false)
-  }, [])
+  }, [t, toast])
 
   useEffect(() => { refresh() }, [refresh])
 
@@ -67,20 +75,20 @@ export default function ModelsSettings() {
         setScoped(result.patterns ?? next)
         if (result.applied === false && result.warning) {
           toast({
-            title: "Scoped models saved",
+            title: t("models.scopedSaved"),
             description: result.warning,
             variant: "error",
           })
         }
       } catch (e) {
         toast({
-          title: "Failed to save scoped models",
+          title: t("models.scopedSaveFailed"),
           description: e instanceof Error ? e.message : String(e),
           variant: "error",
         })
       }
     },
-    [scoped, toast],
+    [scoped, toast, t],
   )
 
   const scopedModels = useMemo(() => {
@@ -98,8 +106,14 @@ export default function ModelsSettings() {
     try {
       await setProviderApiKey(providerId, key)
       refresh()
-    } catch (e) { console.error("setApiKey failed", e) }
-  }, [apiKeys, refresh])
+    } catch (e) {
+      toast({
+        title: t("models.keySaveFailed"),
+        description: e instanceof Error ? e.message : String(e),
+        variant: "error",
+      })
+    }
+  }, [apiKeys, refresh, toast, t])
 
   const setDefault = useCallback(async (provider: string, model: string) => {
     try {
@@ -107,8 +121,14 @@ export default function ModelsSettings() {
       await apiSetDefaultThinkingLevel(thinkingLevel)
       setDefaultProvider(provider)
       setDefaultModel(model)
-    } catch (e) { console.error("setDefault failed", e) }
-  }, [thinkingLevel])
+    } catch (e) {
+      toast({
+        title: t("models.defaultSaveFailed"),
+        description: e instanceof Error ? e.message : String(e),
+        variant: "error",
+      })
+    }
+  }, [thinkingLevel, toast, t])
 
   // Persist a standalone thinking-level change immediately (the General tab
   // already does this via set_general_setting; keep both consistent).
@@ -116,23 +136,29 @@ export default function ModelsSettings() {
     setThinkingLevel(level)
     try {
       await apiSetDefaultThinkingLevel(level)
-    } catch (e) { console.error("setThinkingLevel failed", e) }
-  }, [])
+    } catch (e) {
+      toast({
+        title: t("models.thinkingSaveFailed"),
+        description: e instanceof Error ? e.message : String(e),
+        variant: "error",
+      })
+    }
+  }, [toast, t])
 
   const providerMap = new Map(providers.map((p) => [p.id, p]))
 
   if (loading) {
-    return <div className="text-muted-foreground p-8 text-sm">Loading models...</div>
+    return <div className="text-muted-foreground p-8 text-sm">{t("models.loading")}</div>
   }
 
   return (
     <div className="space-y-8">
       {/* Default model */}
       <section>
-        <h3 className="mb-3 text-sm font-medium text-foreground">Default Model</h3>
+        <h3 className="mb-3 text-sm font-medium text-foreground">{t("models.defaultModel")}</h3>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[240px]">
-            <label className="text-muted-foreground mb-1 block text-xs">Search model</label>
+            <label className="text-muted-foreground mb-1 block text-xs">{t("models.searchModel")}</label>
             <PickModel
               models={models}
               providers={providers}
@@ -142,24 +168,24 @@ export default function ModelsSettings() {
             />
           </div>
           <div className="w-32">
-            <label className="text-muted-foreground mb-1 block text-xs">Thinking</label>
+            <label className="text-muted-foreground mb-1 block text-xs">{t("models.thinking")}</label>
             <Select value={thinkingLevel} onValueChange={setThinking}>
               <SelectTrigger className="h-8 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="none">{t("models.none")}</SelectItem>
+                <SelectItem value="low">{t("models.low")}</SelectItem>
+                <SelectItem value="medium">{t("models.medium")}</SelectItem>
+                <SelectItem value="high">{t("models.high")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
         {defaultProvider && defaultModel && (
           <p className="text-muted-foreground mt-2 text-xs">
-            Current: <span className="font-medium text-foreground">{defaultModel}</span>
-            {" via "}
+            {t("models.current")} <span className="font-medium text-foreground">{defaultModel}</span>
+            {` ${t("models.via")} `}
             <span className="font-medium text-foreground">{providerMap.get(defaultProvider)?.name ?? defaultProvider}</span>
           </p>
         )}
@@ -169,20 +195,19 @@ export default function ModelsSettings() {
 
       {/* Scoped models — Ctrl/Cmd+P cycling */}
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">Scoped Models</h3>
+        <h3 className="mb-1 text-sm font-medium text-foreground">{t("models.scopedTitle")}</h3>
         <p className="text-muted-foreground mb-2 text-xs">
-          Ctrl/Cmd+P cycles through the selected models (Shift to cycle
-          backward). With none selected, all available models are cycled.
+          {t("models.scopedHint")}
         </p>
         <Input
-          placeholder="Search models..."
+          placeholder={t("models.searchModels")}
           value={scopedSearch}
           onChange={(e) => setScopedSearch(e.target.value)}
           className="h-8 max-w-sm text-xs"
         />
         <div className="border-hairline mt-2 max-h-56 overflow-y-auto rounded-lg border p-1.5">
           {scopedModels.length === 0 ? (
-            <p className="text-muted-foreground p-2 text-xs">No matching models.</p>
+            <p className="text-muted-foreground p-2 text-xs">{t("models.noMatching")}</p>
           ) : (
             scopedModels.map((model) => {
               const pattern = `${model.providerId}/${model.modelId}`
@@ -206,8 +231,8 @@ export default function ModelsSettings() {
         </div>
         <p className="text-muted-foreground mt-1 text-[11px]">
           {scoped.length === 0
-            ? "No scoped models — cycling falls back to all available models."
-            : `${scoped.length} selected`}
+            ? t("models.noneScoped")
+            : t("models.selected", { count: scoped.length })}
         </p>
       </section>
 
@@ -215,7 +240,7 @@ export default function ModelsSettings() {
 
       {/* API Keys */}
       <section>
-        <h3 className="mb-3 text-sm font-medium text-foreground">API Keys</h3>
+        <h3 className="mb-3 text-sm font-medium text-foreground">{t("models.apiKeys")}</h3>
         <div className="space-y-2">
           {providers.map((p) => (
             <div key={p.id} className="flex items-center gap-2">
@@ -224,18 +249,18 @@ export default function ModelsSettings() {
                 <Key className="text-muted-foreground absolute top-1/2 left-2 size-3 -translate-y-1/2" />
                 <Input
                   type="password"
-                  placeholder={p.hasAuth ? "Key set" : `Enter ${p.id} API key...`}
+                  placeholder={p.hasAuth ? t("models.keySet") : t("models.enterKey", { provider: p.id })}
                   value={apiKeys[p.id] ?? ""}
                   onChange={(e) => setApiKeys((prev) => ({ ...prev, [p.id]: e.target.value }))}
                   className="h-8 pl-7 text-xs"
                 />
               </div>
-              <span className={`flex items-center gap-1 text-xs ${p.hasAuth ? "text-ai" : "text-muted-foreground"}`}>
+              <span className={`flex items-center gap-1 text-xs ${p.hasAuth ? "text-primary" : "text-muted-foreground"}`}>
                 {p.hasAuth ? <CheckCircle className="size-3" /> : <XCircle className="size-3" />}
-                {p.hasAuth ? "Connected" : "No key"}
+                {p.hasAuth ? t("models.connected") : t("models.noKey")}
               </span>
               <Button size="xs" variant="outline" className="h-7" onClick={() => setApiKey(p.id)} disabled={!apiKeys[p.id]}>
-                Save
+                {t("common.save")}
               </Button>
             </div>
           ))}
@@ -246,9 +271,9 @@ export default function ModelsSettings() {
 
       {/* Custom providers */}
       <section>
-        <h3 className="mb-3 text-sm font-medium text-foreground">Custom Providers</h3>
+        <h3 className="mb-3 text-sm font-medium text-foreground">{t("models.customProviders")}</h3>
         {customProviders.length === 0 ? (
-          <p className="text-muted-foreground text-xs">No custom providers configured.</p>
+          <p className="text-muted-foreground text-xs">{t("models.noCustomProviders")}</p>
         ) : (
           <div className="space-y-2">
             {customProviders.map((cp, i) => (

@@ -29,7 +29,10 @@ fn last_message_preview(path: &str) -> String {
         .and_then(|r| r.as_str())
         .unwrap_or("");
     let mut text = String::new();
-    if let Some(content) = message.and_then(|m| m.get("content")).and_then(|c| c.as_array()) {
+    if let Some(content) = message
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_array())
+    {
         for block in content {
             if block.get("type").and_then(|t| t.as_str()) == Some("text") {
                 if let Some(t) = block.get("text").and_then(|t| t.as_str()) {
@@ -246,16 +249,24 @@ pub fn select_session_by_id(state: &mut DesktopState, session_id: &str) {
 /// Soft-archive a session by ID: moves the file to an `archived/` subdirectory
 /// and removes the session from the active list. The file remains on disk for
 /// potential recovery. After archiving, selects the next available session.
-pub fn archive_session_by_id(state: &mut DesktopState, session_id: &str) {
-    // Move the session file to an archived/ subdirectory.
+pub fn archive_session_by_id(state: &mut DesktopState, session_id: &str) -> Result<(), String> {
+    // Move the session file to an archived/ subdirectory. Do this before the
+    // in-memory removal so a failed move surfaces instead of pretending the
+    // session was archived.
     if let Some(sess) = state.sessions.iter().find(|s| s.id == session_id) {
         if let Some(ref fp) = sess.session_file {
             let path = std::path::Path::new(fp);
             if path.exists() {
                 let archived_dir = path.parent().unwrap_or(path).join("archived");
-                let _ = std::fs::create_dir_all(&archived_dir);
-                let dest = archived_dir.join(path.file_name().unwrap_or_default());
-                let _ = std::fs::rename(path, &dest);
+                std::fs::create_dir_all(&archived_dir).map_err(|error| {
+                    format!("Cannot create {}: {error}", archived_dir.display())
+                })?;
+                let file_name = path
+                    .file_name()
+                    .ok_or_else(|| format!("Invalid session path: {}", path.display()))?;
+                let dest = archived_dir.join(file_name);
+                std::fs::rename(path, &dest)
+                    .map_err(|error| format!("Cannot archive {}: {error}", path.display()))?;
             }
         }
     }
@@ -268,31 +279,28 @@ pub fn archive_session_by_id(state: &mut DesktopState, session_id: &str) {
         .find(|s| s.archived_at.is_none())
         .map(|s| s.id.clone());
     state.selected_session_id = next_id.unwrap_or_default();
+    Ok(())
 }
 
 /// Permanently delete a session by ID: removes the file from disk and the
 /// session from the in-memory list. After deletion, selects the next available
 /// session.
-pub fn delete_session_by_id(state: &mut DesktopState, session_id: &str) {
-    // Delete the session file from disk.
+pub fn delete_session_by_id(state: &mut DesktopState, session_id: &str) -> Result<(), String> {
+    // Delete the session file from disk (and the archived copy, if any) before
+    // dropping it from the in-memory list.
     if let Some(sess) = state.sessions.iter().find(|s| s.id == session_id) {
         if let Some(ref fp) = sess.session_file {
             let path = std::path::Path::new(fp);
             if path.exists() {
-                let _ = std::fs::remove_file(path);
+                std::fs::remove_file(path)
+                    .map_err(|error| format!("Cannot delete {}: {error}", path.display()))?;
             }
-        }
-    }
-    // Also remove from archived/ subdirectory if it was moved there.
-    if let Some(sess) = state.sessions.iter().find(|s| s.id == session_id) {
-        if let Some(ref fp) = sess.session_file {
-            let path = std::path::Path::new(fp);
-            if let Some(parent) = path.parent() {
-                let archived_path = parent
-                    .join("archived")
-                    .join(path.file_name().unwrap_or_default());
+            if let (Some(parent), Some(file_name)) = (path.parent(), path.file_name()) {
+                let archived_path = parent.join("archived").join(file_name);
                 if archived_path.exists() {
-                    let _ = std::fs::remove_file(&archived_path);
+                    std::fs::remove_file(&archived_path).map_err(|error| {
+                        format!("Cannot delete {}: {error}", archived_path.display())
+                    })?;
                 }
             }
         }
@@ -306,6 +314,7 @@ pub fn delete_session_by_id(state: &mut DesktopState, session_id: &str) {
         .find(|s| s.archived_at.is_none())
         .map(|s| s.id.clone());
     state.selected_session_id = next_id.unwrap_or_default();
+    Ok(())
 }
 
 /// Create a new session. `cwd` optionally pins the session to a project
@@ -347,12 +356,11 @@ pub fn rename_session_by_id(state: &mut DesktopState, session_id: &str, title: &
     }
 }
 
-
 /// Full-text search across session message text (user + assistant).
 ///
 /// `sessions` is `(id, title, session_file)`. Returns matching snippets in
 /// file order, capped at `limit` overall and 3 matches per session.
- pub fn search_session_texts(
+pub fn search_session_texts(
     sessions: &[(String, String, String)],
     query: &str,
     limit: usize,

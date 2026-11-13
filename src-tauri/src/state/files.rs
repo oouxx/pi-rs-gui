@@ -41,7 +41,10 @@ fn resolve_scope(cwd: &str, raw_query: &str) -> (String, String) {
             } else if display_base.starts_with('/') {
                 display_base.to_string()
             } else {
-                Path::new(cwd).join(display_base).to_string_lossy().to_string()
+                Path::new(cwd)
+                    .join(display_base)
+                    .to_string_lossy()
+                    .to_string()
             };
             (base, query)
         }
@@ -152,7 +155,10 @@ pub fn file_completions(cwd: &str, raw_query: &str) -> Vec<Value> {
     let mut scored: Vec<(i32, String, bool)> = Vec::new();
     for (rel, is_dir) in entries {
         let rel_display = rel.replace('\\', "/");
-        if rel_display == ".git" || rel_display.starts_with(".git/") || rel_display.contains("/.git/") {
+        if rel_display == ".git"
+            || rel_display.starts_with(".git/")
+            || rel_display.contains("/.git/")
+        {
             continue;
         }
         let full = format!("{normalized_base}/{rel_display}");
@@ -190,7 +196,6 @@ pub fn file_completions(cwd: &str, raw_query: &str) -> Vec<Value> {
         })
         .collect()
 }
-
 
 /// Open a file in the configured external editor (fallback: the OS default
 /// application). Relative paths resolve against the session cwd.
@@ -233,6 +238,33 @@ pub fn open_in_editor(path: &str, cwd: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Directories whose files the preview command may read. Skill and prompt
+/// discovery already only surfaces files from these roots; enforcing the same
+/// set here keeps the command from becoming an arbitrary-file reader for the
+/// webview.
+fn allowed_read_roots(cwd: &str) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    let mut push = |path: PathBuf| {
+        if let Ok(canonical) = path.canonicalize() {
+            if !roots.contains(&canonical) {
+                roots.push(canonical);
+            }
+        }
+    };
+    push(PathBuf::from(cwd));
+    push(pi_coding_agent::config::get_agent_dir());
+    let agent_dir = pi_coding_agent::config::get_agent_dir();
+    let agent_dir = agent_dir.to_string_lossy();
+    let mgr = pi_coding_agent::core::settings_manager::SettingsManager::create(
+        agent_dir.as_ref(),
+        Some(agent_dir.as_ref()),
+    );
+    for path in mgr.get_skills().into_iter().chain(mgr.get_prompts()) {
+        push(PathBuf::from(path));
+    }
+    roots
+}
+
 /// Read a UTF-8 text file for the in-app skill/prompt preview.
 pub fn read_text_file(path: &str, cwd: &str) -> Result<String, String> {
     let raw = Path::new(path);
@@ -249,8 +281,19 @@ pub fn read_text_file(path: &str, cwd: &str) -> Result<String, String> {
     if meta.len() > 1024 * 1024 {
         return Err("File is too large to preview (max 1 MB)".to_string());
     }
-    let bytes = std::fs::read(&resolved)
-        .map_err(|error| format!("Cannot read {}: {error}", resolved.display()))?;
+    let canonical = resolved
+        .canonicalize()
+        .map_err(|error| format!("Cannot resolve {}: {error}", resolved.display()))?;
+    if !allowed_read_roots(cwd)
+        .iter()
+        .any(|root| canonical.starts_with(root))
+    {
+        return Err(
+            "File is outside the workspace and configured skill/prompt directories".to_string(),
+        );
+    }
+    let bytes = std::fs::read(&canonical)
+        .map_err(|error| format!("Cannot read {}: {error}", canonical.display()))?;
     String::from_utf8(bytes).map_err(|_| "File is not valid UTF-8 text".to_string())
 }
 

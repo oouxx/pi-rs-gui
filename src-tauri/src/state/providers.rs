@@ -31,14 +31,31 @@ fn read_models_map() -> Map<String, Value> {
         .unwrap_or_default()
 }
 
+/// Read models.json for a mutation. A corrupt file must not be silently
+/// replaced by an empty map — that would drop every custom provider.
+fn read_models_map_for_write() -> Result<Map<String, Value>, String> {
+    let path = config::get_models_path();
+    match std::fs::read_to_string(&path) {
+        Ok(content) => serde_json::from_str::<Value>(&content)
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+            .ok_or_else(|| format!("models.json is not a JSON object: {}", path.display())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Map::new()),
+        Err(error) => Err(format!("Cannot read {}: {error}", path.display())),
+    }
+}
+
 /// Write the map back to models.json.
-fn write_models_map(map: &Map<String, Value>) {
+fn write_models_map(map: &Map<String, Value>) -> Result<(), String> {
     let path = config::get_models_path();
     if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
+        std::fs::create_dir_all(dir)
+            .map_err(|error| format!("Cannot create {}: {error}", dir.display()))?;
     }
-    let content = serde_json::to_string_pretty(map).unwrap_or_default();
-    let _ = std::fs::write(&path, &content);
+    let content = serde_json::to_string_pretty(map)
+        .map_err(|error| format!("Cannot serialize models.json: {error}"))?;
+    std::fs::write(&path, content)
+        .map_err(|error| format!("Cannot write {}: {error}", path.display()))
 }
 
 /// Access the `providers` object inside the models.json map.
@@ -115,7 +132,7 @@ pub fn set_custom_provider(config: &Value) -> Result<Value, String> {
         format!("${{{api_key}}}")
     };
 
-    let mut map = read_models_map();
+    let mut map = read_models_map_for_write()?;
     let providers = providers_obj_mut(&mut map).ok_or("invalid models.json format")?;
     let entry = providers
         .entry(provider.to_string())
@@ -137,7 +154,7 @@ pub fn set_custom_provider(config: &Value) -> Result<Value, String> {
     } else {
         models_arr.push(json!({ "id": model_id, "name": name }));
     }
-    write_models_map(&map);
+    write_models_map(&map)?;
     Ok(json!({
         "id": model_id,
         "provider": provider,
@@ -149,7 +166,7 @@ pub fn set_custom_provider(config: &Value) -> Result<Value, String> {
 
 /// Delete a custom provider by ID (removes the model entry).
 pub fn delete_custom_provider(provider_id: &str) -> Result<(), String> {
-    let mut map = read_models_map();
+    let mut map = read_models_map_for_write()?;
     let mut found = false;
     if let Some(providers) = map.get_mut("providers").and_then(|v| v.as_object_mut()) {
         for (_key, def) in providers.iter_mut() {
@@ -165,8 +182,7 @@ pub fn delete_custom_provider(provider_id: &str) -> Result<(), String> {
     if !found {
         return Err(format!("provider '{provider_id}' not found"));
     }
-    write_models_map(&map);
-    Ok(())
+    write_models_map(&map)
 }
 
 /// Check if a provider has authentication configured (stored in auth.json,
@@ -202,10 +218,13 @@ pub fn set_provider_api_key(provider_id: &str, api_key: &str) -> Result<String, 
         })
         .ok_or_else(|| format!("unknown provider '{provider_id}'"))?;
     let mut storage = auth_storage();
-    storage.set(provider_id, AuthCredential::ApiKey {
-        key: Some(api_key.to_string()),
-        env: None,
-    });
+    storage.set(
+        provider_id,
+        AuthCredential::ApiKey {
+            key: Some(api_key.to_string()),
+            env: None,
+        },
+    );
     Ok(var_name.to_string())
 }
 

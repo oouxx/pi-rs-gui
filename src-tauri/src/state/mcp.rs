@@ -206,8 +206,7 @@ fn update_server_in(
 
     let exposure = match exposure {
         Some(value) => Some(
-            McpExposure::parse(value)
-                .ok_or_else(|| format!("unknown MCP exposure '{value}'"))?,
+            McpExposure::parse(value).ok_or_else(|| format!("unknown MCP exposure '{value}'"))?,
         ),
         None => None,
     };

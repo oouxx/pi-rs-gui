@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use pi_agent_core::pi_ai_types::ContentBlock;
+use crate::state::actor::SessionCommand;
 use crate::state::*;
 use crate::state::{mcp, model, providers, session, settings};
-use crate::state::actor::SessionCommand;
+use pi_agent_core::pi_ai_types::ContentBlock;
 use serde_json::json;
 use tauri::{AppHandle, State};
 
@@ -45,9 +45,17 @@ pub async fn archive_session(
 ) -> Result<DesktopState, String> {
     // Destroy the session's actor (abort + remove from the registry).
     store.shutdown_actor(&session_id).await;
+    let mut failure: Option<String> = None;
     let state = store
-        .mutate(&app, |s| session::archive_session_by_id(s, &session_id))
+        .mutate(&app, |s| {
+            if let Err(error) = session::archive_session_by_id(s, &session_id) {
+                failure = Some(error);
+            }
+        })
         .await;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     // Ensure the newly selected session has an actor ready.
     store.ensure_selected_actor(&app).await.ok();
     Ok(state)
@@ -61,9 +69,17 @@ pub async fn delete_session(
 ) -> Result<DesktopState, String> {
     // Destroy the session's actor (abort + remove from the registry).
     store.shutdown_actor(&session_id).await;
+    let mut failure: Option<String> = None;
     let state = store
-        .mutate(&app, |s| session::delete_session_by_id(s, &session_id))
+        .mutate(&app, |s| {
+            if let Err(error) = session::delete_session_by_id(s, &session_id) {
+                failure = Some(error);
+            }
+        })
         .await;
+    if let Some(error) = failure {
+        return Err(error);
+    }
     // Ensure the newly selected session has an actor ready.
     store.ensure_selected_actor(&app).await.ok();
     Ok(state)
@@ -100,9 +116,8 @@ pub async fn rename_session(
                 .filter(|f| !f.is_empty())
         };
         if let Some(file) = file {
-            let mut mgr = pi_coding_agent::core::session_manager::SessionManager::open(
-                &file, None, None,
-            );
+            let mut mgr =
+                pi_coding_agent::core::session_manager::SessionManager::open(&file, None, None);
             mgr.append_session_info(&title);
         }
     }
@@ -295,7 +310,7 @@ pub async fn set_provider_api_key(
     provider_id: String,
     api_key: String,
 ) -> Result<DesktopState, String> {
-    providers::set_provider_api_key(&provider_id, &api_key).map_err(|e| format!("{e}"))?;
+    providers::set_provider_api_key(&provider_id, &api_key)?;
     Ok(store.state.lock().await.clone())
 }
 
@@ -426,13 +441,9 @@ pub async fn list_skills(cwd: Option<String>) -> Result<Vec<serde_json::Value>, 
 }
 
 #[tauri::command]
-pub async fn get_skill(
-    cwd: Option<String>,
-    name: String,
-) -> Result<serde_json::Value, String> {
+pub async fn get_skill(cwd: Option<String>, name: String) -> Result<serde_json::Value, String> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
-    crate::state::skills::get_skill(&cwd, &name)
-        .ok_or_else(|| format!("skill '{name}' not found"))
+    crate::state::skills::get_skill(&cwd, &name).ok_or_else(|| format!("skill '{name}' not found"))
 }
 
 // ── Extensions ──
@@ -517,10 +528,7 @@ pub async fn export_session(
 /// to be installed and logged in (`gh auth login`), mirroring TS `/share`.
 /// Returns the gist URL.
 #[tauri::command]
-pub async fn share_session(
-    store: State<'_, Arc<Store>>,
-) -> Result<String, String> {
-    use std::path::PathBuf;
+pub async fn share_session(store: State<'_, Arc<Store>>) -> Result<String, String> {
     use std::process::Stdio;
 
     // 1. gh must exist and be logged in.
@@ -530,7 +538,9 @@ pub async fn share_session(
         .stderr(Stdio::null())
         .status()
         .await
-        .map_err(|_| "GitHub CLI (gh) is not installed. Install it from https://cli.github.com/".to_string())?;
+        .map_err(|_| {
+            "GitHub CLI (gh) is not installed. Install it from https://cli.github.com/".to_string()
+        })?;
     if !auth.success() {
         return Err("GitHub CLI is not logged in. Run 'gh auth login' first.".to_string());
     }
@@ -553,12 +563,12 @@ pub async fn share_session(
     };
 
     // 3. Export to a temp HTML file.
-    let tmp = PathBuf::from(std::env::temp_dir()).join("pi-gui-share.html");
+    let tmp = std::env::temp_dir().join("pi-gui-share.html");
     crate::state::export::export_session(&session_file, "html", &tmp.to_string_lossy())?;
 
     // 4. Create a secret gist and extract the URL from the output.
     let out = tokio::process::Command::new("gh")
-        .args(["gist", "create", "--public=false", &tmp.to_string_lossy().to_string()])
+        .args(["gist", "create", "--public=false", &tmp.to_string_lossy()])
         .output()
         .await
         .map_err(|e| format!("failed to run gh: {e}"))?;
@@ -605,7 +615,9 @@ pub async fn navigate_session_tree(
 ) -> Result<Vec<serde_json::Value>, String> {
     // `Store::navigate_session_tree` already emits the transcript update;
     // emitting here too sent every navigation twice.
-    store.navigate_session_tree(&app, &session_id, &entry_id).await
+    store
+        .navigate_session_tree(&app, &session_id, &entry_id)
+        .await
 }
 
 // ── Terminal ──
@@ -640,10 +652,7 @@ pub async fn terminal_resize(
 }
 
 #[tauri::command]
-pub async fn terminal_stop(
-    store: State<'_, Arc<Store>>,
-    session_id: String,
-) -> Result<(), String> {
+pub async fn terminal_stop(store: State<'_, Arc<Store>>, session_id: String) -> Result<(), String> {
     store.terminal_stop(&session_id).await;
     Ok(())
 }
@@ -667,9 +676,7 @@ pub async fn set_session_model(
 }
 
 #[tauri::command]
-pub async fn get_session_model(
-    store: State<'_, Arc<Store>>,
-) -> Result<serde_json::Value, String> {
+pub async fn get_session_model(store: State<'_, Arc<Store>>) -> Result<serde_json::Value, String> {
     Ok(store.get_session_model().await)
 }
 
@@ -724,7 +731,10 @@ pub async fn fork_session_at(
 }
 
 #[tauri::command]
-pub async fn clone_session(app: AppHandle, store: State<'_, Arc<Store>>) -> Result<DesktopState, String> {
+pub async fn clone_session(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+) -> Result<DesktopState, String> {
     store.clone_session(&app).await
 }
 
@@ -869,9 +879,7 @@ async fn apply_mcp_change(
 
 /// `provider/modelId` patterns persisted in `ui-state.json`.
 #[tauri::command]
-pub async fn get_scoped_models(
-    store: State<'_, Arc<Store>>,
-) -> Result<serde_json::Value, String> {
+pub async fn get_scoped_models(store: State<'_, Arc<Store>>) -> Result<serde_json::Value, String> {
     let state = store.state.lock().await;
     Ok(serde_json::json!({
         "patterns": state.global_model_settings.enabled_model_patterns,

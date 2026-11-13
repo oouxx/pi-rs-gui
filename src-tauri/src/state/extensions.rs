@@ -53,12 +53,8 @@ pub fn list_extensions() -> Vec<Value> {
         .iter()
         .map(|id| ((*id).to_string(), true))
         .collect();
-    let registry = builtin_extension_registry(
-        true,
-        &all_enabled,
-        &mgr.get_web_search_config(),
-    )
-    .unwrap_or_default();
+    let registry = builtin_extension_registry(true, &all_enabled, &mgr.get_web_search_config())
+        .unwrap_or_default();
 
     let mut items = summarize(&registry);
     for item in &mut items {
@@ -139,10 +135,11 @@ mod tests {
     /// Enabled built-ins are listed and flagged as builtin.
     #[test]
     fn lists_enabled_builtin_extensions() {
-        let enabled: HashMap<String, bool> = pi_coding_agent::core::extensions::BUILTIN_EXTENSION_IDS
-            .iter()
-            .map(|id| ((*id).to_string(), true))
-            .collect();
+        let enabled: HashMap<String, bool> =
+            pi_coding_agent::core::extensions::BUILTIN_EXTENSION_IDS
+                .iter()
+                .map(|id| ((*id).to_string(), true))
+                .collect();
         let ext = summarize(&registry_for(&enabled));
         let names: Vec<&str> = ext.iter().map(|e| e["name"].as_str().unwrap()).collect();
         for expected in ["subagent", "web_search"] {

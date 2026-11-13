@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/toast";
+import { useI18n } from "@/i18n";
 import { listExtensions, setExtensionEnabled } from "@/api/commands";
 
 interface ExtensionCommand {
@@ -21,14 +22,15 @@ interface Extension {
 }
 
 const CATEGORIES = [
-  { id: "all", label: "All Extensions" },
-  { id: "builtin", label: "Builtin" },
+  { id: "all", labelKey: "extensions.all" },
+  { id: "builtin", labelKey: "extensions.builtin" },
 ] as const;
 
 type CatId = (typeof CATEGORIES)[number]["id"];
 
 export default function ExtensionsView() {
   const { toast } = useToast();
+  const { t } = useI18n();
   const [activeCat, setActiveCat] = useState<CatId>("all");
   const [search, setSearch] = useState("");
   const [extensions, setExtensions] = useState<Extension[]>([]);
@@ -60,20 +62,20 @@ export default function ExtensionsView() {
         const result = await setExtensionEnabled(extension.name, enabled);
         if (result.applied === false && result.warning) {
           toast({
-            title: `${extension.name} ${enabled ? "enabled" : "disabled"}`,
+            title: `${extension.name} ${t(enabled ? "extensions.enabled" : "extensions.disabled")}`,
             description: result.warning,
             variant: "error",
           });
         } else {
           toast({
-            title: `${extension.name} ${enabled ? "enabled" : "disabled"}`,
+            title: `${extension.name} ${t(enabled ? "extensions.enabled" : "extensions.disabled")}`,
             variant: "success",
           });
         }
         await refresh();
       } catch (e) {
         toast({
-          title: "Failed to update extension",
+          title: t("extensions.updateFailed"),
           description: e instanceof Error ? e.message : String(e),
           variant: "error",
         });
@@ -81,7 +83,7 @@ export default function ExtensionsView() {
         setBusy(null);
       }
     },
-    [refresh, toast],
+    [refresh, toast, t],
   );
 
   const counts = useMemo(() => {
@@ -110,7 +112,7 @@ export default function ExtensionsView() {
       {/* Top bar */}
       <div className="border-hairline flex items-center gap-3 border-b px-4 py-1.5">
         <SidebarTrigger className="shrink-0" />
-        <div className="text-foreground text-sm font-medium">Extensions</div>
+        <div className="text-foreground text-sm font-medium">{t("extensions.title")}</div>
       </div>
 
       {/* Two-panel body */}
@@ -124,11 +126,11 @@ export default function ExtensionsView() {
                 onClick={() => setActiveCat(cat.id)}
                 className={`flex items-center justify-between rounded-md px-3 py-1.5 text-left text-sm transition-colors ${
                   activeCat === cat.id
-                    ? "bg-accent/10 text-accent font-medium"
+                    ? "bg-accent text-accent-foreground font-medium"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                 }`}
               >
-                <span>{cat.label}</span>
+                <span>{t(cat.labelKey)}</span>
                 <span className="text-muted-foreground text-xs">{counts[cat.id]}</span>
               </button>
             ))}
@@ -142,7 +144,7 @@ export default function ExtensionsView() {
             <div className="relative max-w-sm flex-1">
               <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
               <Input
-                placeholder="Search extensions..."
+                placeholder={t("extensions.search")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="h-8 pl-8 text-xs"
@@ -154,13 +156,13 @@ export default function ExtensionsView() {
           <div className="flex-1 overflow-y-auto p-4">
             {loading ? (
               <div className="flex h-full items-center justify-center text-muted-foreground text-xs">
-                Loading extensions...
+                {t("extensions.loading")}
               </div>
             ) : error ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
                 <div className="text-destructive text-xs">{error}</div>
                 <Button size="sm" variant="outline" onClick={refresh}>
-                  Retry
+                  {t("common.retry")}
                 </Button>
               </div>
             ) : filtered.length === 0 ? (
@@ -170,12 +172,10 @@ export default function ExtensionsView() {
                     <Puzzle className="text-muted-foreground size-8" />
                   </div>
                   <h3 className="text-foreground mb-1 text-sm font-medium">
-                    No extensions found
+                    {t("extensions.emptyTitle")}
                   </h3>
                   <p className="text-muted-foreground text-xs leading-relaxed">
-                    Built-in extensions are compiled into pi-gui as Rust
-                    plugins. Enable them with the checkbox above; sessions
-                    reload the registry on restart.
+                    {t("extensions.emptyHint")}
                   </p>
                 </div>
               </div>
@@ -195,7 +195,7 @@ export default function ExtensionsView() {
                         onCheckedChange={(checked) =>
                           toggleExtension(e, checked === true)
                         }
-                        aria-label={`Enable ${e.name}`}
+                        aria-label={t("extensions.enableAria", { name: e.name })}
                       />
                       <span className="text-foreground font-mono text-sm font-medium">
                         {e.name}
@@ -206,11 +206,11 @@ export default function ExtensionsView() {
                       <span
                         className={`ml-auto text-[10px] uppercase ${
                           e.enabled
-                            ? "text-emerald-600 dark:text-emerald-400"
+                            ? "text-success"
                             : "text-muted-foreground"
                         }`}
                       >
-                        {e.enabled ? "Enabled" : "Disabled"}
+                        {t(e.enabled ? "extensions.enabled" : "extensions.disabled")}
                       </span>
                     </div>
 
@@ -220,7 +220,7 @@ export default function ExtensionsView() {
                         {e.tools.map((t) => (
                           <span
                             key={t}
-                            className="rounded bg-blue-500/10 px-1.5 py-0.5 font-mono text-[10px] text-blue-600 dark:text-blue-400"
+                            className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] text-primary"
                           >
                             {t}
                           </span>

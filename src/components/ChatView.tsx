@@ -40,6 +40,8 @@ import { useThreadSearch } from "@/hooks/use-thread-search";
 import { setThemePreference } from "@/hooks/useTheme";
 import { matchesBinding, useKeybindings } from "@/lib/keybindings";
 import { useI18n } from "@/i18n";
+import { motion } from "motion/react";
+import { enter, PANEL_TRANSITION } from "@/lib/motion";
 import { useToast } from "@/components/ui/toast";
 import PickModel from "@/components/PickModel";
 import TerminalDock from "@/components/TerminalDock";
@@ -190,9 +192,14 @@ export default function ChatView({
         refreshUsage();
       } catch (e) {
         console.error("[setSessionModel]", e);
+        toast({
+          variant: "error",
+          title: t("chat.setModelFailed"),
+          description: e instanceof Error ? e.message : String(e),
+        });
       }
     },
-    [refreshModelPicker, refreshUsage],
+    [refreshModelPicker, refreshUsage, toast, t],
   );
 
   const handleThinkingSelect = useCallback(
@@ -205,12 +212,12 @@ export default function ChatView({
         console.error("[setSessionThinkingLevel]", e);
         toast({
           variant: "error",
-          title: "Failed to set thinking level",
+          title: t("chat.setThinkingFailed"),
           description: e instanceof Error ? e.message : String(e),
         });
       }
     },
-    [toast],
+    [toast, t],
   );
 
   /** Ctrl/Cmd+P (Shift = backward) cycling over scoped/all models. */
@@ -219,7 +226,7 @@ export default function ChatView({
       try {
         const next = await cycleScopedModel(direction);
         if (!next) {
-          toast({ title: "No models available to cycle", variant: "error" });
+          toast({ title: t("chat.noModelsToCycle"), variant: "error" });
           return;
         }
         const state = await getSessionModel();
@@ -232,12 +239,12 @@ export default function ChatView({
       } catch (e) {
         toast({
           variant: "error",
-          title: "Failed to cycle model",
+          title: t("chat.cycleFailed"),
           description: e instanceof Error ? e.message : String(e),
         });
       }
     },
-    [toast, refreshUsage],
+    [toast, refreshUsage, t],
   );
 
   const toggleInfo = useCallback(() => {
@@ -273,12 +280,12 @@ export default function ChatView({
         console.error("[fork]", e);
         toast({
           variant: "error",
-          title: "Fork failed",
+          title: t("chat.forkFailed"),
           description: e instanceof Error ? e.message : String(e),
         });
       }
     },
-    [toast],
+    [toast, t],
   );
 
   const exportActiveSession = useCallback(async () => {
@@ -286,7 +293,7 @@ export default function ChatView({
     const session = sessions.find((s) => s.id === activeSessionId);
     const title = session?.title || "session";
     const path = await saveDialog({
-      title: "Export session",
+      title: t("chat.exportDialog"),
       defaultPath: `${title}.jsonl`,
       filters: [{ name: "JSONL file", extensions: ["jsonl"] }],
     });
@@ -297,12 +304,12 @@ export default function ChatView({
       console.error("[export]", e);
       toast({
         variant: "error",
-        title: "Export failed",
+        title: t("chat.exportFailed"),
         description: e instanceof Error ? e.message : String(e),
       });
     }
     return true;
-  }, [activeSessionId, sessions, toast]);
+  }, [activeSessionId, sessions, toast, t]);
 
   // Route builtin slash commands to real actions (TS interactive mode does
   // the same; unhandled commands fall through to the LLM as plain text).
@@ -317,7 +324,13 @@ export default function ChatView({
           return true;
         case "/name":
           if (arg && activeSessionId) {
-            await renameSession(activeSessionId, arg).catch(() => {});
+            await renameSession(activeSessionId, arg).catch((e) => {
+              toast({
+                variant: "error",
+                title: t("chat.renameFailed"),
+                description: e instanceof Error ? e.message : String(e),
+              });
+            });
           }
           return true;
         case "/compact":
@@ -325,7 +338,7 @@ export default function ChatView({
             console.error(e);
             toast({
               variant: "error",
-              title: "Compact failed",
+              title: t("chat.compactFailed"),
               description: e instanceof Error ? e.message : String(e),
             });
           });
@@ -334,11 +347,11 @@ export default function ChatView({
           try {
             await cloneSession();
             setShowTimeline(false);
-            toast({ variant: "success", title: "Session cloned" });
+            toast({ variant: "success", title: t("chat.cloned") });
           } catch (e) {
             toast({
               variant: "error",
-              title: "Clone failed",
+              title: t("chat.cloneFailed"),
               description: e instanceof Error ? e.message : String(e),
             });
           }
@@ -349,13 +362,13 @@ export default function ChatView({
             navigator.clipboard?.writeText(url).catch(() => {});
             toast({
               variant: "success",
-              title: "Session shared",
+              title: t("chat.shared"),
               description: url,
             });
           } catch (e) {
             toast({
               variant: "error",
-              title: "Share failed",
+              title: t("chat.shareFailed"),
               description: e instanceof Error ? e.message : String(e),
             });
           }
@@ -372,7 +385,13 @@ export default function ChatView({
           if (activeSessionId) {
             getSessionInfo(activeSessionId)
               .then((info) => setSessionInfo(info))
-              .catch(() => {});
+              .catch((e) => {
+                toast({
+                  variant: "error",
+                  title: t("chat.sessionInfoFailed"),
+                  description: e instanceof Error ? e.message : String(e),
+                });
+              });
             setInfoOpen(true);
           }
           return true;
@@ -445,12 +464,24 @@ export default function ChatView({
             filters: [{ name: "JSONL session", extensions: ["jsonl"] }],
           });
           if (typeof selected === "string" && selected) {
-            await importSession(selected).catch((e) => console.error(e));
+            await importSession(selected).catch((e) => {
+              toast({
+                variant: "error",
+                title: t("chat.importFailed"),
+                description: e instanceof Error ? e.message : String(e),
+              });
+            });
           }
           return true;
         }
         case "/reload":
-          await reloadSession().catch((e) => console.error(e));
+          await reloadSession().catch((e) => {
+            toast({
+              variant: "error",
+              title: t("chat.reloadFailed"),
+              description: e instanceof Error ? e.message : String(e),
+            });
+          });
           return true;
         case "/logout":
           onOpenSettings?.();
@@ -461,7 +492,11 @@ export default function ChatView({
             setTrustInfo(info);
             setTrustOpen(true);
           } catch (e) {
-            console.error(e);
+            toast({
+              variant: "error",
+              title: t("chat.trustLoadFailed"),
+              description: e instanceof Error ? e.message : String(e),
+            });
           }
           return true;
         }
@@ -499,6 +534,7 @@ export default function ChatView({
       handleThinkingSelect,
       exportActiveSession,
       toast,
+      t,
     ],
   );
 
@@ -512,11 +548,11 @@ export default function ChatView({
       console.error("[setSessionCwd]", e);
       toast({
         variant: "error",
-        title: "Failed to set working directory",
+        title: t("chat.setCwdFailed"),
         description: e instanceof Error ? e.message : String(e),
       });
     }
-  }, [activeSessionId, toast]);
+  }, [activeSessionId, toast, t]);
 
   // ── Scrolling ──────────────────────────────────────────────
   // Auto-scroll to the bottom while streaming, unless the user scrolled up.
@@ -612,18 +648,18 @@ export default function ChatView({
 
   return (
     <div className="flex size-full flex-col">
-      {/* Header — Codex desktop: minimal, hairline */}
-      <div className="border-codex-border bg-codex-bg flex shrink-0 items-center gap-3 border-b px-4 py-2">
+      {/* Header — minimal, hairline */}
+      <div className="border-border bg-background flex shrink-0 items-center gap-3 border-b px-4 py-2">
         <SidebarTrigger className="shrink-0" />
-        <div className="text-codex-faint flex min-w-0 shrink items-center gap-1.5 text-sm whitespace-nowrap">
-          <span className="text-codex-text font-medium">
+        <div className="text-subtle-foreground flex min-w-0 shrink items-center gap-1.5 text-sm whitespace-nowrap">
+          <span className="text-foreground font-medium">
             {activeTitle || t("chat.newConversation")}
           </span>
           {streaming && (
-            <Loader2 className="text-codex-green size-3.5 shrink-0 animate-spin" />
+            <Loader2 className="text-success size-3.5 shrink-0 animate-spin" />
           )}
           {activeSessionCwd && (
-            <span className="text-codex-faint hidden truncate text-xs md:inline">
+            <span className="text-subtle-foreground hidden truncate text-xs md:inline">
               · {activeSessionCwd.split("/").filter(Boolean).pop()}
             </span>
           )}
@@ -633,7 +669,7 @@ export default function ChatView({
             <button
               type="button"
               disabled={!activeSessionId}
-              className="text-codex-faint hover:text-codex-dim inline-flex max-w-[220px] items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-40"
+              className="text-subtle-foreground hover:text-muted-foreground inline-flex max-w-[220px] items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-40"
               title={t("chat.selectModel")}
             >
               <span className="truncate">
@@ -652,8 +688,8 @@ export default function ChatView({
               onSelect={handleModelSelect}
             />
             {supportedThinkingLevels.length > 0 && (
-              <div className="border-codex-border mt-2 flex items-center justify-between gap-2 border-t px-1 pt-2">
-                <span className="text-codex-faint text-xs">Thinking</span>
+              <div className="border-border mt-2 flex items-center justify-between gap-2 border-t px-1 pt-2">
+                <span className="text-subtle-foreground text-xs">Thinking</span>
                 <Select
                   value={thinkingLevel || supportedThinkingLevels[0]}
                   onValueChange={handleThinkingSelect}
@@ -676,7 +712,7 @@ export default function ChatView({
         {usage && (
           <span
             className={`hidden text-[11px] tabular-nums sm:inline ${
-              usage.percentage >= 85 ? "text-codex-amber" : "text-codex-faint"
+              usage.percentage >= 85 ? "text-warning" : "text-subtle-foreground"
             }`}
             title={usage.formatted}
           >
@@ -689,8 +725,8 @@ export default function ChatView({
               type="button"
               disabled={!activeSessionId}
               onClick={toggleInfo}
-              className="text-codex-faint hover:text-codex-dim rounded-md p-1 transition-colors disabled:opacity-40"
-              title={t("chat.sessionInfo")}
+              className="text-subtle-foreground hover:text-muted-foreground rounded-md p-1 transition-colors disabled:opacity-40"
+              title={t("chat.sessionInfo")} aria-label={t("chat.sessionInfo")}
             >
               <Info className="size-3.5" />
             </button>
@@ -705,7 +741,7 @@ export default function ChatView({
                   <button
                     type="button"
                     className="text-muted-foreground hover:text-foreground truncate font-mono transition-colors"
-                    title="Copy session ID"
+                    title={t("session.copyId")}
                     onClick={() => {
                       navigator.clipboard?.writeText(sessionInfo.id).catch(() => {});
                     }}
@@ -765,10 +801,10 @@ export default function ChatView({
           disabled={!activeSessionId}
           className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors disabled:opacity-40 ${
             showTimeline
-              ? "bg-codex-green/10 text-codex-green"
-              : "text-codex-faint hover:text-codex-dim"
+              ? "bg-success/10 text-success"
+              : "text-subtle-foreground hover:text-muted-foreground"
           }`}
-          title="Toggle session timeline"
+          title={t("chat.toggleTimeline")}
         >
           <GitBranch className="size-3.5" />
           Timeline
@@ -776,16 +812,16 @@ export default function ChatView({
       </div>
 
       {/* Messages or empty state */}
-      <div className="bg-codex-bg flex min-h-0 flex-1">
+      <div className="bg-background flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div
             key={activeSessionId}
             ref={timelineRef}
-            className="timeline custom-scroll bg-codex-bg relative flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-6"
+            className="timeline custom-scroll bg-background relative flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-6"
           >
             {threadSearch.isOpen && (
-              <div className="border-codex-border bg-codex-bg absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-lg">
-                <Search className="text-codex-faint size-3.5" />
+              <div className="border-border bg-background absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-lg">
+                <Search className="text-subtle-foreground size-3.5" />
                 <input
                   ref={threadSearch.inputRef}
                   value={threadSearch.query}
@@ -800,35 +836,35 @@ export default function ChatView({
                       threadSearch.close();
                     }
                   }}
-                  placeholder="Find in chat…"
-                  className="text-codex-text h-6 w-40 bg-transparent text-xs outline-none placeholder:text-codex-faint"
+                  placeholder={t("chat.findInChat")}
+                  className="text-foreground h-6 w-40 bg-transparent text-xs outline-none placeholder:text-subtle-foreground"
                 />
-                <span className="text-codex-faint min-w-[2.5rem] text-center text-[10px]">
+                <span className="text-subtle-foreground min-w-[2.5rem] text-center text-[10px]">
                   {threadSearch.matchCount === 0
                     ? "0/0"
                     : `${threadSearch.activeIndex + 1}/${threadSearch.matchCount}`}
                 </span>
                 <button
                   type="button"
-                  className="text-codex-faint hover:text-codex-dim rounded p-0.5 transition-colors"
+                  className="text-subtle-foreground hover:text-muted-foreground rounded p-0.5 transition-colors"
                   onClick={() => threadSearch.goToMatch(-1)}
-                  title="Previous match (Shift+Enter)"
+                  title={t("chat.prevMatch")} aria-label={t("chat.prevMatch")}
                 >
                   <ArrowUp className="size-3.5" />
                 </button>
                 <button
                   type="button"
-                  className="text-codex-faint hover:text-codex-dim rounded p-0.5 transition-colors"
+                  className="text-subtle-foreground hover:text-muted-foreground rounded p-0.5 transition-colors"
                   onClick={() => threadSearch.goToMatch(1)}
-                  title="Next match (Enter)"
+                  title={t("chat.nextMatch")} aria-label={t("chat.nextMatch")}
                 >
                   <ArrowDown className="size-3.5" />
                 </button>
                 <button
                   type="button"
-                  className="text-codex-faint hover:text-codex-dim rounded p-0.5 transition-colors"
+                  className="text-subtle-foreground hover:text-muted-foreground rounded p-0.5 transition-colors"
                   onClick={() => threadSearch.close()}
-                  title="Close (Esc)"
+                  title={t("chat.closeFind")} aria-label={t("chat.closeFind")}
                 >
                   <X className="size-3.5" />
                 </button>
@@ -836,21 +872,23 @@ export default function ChatView({
             )}
             {isEmpty ? (
               <div className="flex flex-1 items-center justify-center">
-                <div className="max-w-[560px] px-6 text-center">
+                <motion.div
+                  className="max-w-[560px] px-6 text-center"
+                  {...enter}
+                  transition={PANEL_TRANSITION}
+                >
                   <div className="mb-5 flex items-center justify-center">
-                    <span className="bg-codex-green flex size-10 items-center justify-center rounded-xl text-xl font-bold text-white shadow">
+                    <span className="bg-primary font-serif flex size-10 items-center justify-center rounded-xl text-xl font-bold text-primary-foreground shadow-md">
                       p
                     </span>
                   </div>
-                  <h1 className="bg-gradient-to-br from-codex-text via-codex-text to-codex-faint bg-clip-text text-3xl font-semibold tracking-tight text-transparent">
-                    What can I help you build?
+                  <h1 className="font-serif bg-gradient-to-br from-foreground via-foreground to-muted-foreground bg-clip-text text-3xl font-semibold tracking-tight text-transparent">
+                    {t("chat.emptyTitle")}
                   </h1>
-                  <p className="text-codex-dim mt-3 text-sm leading-relaxed">
-                    Ask pi to refactor code, explain a codebase, debug a problem,
-                    or carry a task from idea to shipped change — right here in
-                    your project.
+                  <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
+                    {t("chat.emptyHint")}
                   </p>
-                </div>
+                </motion.div>
               </div>
             ) : (
               messages.map((msg, idx) => (
@@ -873,20 +911,20 @@ export default function ChatView({
           )}
 
           {/* Working directory picker + terminal toggle */}
-          <div className="border-codex-border bg-codex-bg flex shrink-0 items-center gap-1 border-t px-4 pt-2">
+          <div className="border-border bg-background flex shrink-0 items-center gap-1 border-t px-4 pt-2">
             <button
               type="button"
               onClick={handlePickFolder}
               disabled={!activeSessionId}
-              className="text-codex-faint hover:text-codex-dim inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-50"
-              title={activeSessionCwd ?? "选择工作目录"}
+              className="text-subtle-foreground hover:text-muted-foreground inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-50"
+              title={activeSessionCwd ?? t("chat.selectCwd")}
             >
               <Folder className="size-3.5" />
               <span className="max-w-[260px] truncate">
                 {activeSessionCwd
                   ? (activeSessionCwd.split("/").filter(Boolean).pop() ??
                     activeSessionCwd)
-                  : "选择工作目录"}
+                  : t("chat.selectCwd")}
               </span>
             </button>
             <button
@@ -894,13 +932,13 @@ export default function ChatView({
               onClick={() => setTerminalOpen((o) => !o)}
               className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors ${
                 terminalOpen
-                  ? "bg-codex-green/10 text-codex-green"
-                  : "text-codex-faint hover:text-codex-dim"
+                  ? "bg-success/10 text-success"
+                  : "text-subtle-foreground hover:text-muted-foreground"
               }`}
-              title="Toggle terminal panel (⌘J)"
+              title={t("chat.toggleTerminal")}
             >
               <TerminalSquare className="size-3.5" />
-              Terminal
+              {t("chat.terminal")}
             </button>
           </div>
 
@@ -921,17 +959,17 @@ export default function ChatView({
         <Dialog open={trustOpen} onOpenChange={setTrustOpen}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Project trust</DialogTitle>
+              <DialogTitle>{t("chat.trustTitle")}</DialogTitle>
               <DialogDescription>{trustInfo?.cwd ?? ""}</DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-1.5 text-sm">
               <span className="text-muted-foreground text-xs">
-                Current:{" "}
+                {t("chat.trustCurrent")}{" "}
                 {trustInfo?.decision === true
-                  ? "Trusted"
+                  ? t("chat.trusted")
                   : trustInfo?.decision === false
-                    ? "Ignored"
-                    : "Not set"}
+                    ? t("chat.ignored")
+                    : t("chat.notSet")}
               </span>
             </div>
             <DialogFooter className="flex items-center gap-2">
@@ -939,36 +977,54 @@ export default function ChatView({
                 variant="outline"
                 onClick={async () => {
                   if (trustInfo) {
-                    await setProjectTrust(trustInfo.cwd, true).catch(() => {});
+                    await setProjectTrust(trustInfo.cwd, true).catch((e) => {
+                      toast({
+                        variant: "error",
+                        title: t("chat.trustSaveFailed"),
+                        description: e instanceof Error ? e.message : String(e),
+                      });
+                    });
                     setTrustOpen(false);
                   }
                 }}
               >
                 <ShieldCheck className="size-3.5" />
-                Trust
+                {t("chat.trust")}
               </Button>
               <Button
                 variant="outline"
                 onClick={async () => {
                   if (trustInfo) {
-                    await setProjectTrust(trustInfo.cwd, false).catch(() => {});
+                    await setProjectTrust(trustInfo.cwd, false).catch((e) => {
+                      toast({
+                        variant: "error",
+                        title: t("chat.trustSaveFailed"),
+                        description: e instanceof Error ? e.message : String(e),
+                      });
+                    });
                     setTrustOpen(false);
                   }
                 }}
               >
                 <ShieldX className="size-3.5" />
-                Ignore
+                {t("chat.ignore")}
               </Button>
               <Button
                 variant="ghost"
                 onClick={async () => {
                   if (trustInfo) {
-                    await setProjectTrust(trustInfo.cwd, null).catch(() => {});
+                    await setProjectTrust(trustInfo.cwd, null).catch((e) => {
+                      toast({
+                        variant: "error",
+                        title: t("chat.trustSaveFailed"),
+                        description: e instanceof Error ? e.message : String(e),
+                      });
+                    });
                     setTrustOpen(false);
                   }
                 }}
               >
-                Clear
+                {t("chat.clear")}
               </Button>
             </DialogFooter>
           </DialogContent>

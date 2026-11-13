@@ -16,8 +16,8 @@ pub(crate) mod skills;
 pub(crate) mod store;
 pub(crate) mod terminal;
 pub(crate) mod transcript;
-pub(crate) mod trust;
 pub(crate) mod tree;
+pub(crate) mod trust;
 pub(crate) mod types;
 pub(crate) mod ui;
 

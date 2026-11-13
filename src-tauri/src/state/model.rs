@@ -60,4 +60,3 @@ pub fn hydrate_global_settings(state: &mut DesktopState) {
     state.global_model_settings.default_model_id = settings.default_model.clone();
     state.global_model_settings.default_thinking_level = settings.default_thinking_level.clone();
 }
-

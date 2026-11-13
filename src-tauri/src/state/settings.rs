@@ -69,17 +69,23 @@ pub fn set_general_setting(key: &str, value: Value) -> Result<(), String> {
     with_mgr(|mgr| {
         match key {
             "defaultThinkingLevel" => {
-                let level = value.as_str().ok_or("defaultThinkingLevel must be a string")?;
+                let level = value
+                    .as_str()
+                    .ok_or("defaultThinkingLevel must be a string")?;
                 mgr.set_default_thinking_level(level);
             }
             "compactionEnabled" => {
-                mgr.set_compaction_enabled(value.as_bool().ok_or("compactionEnabled must be a bool")?);
+                mgr.set_compaction_enabled(
+                    value.as_bool().ok_or("compactionEnabled must be a bool")?,
+                );
             }
             "retryEnabled" => {
                 mgr.set_retry_enabled(value.as_bool().ok_or("retryEnabled must be a bool")?);
             }
             "hideThinkingBlock" => {
-                mgr.set_hide_thinking_block(value.as_bool().ok_or("hideThinkingBlock must be a bool")?);
+                mgr.set_hide_thinking_block(
+                    value.as_bool().ok_or("hideThinkingBlock must be a bool")?,
+                );
             }
             "shellPath" => {
                 let path = value
@@ -96,7 +102,9 @@ pub fn set_general_setting(key: &str, value: Value) -> Result<(), String> {
             }
             "enableSkillCommands" => {
                 mgr.set_enable_skill_commands(
-                    value.as_bool().ok_or("enableSkillCommands must be a bool")?,
+                    value
+                        .as_bool()
+                        .ok_or("enableSkillCommands must be a bool")?,
                 );
             }
             "skillPaths" => {
@@ -177,9 +185,7 @@ pub fn set_general_setting(key: &str, value: Value) -> Result<(), String> {
             }
             "collapseChangelog" => {
                 mgr.set_collapse_changelog(
-                    value
-                        .as_bool()
-                        .ok_or("collapseChangelog must be a bool")?,
+                    value.as_bool().ok_or("collapseChangelog must be a bool")?,
                 );
             }
             _ => return Err(format!("unknown setting '{key}'")),
@@ -187,4 +193,3 @@ pub fn set_general_setting(key: &str, value: Value) -> Result<(), String> {
         Ok(())
     })
 }
-

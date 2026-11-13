@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { expand, FAST_TRANSITION, PANEL_TRANSITION } from "@/lib/motion";
 import {
-  ChevronDown,
   ChevronRight,
   Terminal,
   FileText,
@@ -15,6 +16,8 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { getActiveSessionCwd, openFile } from "@/api/commands";
+import { useToast } from "@/components/ui/toast";
+import { useI18n, type TranslationKey } from "@/i18n";
 
 interface ToolCallCardProps {
   name: string;
@@ -26,19 +29,19 @@ interface ToolCallCardProps {
   details?: unknown;
 }
 
-// ── Per-tool metadata (icon + human label), matching Codex CLI ──
-const TOOL_META: Record<string, { icon: ReactNode; label: string }> = {
-  bash: { icon: <Terminal className="size-3.5" />, label: "Run command" },
-  read: { icon: <FileText className="size-3.5" />, label: "Read file" },
-  edit: { icon: <FileEdit className="size-3.5" />, label: "Edit file" },
-  edit_diff: { icon: <FileEdit className="size-3.5" />, label: "Edit file" },
-  write: { icon: <FileEdit className="size-3.5" />, label: "Write file" },
-  grep: { icon: <Search className="size-3.5" />, label: "Search files" },
-  find: { icon: <FolderSearch className="size-3.5" />, label: "Find files" },
-  ls: { icon: <FolderOpen className="size-3.5" />, label: "List directory" },
+// ── Per-tool icon (the tool name itself is shown as the title) ──
+const TOOL_META: Record<string, { icon: ReactNode }> = {
+  bash: { icon: <Terminal className="size-3.5" /> },
+  read: { icon: <FileText className="size-3.5" /> },
+  edit: { icon: <FileEdit className="size-3.5" /> },
+  edit_diff: { icon: <FileEdit className="size-3.5" /> },
+  write: { icon: <FileEdit className="size-3.5" /> },
+  grep: { icon: <Search className="size-3.5" /> },
+  find: { icon: <FolderSearch className="size-3.5" /> },
+  ls: { icon: <FolderOpen className="size-3.5" /> },
 };
 
-const DEFAULT_META = { icon: <Wrench className="size-3.5" />, label: "Tool" };
+const DEFAULT_META = { icon: <Wrench className="size-3.5" /> };
 
 /** Extract a human-readable summary of the key argument (not raw JSON). */
 function summarizeArgs(name: string, args: unknown): string {
@@ -84,28 +87,31 @@ function summarizeArgs(name: string, args: unknown): string {
   }
 }
 
-const STATUS_META: Record<string, { label: string; icon: ReactNode; color: string }> = {
+const STATUS_META: Record<
+  string,
+  { labelKey: TranslationKey; icon: ReactNode; color: string }
+> = {
   running: {
-    label: "Running",
+    labelKey: "tool.running",
     icon: <Loader2 className="size-3 animate-spin" />,
-    color: "text-codex-amber",
+    color: "text-warning",
   },
   success: {
-    label: "Done",
+    labelKey: "tool.done",
     icon: <CheckCircle2 className="size-3" />,
-    color: "text-codex-green",
+    color: "text-success",
   },
   error: {
-    label: "Failed",
+    labelKey: "tool.failed",
     icon: <XCircle className="size-3" />,
-    color: "text-codex-red",
+    color: "text-destructive",
   },
 };
 
 const IDLE_META = {
-  label: "Pending",
+  labelKey: "tool.pending" as TranslationKey,
   icon: <Loader2 className="size-3 animate-spin" />,
-  color: "text-codex-faint",
+  color: "text-subtle-foreground",
 };
 
 /** Format elapsed ms like the TS original's `formatDuration`: seconds with
@@ -144,9 +150,10 @@ function DiffView({
   text: string;
   truncated?: boolean;
 }) {
+  const { t } = useI18n();
   const lines = text.split("\n").slice(0, 600);
   return (
-    <div className="border-codex-border bg-codex-inset mt-1 overflow-hidden rounded-lg border">
+    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
       <div className="max-h-80 overflow-auto font-mono text-[12px] leading-relaxed">
         {lines.map((line, index) => {
           const marker = line[0];
@@ -157,10 +164,10 @@ function DiffView({
           const content = match ? match[2] : line.slice(1);
           const tone =
             kind === "add"
-              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              ? "bg-success/10 text-success"
               : kind === "del"
-                ? "bg-red-500/10 text-red-700 dark:text-red-300"
-                : "text-codex-dim";
+                ? "bg-destructive/10 text-destructive"
+                : "text-muted-foreground";
           return (
             <div key={index} className={`flex ${tone}`}>
               <span className="w-10 shrink-0 pr-2 text-right opacity-50 select-none">
@@ -177,8 +184,8 @@ function DiffView({
         })}
       </div>
       {truncated && (
-        <div className="text-codex-faint border-codex-border border-t px-3 py-1 text-[11px]">
-          … truncated
+        <div className="text-subtle-foreground border-border border-t px-3 py-1 text-[11px]">
+          {t("tool.truncated")}
         </div>
       )}
     </div>
@@ -225,6 +232,8 @@ export default function ToolCallCard({
   isError,
   details,
 }: ToolCallCardProps) {
+  const { toast } = useToast();
+  const { t } = useI18n();
   const [showDetails, setShowDetails] = useState(false);
   // Elapsed timer — the TS original's TUI re-renders every second while a
   // tool runs (`renderResult` setInterval + `Elapsed X.Xs`), so the status
@@ -282,33 +291,39 @@ export default function ToolCallCard({
         const cwd = await getActiveSessionCwd();
         await openFile(filePath, cwd);
       } catch (error) {
-        console.error("[openFile]", error);
+        toast({
+          variant: "error",
+          title: t("common.openFailed"),
+          description: error instanceof Error ? error.message : String(error),
+        });
       }
     },
-    [filePath],
+    [filePath, t, toast],
   );
 
   return (
     <div className="my-2">
-      {/* Header: icon + tool name + status (Codex desktop card) */}
+      {/* Header: icon + tool name + status */}
       <div className="flex items-center gap-2 text-sm">
         <span className={`shrink-0 ${st.color}`}>{meta.icon}</span>
-        <span className="text-codex-dim font-medium">{name}</span>
+        <span className="text-muted-foreground font-medium">{name}</span>
         {filePath && (
           <button
             type="button"
             onClick={handleOpenFile}
-            className="text-codex-faint hover:text-codex-dim shrink-0"
-            title="Open in editor"
+            className="text-subtle-foreground hover:text-muted-foreground shrink-0"
+            title={t("common.openInEditor")} aria-label={t("common.openInEditor")}
           >
             <ExternalLink className="size-3" />
           </button>
         )}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <span className={st.color}>{st.icon}</span>
-          <span className="text-codex-faint text-xs">{st.label}</span>
+          <span className="text-subtle-foreground text-xs">
+            {t(st.labelKey)}
+          </span>
           {elapsedMs !== null && (
-            <span className="text-codex-faint tabular-nums text-xs">
+            <span className="text-subtle-foreground tabular-nums text-xs">
               {formatElapsed(elapsedMs)}
             </span>
           )}
@@ -317,18 +332,18 @@ export default function ToolCallCard({
 
       {name === "bash" ? (
         /* bash: terminal-style block with `$` prompt */
-        <div className="border-codex-border bg-codex-inset mt-1 overflow-hidden rounded-lg border">
+        <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
           <div className="px-3 py-2 font-mono text-[13px] leading-relaxed">
             {summary && (
-              <div className="text-codex-text break-words whitespace-pre-wrap">
-                <span className="text-codex-green select-none">$ </span>
+              <div className="text-foreground break-words whitespace-pre-wrap">
+                <span className="text-success select-none">$ </span>
                 {summary}
               </div>
             )}
             {resultPreview && !showDetails && (
               <div
                 className={`mt-1 break-words whitespace-pre-wrap ${
-                  effError ? "text-codex-red" : "text-codex-faint"
+                  effError ? "text-destructive" : "text-subtle-foreground"
                 }`}
               >
                 {effError ? "✗ " : ""}
@@ -340,41 +355,49 @@ export default function ToolCallCard({
             <button
               type="button"
               onClick={() => setShowDetails((v) => !v)}
-              className="hover:text-codex-dim flex w-full items-center gap-1 border-t border-codex-border px-3 py-1.5 text-left text-xs text-codex-faint transition-colors"
+              className="hover:text-muted-foreground flex w-full items-center gap-1 border-t border-border px-3 py-1.5 text-left text-xs text-subtle-foreground transition-colors"
             >
-              {showDetails ? (
-                <ChevronDown className="size-3" />
-              ) : (
+              <motion.span
+                className="inline-flex"
+                animate={{ rotate: showDetails ? 90 : 0 }}
+                transition={FAST_TRANSITION}
+              >
                 <ChevronRight className="size-3" />
-              )}
-              details
+              </motion.span>
+              {t("tool.details")}
             </button>
           )}
-          {showDetails && (
-            <div className="border-t border-codex-border">
-              {argsStr && (
-                <pre className="text-codex-dim bg-codex-bg overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed">
-                  {argsStr}
-                </pre>
-              )}
-              {result && (
-                <pre
-                  className={`bg-codex-bg overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed ${
-                    effError ? "text-codex-red" : "text-codex-dim"
-                  }`}
-                >
-                  {result}
-                </pre>
-              )}
-            </div>
-          )}
+          <AnimatePresence initial={false}>
+            {showDetails && (
+              <motion.div
+                {...expand}
+                transition={PANEL_TRANSITION}
+                className="border-t border-border overflow-hidden"
+              >
+                {argsStr && (
+                  <pre className="text-muted-foreground bg-background overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed">
+                    {argsStr}
+                  </pre>
+                )}
+                {result && (
+                  <pre
+                    className={`bg-background overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed ${
+                      effError ? "text-destructive" : "text-muted-foreground"
+                    }`}
+                  >
+                    {result}
+                  </pre>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       ) : (
         <>
           {/* Non-bash tools: dimmed one-line summary */}
           {summary && (
             <div
-              className="text-codex-dim mt-1 truncate text-xs"
+              className="text-muted-foreground mt-1 truncate text-xs"
               title={summary}
             >
               {summary}
@@ -387,7 +410,7 @@ export default function ToolCallCard({
             !showDetails && (
               <div
                 className={`mt-0.5 truncate text-xs ${
-                  effError ? "text-codex-red" : "text-codex-faint"
+                  effError ? "text-destructive" : "text-subtle-foreground"
                 }`}
                 title={result}
               >
@@ -400,34 +423,42 @@ export default function ToolCallCard({
             <button
               type="button"
               onClick={() => setShowDetails((v) => !v)}
-              className="hover:text-codex-dim mt-1 flex items-center gap-1 text-xs text-codex-faint transition-colors"
+              className="hover:text-muted-foreground mt-1 flex items-center gap-1 text-xs text-subtle-foreground transition-colors"
             >
-              {showDetails ? (
-                <ChevronDown className="size-3" />
-              ) : (
+              <motion.span
+                className="inline-flex"
+                animate={{ rotate: showDetails ? 90 : 0 }}
+                transition={FAST_TRANSITION}
+              >
                 <ChevronRight className="size-3" />
-              )}
-              details
+              </motion.span>
+              {t("tool.details")}
             </button>
           )}
-          {showDetails && (
-            <div className="border-codex-border bg-codex-inset mt-1 overflow-hidden rounded-lg border">
-              {argsStr && (
-                <pre className="text-codex-dim bg-codex-bg overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed">
-                  {argsStr}
-                </pre>
-              )}
-              {result && (
-                <pre
-                  className={`bg-codex-bg overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed ${
-                    effError ? "text-codex-red" : "text-codex-dim"
-                  }`}
-                >
-                  {result}
-                </pre>
-              )}
-            </div>
-          )}
+          <AnimatePresence initial={false}>
+            {showDetails && (
+              <motion.div
+                {...expand}
+                transition={PANEL_TRANSITION}
+                className="border-border bg-muted mt-1 overflow-hidden rounded-lg border"
+              >
+                {argsStr && (
+                  <pre className="text-muted-foreground bg-background overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed">
+                    {argsStr}
+                  </pre>
+                )}
+                {result && (
+                  <pre
+                    className={`bg-background overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed ${
+                      effError ? "text-destructive" : "text-muted-foreground"
+                    }`}
+                  >
+                    {result}
+                  </pre>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </>
       )}
     </div>

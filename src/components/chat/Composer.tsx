@@ -153,7 +153,7 @@ export default function Composer({
   }, []);
 
   // Focus the slash menu's search field so cmdk handles type-to-filter and
-  // arrow navigation (matches Codex's floating picker).
+  // arrow navigation (floating picker).
   useEffect(() => {
     if (showSlash) {
       requestAnimationFrame(() => slashInputRef.current?.focus());
@@ -219,8 +219,8 @@ export default function Composer({
       if (images.length + textFiles.length < all.length) {
         toast({
           variant: "error",
-          title: "Unsupported file",
-          description: "Only images and text/code files can be attached",
+          title: t("composer.unsupportedFile"),
+          description: t("composer.unsupportedFileHint"),
         });
       }
 
@@ -229,7 +229,7 @@ export default function Composer({
       if (images.length > imageRoom) {
         toast({
           variant: "error",
-          title: "Too many attachments",
+          title: t("composer.tooManyAttachments"),
           description: `At most ${MAX_ATTACHMENTS} images can be attached`,
         });
       }
@@ -239,8 +239,8 @@ export default function Composer({
       if (tooBigImages.length > 0) {
         toast({
           variant: "error",
-          title: "File too large",
-          description: "Images must be smaller than 10 MB",
+          title: t("composer.fileTooLarge"),
+          description: t("composer.imageTooLargeHint"),
         });
       }
 
@@ -249,7 +249,7 @@ export default function Composer({
       if (textFiles.length > textRoom) {
         toast({
           variant: "error",
-          title: "Too many files",
+          title: t("composer.tooManyFiles"),
           description: `At most ${MAX_TEXT_ATTACHMENTS} text files can be attached`,
         });
       }
@@ -259,8 +259,8 @@ export default function Composer({
       if (tooBigText.length > 0) {
         toast({
           variant: "error",
-          title: "File too large",
-          description: "Text files must be smaller than 256 KB",
+          title: t("composer.fileTooLarge"),
+          description: t("composer.textTooLargeHint"),
         });
       }
 
@@ -294,10 +294,10 @@ export default function Composer({
           );
         }
       } catch {
-        toast({ variant: "error", title: "Failed to read attachment" });
+        toast({ variant: "error", title: t("composer.readAttachmentFailed") });
       }
     },
-    [attachments.length, textAttachments.length, toast],
+    [attachments.length, textAttachments.length, t, toast],
   );
 
   const handleAttachClick = useCallback(() => {
@@ -596,19 +596,19 @@ export default function Composer({
   );
 
   return (
-    <div className="border-codex-border bg-codex-bg shrink-0 border-t px-4 py-3">
+    <div className="border-border bg-background shrink-0 border-t px-4 py-3">
       <div className="relative mx-auto max-w-[820px]">
         {/* Slash command picker — bottom-anchored above the composer */}
         {showSlash && (
           <div
             ref={slashMenuRef}
-            className="border-codex-border bg-codex-bg absolute bottom-full left-0 right-0 z-50 mb-1.5 overflow-hidden rounded-xl border shadow-lg"
+            className="border-border bg-background absolute bottom-full left-0 right-0 z-50 mb-1.5 overflow-hidden rounded-xl border shadow-lg"
           >
-            <Command className="bg-codex-bg p-0">
-              <div className="border-codex-border border-b px-3 pt-2 pb-1.5">
+            <Command className="bg-background p-0">
+              <div className="border-border border-b px-3 pt-2 pb-1.5">
                 <CommandInput
                   ref={slashInputRef}
-                  placeholder="Search commands"
+                  placeholder={t("composer.searchCommands")}
                   onKeyDown={(e) => {
                     if (e.key === "Escape") {
                       e.preventDefault();
@@ -619,7 +619,7 @@ export default function Composer({
                 />
               </div>
               <CommandList className="max-h-[300px] p-1">
-                <CommandEmpty className="text-codex-faint py-6 text-center text-sm">
+                <CommandEmpty className="text-subtle-foreground py-6 text-center text-sm">
                   No matching commands
                 </CommandEmpty>
                 {(["builtin", "extension", "prompt", "skill"] as const).map(
@@ -644,17 +644,17 @@ export default function Composer({
                             key={`${source}:${cmd.name}`}
                             value={`/${cmd.name} ${cmd.description ?? ""}`}
                             onSelect={() => handleSlashSelect(cmd)}
-                            className="data-selected:bg-codex-panel-2 data-selected:text-codex-text flex items-baseline gap-2 rounded-md px-3 py-2"
+                            className="data-selected:bg-secondary data-selected:text-foreground flex items-baseline gap-2 rounded-md px-3 py-2"
                           >
-                            <span className="text-codex-text font-mono text-sm font-medium">
+                            <span className="text-foreground font-mono text-sm font-medium">
                               /{cmd.name}
                             </span>
                             {cmd.argumentHint && (
-                              <span className="text-codex-faint font-mono text-[11px]">
+                              <span className="text-subtle-foreground font-mono text-[11px]">
                                 {cmd.argumentHint}
                               </span>
                             )}
-                            <span className="text-codex-faint min-w-0 flex-1 truncate text-left text-xs">
+                            <span className="text-subtle-foreground min-w-0 flex-1 truncate text-left text-xs">
                               {cmd.description}
                             </span>
                           </CommandItem>
@@ -664,7 +664,7 @@ export default function Composer({
                   },
                 )}
               </CommandList>
-              <div className="border-codex-border bg-codex-inset px-3 py-1.5 text-[11px] text-codex-faint">
+              <div className="border-border bg-muted px-3 py-1.5 text-[11px] text-subtle-foreground">
                 ↑↓ navigate · ↵ select · Esc close
               </div>
             </Command>
@@ -673,24 +673,24 @@ export default function Composer({
 
         {/* @ mention / file completion popover */}
         {showMention && (
-          <div className="border-codex-border bg-codex-bg absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-lg">
+          <div className="border-border bg-background absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-lg">
             {mentionFiles.length === 0 ? (
-              <div className="text-codex-dim px-3 py-2 font-mono text-xs">
+              <div className="text-muted-foreground px-3 py-2 font-mono text-xs">
                 No files found
               </div>
             ) : (
               mentionFiles.map((f) => (
                 <button
                   key={f.path}
-                  className="hover:bg-codex-panel-2 text-codex-dim flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors"
+                  className="hover:bg-secondary text-muted-foreground flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors"
                   onClick={() => handleMentionSelect(f)}
                   onMouseDown={(e) => e.preventDefault()}
                 >
                   {f.isDir ? (
-                    <Folder className="text-codex-green-bright size-3.5 shrink-0" />
+                    <Folder className="text-success size-3.5 shrink-0" />
                   ) : (
                     <svg
-                      className="text-codex-faint size-3 shrink-0"
+                      className="text-subtle-foreground size-3 shrink-0"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
@@ -700,11 +700,11 @@ export default function Composer({
                       <polyline points="14 2 14 8 20 8" />
                     </svg>
                   )}
-                  <span className="text-codex-text min-w-0 flex-1 truncate">
+                  <span className="text-foreground min-w-0 flex-1 truncate">
                     {f.name}
                     {f.isDir ? "/" : ""}
                   </span>
-                  <span className="text-codex-faint/70 max-w-[50%] truncate text-[10px]">
+                  <span className="text-subtle-foreground/70 max-w-[50%] truncate text-[10px]">
                     {f.path}
                   </span>
                 </button>
@@ -715,23 +715,23 @@ export default function Composer({
 
         {/* /command argument completion popover */}
         {showArgMenu && (
-          <div className="border-codex-border bg-codex-bg absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-lg">
+          <div className="border-border bg-background absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-lg">
             {argItems.length === 0 ? (
-              <div className="text-codex-dim px-3 py-2 font-mono text-xs">
+              <div className="text-muted-foreground px-3 py-2 font-mono text-xs">
                 No matching {argCmd === "model" ? "models" : "providers"}
               </div>
             ) : (
               argItems.map((item) => (
                 <button
                   key={item.value}
-                  className="hover:bg-codex-panel-2 text-codex-dim flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors"
+                  className="hover:bg-secondary text-muted-foreground flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors"
                   onClick={() => handleArgSelect(item.value)}
                   onMouseDown={(e) => e.preventDefault()}
                 >
-                  <span className="text-codex-text min-w-0 flex-1 truncate">
+                  <span className="text-foreground min-w-0 flex-1 truncate">
                     {item.label}
                   </span>
-                  <span className="text-codex-faint/70 truncate text-[10px]">
+                  <span className="text-subtle-foreground/70 truncate text-[10px]">
                     {item.description}
                   </span>
                 </button>
@@ -751,10 +751,10 @@ export default function Composer({
               {queued.map((q, idx) => (
                 <span
                   key={`${q.mode}-${idx}`}
-                  className="border-codex-border bg-codex-inset text-codex-dim inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                  className="border-border bg-muted text-muted-foreground inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
                   title={q.text}
                 >
-                  <span className="text-codex-faint">
+                  <span className="text-subtle-foreground">
                     {q.mode === "steer"
                       ? t("composer.steer")
                       : t("composer.queued")}
@@ -770,21 +770,21 @@ export default function Composer({
               {textAttachments.map((file, idx) => (
                 <div
                   key={`${file.name}-${idx}`}
-                  className="border-codex-border bg-codex-inset text-codex-dim flex max-w-[240px] items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px]"
+                  className="border-border bg-muted text-muted-foreground flex max-w-[240px] items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px]"
                 >
-                  <FileText className="text-codex-faint size-3 shrink-0" />
+                  <FileText className="text-subtle-foreground size-3 shrink-0" />
                   <span className="truncate" title={file.name}>
                     {file.name}
                   </span>
                   <button
                     type="button"
-                    className="text-codex-faint hover:text-codex-dim shrink-0"
+                    className="text-subtle-foreground hover:text-muted-foreground shrink-0"
                     onClick={() =>
                       setTextAttachments((prev) =>
                         prev.filter((_, index) => index !== idx),
                       )
                     }
-                    title="Remove file"
+                    title={t("composer.removeFile")} aria-label={t("composer.removeFile")}
                   >
                     <X className="size-3" />
                   </button>
@@ -798,7 +798,7 @@ export default function Composer({
               {attachments.map((a, idx) => (
                 <div
                   key={`${a.data.slice(0, 24)}-${idx}`}
-                  className="border-codex-border bg-codex-inset group/att relative h-14 w-14 overflow-hidden rounded-lg border"
+                  className="border-border bg-muted group/att relative h-14 w-14 overflow-hidden rounded-lg border"
                   title={attachmentNames[idx] ?? ""}
                 >
                   <img
@@ -810,7 +810,7 @@ export default function Composer({
                     type="button"
                     className="bg-black/50 text-white absolute top-0.5 right-0.5 rounded p-0.5 opacity-0 transition-opacity group-hover/att:opacity-100"
                     onClick={() => removeAttachment(idx)}
-                    title="Remove attachment"
+                    title={t("composer.removeAttachment")} aria-label={t("composer.removeAttachment")}
                   >
                     <X className="size-3" />
                   </button>
@@ -826,7 +826,7 @@ export default function Composer({
             onPaste={handlePaste}
             placeholder={t("composer.placeholder")}
             disabled={loading}
-            className="border-codex-border focus:border-codex-border-strong bg-codex-bg text-codex-text placeholder:text-codex-faint max-h-[120px] min-h-[44px] resize-none rounded-xl border pl-10 pr-14 text-[15px] shadow-sm"
+            className="border-border focus:border-ring bg-card text-foreground placeholder:text-subtle-foreground max-h-[120px] min-h-[44px] resize-none rounded-xl border pl-10 pr-14 text-[15px] shadow-sm"
             rows={1}
           />
           <input
@@ -840,10 +840,10 @@ export default function Composer({
           <Button
             size="icon"
             variant="ghost"
-            className="text-codex-faint hover:text-codex-dim absolute bottom-1.5 left-1.5 size-8"
+            className="text-subtle-foreground hover:text-muted-foreground absolute bottom-1.5 left-1.5 size-8"
             onClick={handleAttachClick}
             disabled={loading}
-            title={t("composer.attach")}
+            title={t("composer.attach")} aria-label={t("composer.attach")}
           >
             <Paperclip className="size-4" />
           </Button>
@@ -854,9 +854,9 @@ export default function Composer({
                 textAttachments.length > 0) && (
                 <Button
                   size="icon"
-                  className="bg-codex-text text-codex-bg absolute right-11 bottom-1.5 size-8 hover:opacity-90"
+                  className="bg-primary text-primary-foreground absolute right-11 bottom-1.5 size-8 hover:opacity-90"
                   onClick={() => handleSend()}
-                  title="Send as steering message"
+                  title={t("composer.sendSteering")} aria-label={t("composer.sendSteering")}
                 >
                   <Send className="size-4" />
                 </Button>
@@ -864,9 +864,9 @@ export default function Composer({
               <Button
                 size="icon"
                 variant="secondary"
-                className="bg-codex-panel-2 text-codex-dim absolute right-1.5 bottom-1.5 size-8 hover:bg-codex-panel-3"
+                className="bg-secondary text-muted-foreground absolute right-1.5 bottom-1.5 size-8 hover:bg-accent"
                 onClick={onStop}
-                title="Stop generating"
+                title={t("composer.stopGenerating")} aria-label={t("composer.stopGenerating")}
               >
                 <Square className="size-3.5 fill-current" />
               </Button>
@@ -874,22 +874,22 @@ export default function Composer({
           ) : (
             <Button
               size="icon"
-              className="bg-codex-text text-codex-bg absolute right-1.5 bottom-1.5 size-8 hover:opacity-90"
+              className="bg-primary text-primary-foreground absolute right-1.5 bottom-1.5 size-8 hover:opacity-90"
               onClick={() => handleSend()}
               disabled={
                 !input.trim() &&
                 attachments.length === 0 &&
                 textAttachments.length === 0
               }
-              title="Send"
+              title={t("composer.send")} aria-label={t("composer.send")}
             >
               <Send className="size-4" />
             </Button>
           )}
         </div>
-        {/* Status line — Codex desktop composer footer */}
+        {/* Status line — composer footer */}
         <div className="mt-2 flex items-center justify-end gap-2">
-          <span className="text-codex-faint hidden items-center gap-2 text-[11px] md:flex">
+          <span className="text-subtle-foreground hidden items-center gap-2 text-[11px] md:flex">
             {streaming ? (
               <>
                 <span className="animate-pulse">{t("composer.running")}</span>

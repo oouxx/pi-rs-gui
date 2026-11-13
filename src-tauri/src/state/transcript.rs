@@ -11,7 +11,10 @@ use serde_json::json;
 pub fn serialize_session_event(event: &AgentSessionEvent) -> (String, serde_json::Value) {
     match event {
         AgentSessionEvent::AgentStart => ("agent_start".into(), json!({})),
-        AgentSessionEvent::AgentEnd { messages, will_retry } => (
+        AgentSessionEvent::AgentEnd {
+            messages,
+            will_retry,
+        } => (
             "agent_end".into(),
             json!({"messages": messages, "will_retry": will_retry}),
         ),
@@ -116,7 +119,10 @@ pub fn serialize_session_event(event: &AgentSessionEvent) -> (String, serde_json
         ),
         // ── Session-specific events ──
         AgentSessionEvent::AgentSettled => ("agent_settled".into(), json!({})),
-        AgentSessionEvent::QueueUpdate { steering, follow_up } => (
+        AgentSessionEvent::QueueUpdate {
+            steering,
+            follow_up,
+        } => (
             "queue_update".into(),
             json!({"steering": steering, "follow_up": follow_up}),
         ),
@@ -336,11 +342,7 @@ mod tests {
         }
     }
 
-    fn assistant(
-        content: Vec<ContentBlock>,
-        error_message: Option<&str>,
-        ts: i64,
-    ) -> AgentMessage {
+    fn assistant(content: Vec<ContentBlock>, error_message: Option<&str>, ts: i64) -> AgentMessage {
         AgentMessage::Assistant {
             content,
             api: "test".into(),

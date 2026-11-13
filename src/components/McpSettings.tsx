@@ -52,51 +52,56 @@ import type {
   McpResourcesResult,
   McpServerInfo,
 } from "@/api/types";
+import { useI18n, type TranslationKey } from "@/i18n";
 
-const EXPOSURES: { value: McpExposure; label: string }[] = [
-  { value: "codemode", label: "Codemode" },
-  { value: "deferred", label: "Deferred" },
-  { value: "direct", label: "Direct" },
-  { value: "hidden", label: "Hidden" },
+const EXPOSURES: { value: McpExposure; labelKey: TranslationKey }[] = [
+  { value: "codemode", labelKey: "mcp.exposureCodemode" },
+  { value: "deferred", labelKey: "mcp.exposureDeferred" },
+  { value: "direct", labelKey: "mcp.exposureDirect" },
+  { value: "hidden", labelKey: "mcp.exposureHidden" },
 ];
 
 const STATUS_META: Record<
   string,
-  { label: string; dot: string; text: string }
+  { labelKey: TranslationKey; dot: string; text: string }
 > = {
   connected: {
-    label: "Connected",
-    dot: "bg-emerald-500",
-    text: "text-emerald-600",
+    labelKey: "mcp.statusConnected",
+    dot: "bg-success",
+    text: "text-success",
   },
   connecting: {
-    label: "Connecting",
-    dot: "bg-amber-500",
-    text: "text-amber-600",
+    labelKey: "mcp.statusConnecting",
+    dot: "bg-warning",
+    text: "text-warning",
   },
   "needs-auth": {
-    label: "Needs auth",
-    dot: "bg-amber-500",
-    text: "text-amber-600",
+    labelKey: "mcp.statusNeedsAuth",
+    dot: "bg-warning",
+    text: "text-warning",
   },
   disconnected: {
-    label: "Disconnected",
-    dot: "bg-amber-500",
-    text: "text-amber-600",
+    labelKey: "mcp.statusDisconnected",
+    dot: "bg-warning",
+    text: "text-warning",
   },
-  failed: { label: "Failed", dot: "bg-red-500", text: "text-red-600" },
+  failed: {
+    labelKey: "mcp.statusFailed",
+    dot: "bg-destructive",
+    text: "text-destructive",
+  },
   disabled: {
-    label: "Disabled",
+    labelKey: "mcp.statusDisabled",
     dot: "bg-muted-foreground/40",
     text: "text-muted-foreground",
   },
   "not-loaded": {
-    label: "Not loaded",
+    labelKey: "mcp.statusNotLoaded",
     dot: "bg-muted-foreground/40",
     text: "text-muted-foreground",
   },
   closed: {
-    label: "Closed",
+    labelKey: "mcp.statusClosed",
     dot: "bg-muted-foreground/40",
     text: "text-muted-foreground",
   },
@@ -247,6 +252,7 @@ function Field({
 
 export default function McpSettings() {
   const { toast } = useToast();
+  const { t } = useI18n();
   const [data, setData] = useState<McpConfigView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -350,15 +356,15 @@ export default function McpSettings() {
         );
         applyResult(
           view,
-          `${server.name} ${server.enabled ? "disabled" : "enabled"}`,
+          t("mcp.setEnabled", { name: server.name, state: t(server.enabled ? "extensions.disabled" : "extensions.enabled") }),
         );
       } catch (e) {
-        fail("Failed to update server", e);
+        fail(t("mcp.updateFailed"), e);
       } finally {
         setBusy(null);
       }
     },
-    [applyResult, fail],
+    [applyResult, fail, t],
   );
 
   const setExposure = useCallback(
@@ -370,14 +376,14 @@ export default function McpSettings() {
           { exposure },
           cwdRef.current,
         );
-        applyResult(view, `${server.name} exposure set to ${exposure}`);
+        applyResult(view, t("mcp.exposureSet", { name: server.name, exposure }));
       } catch (e) {
-        fail("Failed to update exposure", e);
+        fail(t("mcp.exposureFailed"), e);
       } finally {
         setBusy(null);
       }
     },
-    [applyResult, fail],
+    [applyResult, fail, t],
   );
 
   const reconnect = useCallback(
@@ -385,15 +391,15 @@ export default function McpSettings() {
       setBusy(server.name);
       try {
         await reconnectMcpServer(server.name);
-        toast({ title: `Reconnected ${server.name}`, variant: "success" });
+        toast({ title: t("mcp.reconnected", { name: server.name }), variant: "success" });
         await refresh(false);
       } catch (e) {
-        fail("Reconnect failed", e);
+        fail(t("mcp.reconnectFailed"), e);
       } finally {
         setBusy(null);
       }
     },
-    [fail, refresh, toast],
+    [fail, refresh, toast, t],
   );
 
   const signIn = useCallback(
@@ -401,15 +407,15 @@ export default function McpSettings() {
       setBusy(server.name);
       try {
         await signInMcpServer(server.name, cwdRef.current);
-        toast({ title: `Signed in to ${server.name}`, variant: "success" });
+        toast({ title: t("mcp.signedIn", { name: server.name }), variant: "success" });
         await refresh(false);
       } catch (e) {
-        fail("Sign-in failed", e);
+        fail(t("mcp.signInFailed"), e);
       } finally {
         setBusy(null);
       }
     },
-    [fail, refresh, toast],
+    [fail, refresh, toast, t],
   );
 
   const remove = useCallback(
@@ -418,14 +424,14 @@ export default function McpSettings() {
       try {
         const view = await deleteMcpServer(server.name, cwdRef.current);
         setConfirmDelete(null);
-        applyResult(view, `Deleted ${server.name}`);
+        applyResult(view, t("mcp.deleted", { name: server.name }));
       } catch (e) {
-        fail("Delete failed", e);
+        fail(t("mcp.deleteFailed"), e);
       } finally {
         setBusy(null);
       }
     },
-    [applyResult, fail],
+    [applyResult, fail, t],
   );
 
   const openLog = useCallback(
@@ -433,13 +439,13 @@ export default function McpSettings() {
       try {
         const text = await getMcpLog(server.name, 200);
         setLogTitle(`${server.name} — mcp.log`);
-        setLogText(text || "No log entries yet.");
+        setLogText(text || t("mcp.noLog"));
         setLogOpen(true);
       } catch (e) {
-        fail("Failed to read log", e);
+        fail(t("mcp.logFailed"), e);
       }
     },
-    [fail],
+    [fail, t],
   );
 
   const openResources = useCallback(async (server: McpServerInfo) => {
@@ -495,15 +501,15 @@ export default function McpSettings() {
 
   const save = async () => {
     if (!form.name.trim()) {
-      toast({ title: "Server name is required", variant: "error" });
+      toast({ title: t("mcp.nameRequired"), variant: "error" });
       return;
     }
     if (form.transport === "stdio" && !form.command.trim()) {
-      toast({ title: "Command is required for stdio servers", variant: "error" });
+      toast({ title: t("mcp.commandRequired"), variant: "error" });
       return;
     }
     if (form.transport === "http" && !form.url.trim()) {
-      toast({ title: "URL is required for HTTP servers", variant: "error" });
+      toast({ title: t("mcp.urlRequired"), variant: "error" });
       return;
     }
     const config = configFrom(
@@ -519,9 +525,9 @@ export default function McpSettings() {
         cwdRef.current,
       );
       setDialogOpen(false);
-      applyResult(view, editing ? "MCP server updated" : "MCP server added");
+      applyResult(view, editing ? t("mcp.updated") : t("mcp.added"));
     } catch (e) {
-      fail("Failed to save server", e);
+      fail(t("mcp.saveFailed"), e);
     } finally {
       setBusy(null);
     }
@@ -529,7 +535,7 @@ export default function McpSettings() {
 
   if (loading) {
     return (
-      <div className="text-muted-foreground p-8 text-sm">Loading MCP servers...</div>
+      <div className="text-muted-foreground p-8 text-sm">{t("mcp.loading")}</div>
     );
   }
 
@@ -539,17 +545,16 @@ export default function McpSettings() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <p className="text-muted-foreground max-w-md text-xs leading-relaxed">
-          MCP servers run with your pi-rs sessions. Changes restart the selected
-          session so its connections reload.
+          {t("mcp.description")}
         </p>
         <div className="flex shrink-0 items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => refresh()}>
             <RefreshCw className="size-3.5" />
-            Refresh
+            {t("mcp.refresh")}
           </Button>
           <Button size="sm" onClick={openAdd}>
             <Plus className="size-3.5" />
-            Add server
+            {t("mcp.addServer")}
           </Button>
         </div>
       </div>
@@ -570,14 +575,13 @@ export default function McpSettings() {
 
       {servers.length === 0 ? (
         <div className="border-hairline flex flex-col items-center gap-2 rounded-lg border p-12 text-center">
-          <p className="text-foreground text-sm font-medium">No MCP servers yet</p>
+          <p className="text-foreground text-sm font-medium">{t("mcp.emptyTitle")}</p>
           <p className="text-muted-foreground max-w-sm text-xs">
-            Add a stdio command or an HTTP URL to give the agent extra tools.
-            Servers are stored in the global or project <code>mcp.json</code>.
+            {t("mcp.emptyHint")}
           </p>
           <Button className="mt-2" size="sm" onClick={openAdd}>
             <Plus className="size-3.5" />
-            Add your first server
+            {t("mcp.addFirst")}
           </Button>
         </div>
       ) : (
@@ -595,7 +599,7 @@ export default function McpSettings() {
                     type="button"
                     className="text-muted-foreground hover:text-foreground"
                     onClick={() => toggleExpand(server.name)}
-                    aria-label={isOpen ? "Collapse" : "Expand"}
+                    aria-label={isOpen ? t("mcp.collapse") : t("mcp.expand")}
                   >
                     {isOpen ? (
                       <ChevronDown className="size-3.5" />
@@ -610,7 +614,7 @@ export default function McpSettings() {
                   <span className="text-muted-foreground text-[11px]">
                     {server.transport} · {server.scope}
                   </span>
-                  <span className={`text-[11px] ${meta.text}`}>{meta.label}</span>
+                  <span className={`text-[11px] ${meta.text}`}>{t(meta.labelKey)}</span>
                   {isBusy && (
                     <Loader2 className="text-muted-foreground size-3 animate-spin" />
                   )}
@@ -626,7 +630,7 @@ export default function McpSettings() {
                       <SelectContent>
                         {EXPOSURES.map((item) => (
                           <SelectItem key={item.value} value={item.value}>
-                            {item.label}
+                            {t(item.labelKey)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -635,14 +639,14 @@ export default function McpSettings() {
                       checked={server.enabled}
                       disabled={readOnly || isBusy}
                       onCheckedChange={() => setEnabled(server)}
-                      aria-label="Enable server"
+                      aria-label={t("mcp.enableServer")}
                     />
                     <Button
                       variant="ghost"
                       size="icon-xs"
                       disabled={readOnly || isBusy}
                       onClick={() => openEdit(server)}
-                      title="Edit"
+                      title={t("mcp.edit")} aria-label={t("mcp.edit")}
                     >
                       <Pencil className="size-3.5" />
                     </Button>
@@ -655,7 +659,7 @@ export default function McpSettings() {
                           confirmDelete === server.name ? null : server.name,
                         )
                       }
-                      title="Delete"
+                      title={t("mcp.delete")} aria-label={t("mcp.delete")}
                     >
                       <Trash2 className="size-3.5" />
                     </Button>
@@ -665,7 +669,7 @@ export default function McpSettings() {
                 {confirmDelete === server.name && (
                   <div className="border-hairline flex items-center gap-2 border-t px-3 py-2">
                     <span className="text-destructive text-xs">
-                      Delete "{server.name}" from its mcp.json?
+                      {t("mcp.confirmDelete", { name: server.name })}
                     </span>
                     <div className="ml-auto flex gap-1">
                       <Button
@@ -674,14 +678,14 @@ export default function McpSettings() {
                         disabled={isBusy}
                         onClick={() => remove(server)}
                       >
-                        Delete
+                        {t("mcp.delete")}
                       </Button>
                       <Button
                         variant="ghost"
                         size="xs"
                         onClick={() => setConfirmDelete(null)}
                       >
-                        Cancel
+                        {t("mcp.cancel")}
                       </Button>
                     </div>
                   </div>
@@ -696,23 +700,23 @@ export default function McpSettings() {
                 {isOpen && (
                   <div className="border-hairline space-y-3 border-t px-3 py-3">
                     <div className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-1 text-[11px]">
-                      <span className="text-muted-foreground">Command</span>
+                      <span className="text-muted-foreground">{t("mcp.command")}</span>
                       <span className="font-mono break-all">
                         {server.command
                           ? [server.command, ...(server.args ?? [])].join(" ")
                           : "—"}
                       </span>
-                      <span className="text-muted-foreground">URL</span>
+                      <span className="text-muted-foreground">{t("mcp.url")}</span>
                       <span className="font-mono break-all">{server.url ?? "—"}</span>
-                      <span className="text-muted-foreground">Source</span>
+                      <span className="text-muted-foreground">{t("mcp.source")}</span>
                       <span className="font-mono break-all">
                         {server.source ?? "—"}
                         {server.overridePath
                           ? ` (overridden by ${server.overridePath})`
                           : ""}
                       </span>
-                      <span className="text-muted-foreground">Resources</span>
-                      <span>{server.hasResources ? "Yes" : "No"}</span>
+                      <span className="text-muted-foreground">{t("mcp.resources")}</span>
+                      <span>{server.hasResources ? t("mcp.yes") : t("mcp.no")}</span>
                     </div>
 
                     {server.description && (
@@ -723,7 +727,7 @@ export default function McpSettings() {
                     {server.instructions && (
                       <div>
                         <div className="text-foreground mb-1 text-xs font-medium">
-                          Instructions
+                          {t("mcp.instructions")}
                         </div>
                         <p className="text-muted-foreground max-h-40 overflow-y-auto text-[11px] whitespace-pre-wrap">
                           {server.instructions}
@@ -733,14 +737,14 @@ export default function McpSettings() {
 
                     <div>
                       <div className="text-foreground mb-1 flex items-center gap-2 text-xs font-medium">
-                        Tools
+                        {t("mcp.tools")}
                         <span className="text-muted-foreground font-normal">
                           {server.tools.length}
                         </span>
                       </div>
                       {server.tools.length === 0 ? (
                         <p className="text-muted-foreground text-[11px]">
-                          No tools reported.
+                          {t("mcp.noTools")}
                         </p>
                       ) : (
                         <div className="flex flex-col gap-1">
@@ -767,7 +771,7 @@ export default function McpSettings() {
                         onClick={() => reconnect(server)}
                       >
                         <RefreshCw className="size-3" />
-                        Reconnect
+                        {t("mcp.reconnect")}
                       </Button>
                       {server.status === "needs-auth" && (
                         <Button
@@ -777,7 +781,7 @@ export default function McpSettings() {
                           onClick={() => signIn(server)}
                         >
                           <KeyRound className="size-3" />
-                          Sign in
+                          {t("mcp.signIn")}
                         </Button>
                       )}
                       <Button
@@ -786,7 +790,7 @@ export default function McpSettings() {
                         onClick={() => openLog(server)}
                       >
                         <FileText className="size-3" />
-                        View log
+                        {t("mcp.viewLog")}
                       </Button>
                       {server.hasResources && (
                         <Button
@@ -795,7 +799,7 @@ export default function McpSettings() {
                           onClick={() => openResources(server)}
                         >
                           <FolderTree className="size-3" />
-                          Resources
+                          {t("mcp.resourcesTitle")}
                         </Button>
                       )}
                     </div>
@@ -810,10 +814,10 @@ export default function McpSettings() {
       <Separator />
       <div className="text-muted-foreground space-y-1 text-[11px]">
         <div>
-          Global config: <span className="font-mono">{data?.globalConfigPath ?? "—"}</span>
+          {t("mcp.globalConfig")} <span className="font-mono">{data?.globalConfigPath ?? "—"}</span>
         </div>
         <div>
-          Project config: <span className="font-mono">{data?.projectConfigPath ?? "—"}</span>
+          {t("mcp.projectConfig")} <span className="font-mono">{data?.projectConfigPath ?? "—"}</span>
         </div>
       </div>
 
@@ -821,16 +825,14 @@ export default function McpSettings() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit MCP server" : "Add MCP server"}</DialogTitle>
+            <DialogTitle>{editing ? t("mcp.editTitle") : t("mcp.addTitle")}</DialogTitle>
             <DialogDescription>
-              {editing
-                ? "Changes are written to the file that defines this server."
-                : "New servers are written to the selected mcp.json."}
+              {editing ? t("mcp.editDescription") : t("mcp.addDescription")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-3 py-2">
-            <Field label="Name" hint="Letters, digits, '-' and '_' only.">
+            <Field label={t("mcp.name")} hint={t("mcp.nameHint")}>
               <Input
                 className="h-8 text-xs"
                 value={form.name}
@@ -841,7 +843,7 @@ export default function McpSettings() {
             </Field>
 
             {!editing && (
-              <Field label="Scope">
+              <Field label={t("mcp.scope")}>
                 <Select
                   value={form.scope}
                   onValueChange={(value) =>
@@ -852,14 +854,14 @@ export default function McpSettings() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="global">Global (~/.pi-rs/agent/mcp.json)</SelectItem>
-                    <SelectItem value="project">Project (&lt;cwd&gt;/.pi-rs/mcp.json)</SelectItem>
+                    <SelectItem value="global">{t("mcp.scopeGlobal")}</SelectItem>
+                    <SelectItem value="project">{t("mcp.scopeProject")}</SelectItem>
                   </SelectContent>
                 </Select>
               </Field>
             )}
 
-            <Field label="Transport">
+            <Field label={t("mcp.transport")}>
               <Select
                 value={form.transport}
                 onValueChange={(value) =>
@@ -870,15 +872,15 @@ export default function McpSettings() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="stdio">stdio (command)</SelectItem>
-                  <SelectItem value="http">HTTP (url)</SelectItem>
+                  <SelectItem value="stdio">{t("mcp.transportStdio")}</SelectItem>
+                  <SelectItem value="http">{t("mcp.transportHttp")}</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
 
             {form.transport === "stdio" ? (
               <>
-                <Field label="Command">
+                <Field label={t("mcp.command")}>
                   <Input
                     className="h-8 font-mono text-xs"
                     value={form.command}
@@ -886,7 +888,7 @@ export default function McpSettings() {
                     placeholder="npx"
                   />
                 </Field>
-                <Field label="Arguments" hint="One argument per line.">
+                <Field label={t("mcp.arguments")} hint={t("mcp.argumentsHint")}>
                   <textarea
                     className="border-input bg-background focus-visible:border-ring min-h-16 rounded-lg border px-2.5 py-2 font-mono text-xs outline-none"
                     value={form.args}
@@ -894,7 +896,7 @@ export default function McpSettings() {
                     placeholder={"-y\n@modelcontextprotocol/server-filesystem\n/path"}
                   />
                 </Field>
-                <Field label="Environment" hint="KEY=VALUE, one per line.">
+                <Field label={t("mcp.environment")} hint={t("mcp.envHint")}>
                   <textarea
                     className="border-input bg-background focus-visible:border-ring min-h-14 rounded-lg border px-2.5 py-2 font-mono text-xs outline-none"
                     value={form.env}
@@ -902,7 +904,7 @@ export default function McpSettings() {
                     placeholder="API_KEY=..."
                   />
                 </Field>
-                <Field label="Working directory" hint="Optional; defaults to the session cwd.">
+                <Field label={t("mcp.workingDirectory")} hint={t("mcp.workingDirectoryHint")}>
                   <Input
                     className="h-8 font-mono text-xs"
                     value={form.cwd}
@@ -913,7 +915,7 @@ export default function McpSettings() {
               </>
             ) : (
               <>
-                <Field label="URL">
+                <Field label={t("mcp.url")}>
                   <Input
                     className="h-8 font-mono text-xs"
                     value={form.url}
@@ -921,7 +923,7 @@ export default function McpSettings() {
                     placeholder="https://example.com/mcp"
                   />
                 </Field>
-                <Field label="Headers" hint="KEY=VALUE, one per line.">
+                <Field label={t("mcp.headers")} hint={t("mcp.envHint")}>
                   <textarea
                     className="border-input bg-background focus-visible:border-ring min-h-14 rounded-lg border px-2.5 py-2 font-mono text-xs outline-none"
                     value={form.headers}
@@ -933,7 +935,7 @@ export default function McpSettings() {
             )}
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Exposure">
+              <Field label={t("mcp.exposure")}>
                 <Select
                   value={form.exposure}
                   onValueChange={(value) =>
@@ -946,13 +948,13 @@ export default function McpSettings() {
                   <SelectContent>
                     {EXPOSURES.map((item) => (
                       <SelectItem key={item.value} value={item.value}>
-                        {item.label}
+                        {t(item.labelKey)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label="Timeout (seconds)">
+              <Field label={t("mcp.timeout")}>
                 <Input
                   className="h-8 text-xs"
                   value={form.timeout}
@@ -962,7 +964,7 @@ export default function McpSettings() {
               </Field>
             </div>
 
-            <Field label="Description" hint="Optional; shown to the agent.">
+            <Field label={t("mcp.serverDescription")} hint={t("mcp.serverDescriptionHint")}>
               <Input
                 className="h-8 text-xs"
                 value={form.description}
@@ -974,11 +976,11 @@ export default function McpSettings() {
 
           <DialogFooter>
             <Button variant="ghost" onClick={() => setDialogOpen(false)}>
-              Cancel
+              {t("mcp.cancel")}
             </Button>
             <Button onClick={save} disabled={busy === "__save__"}>
               {busy === "__save__" && <Loader2 className="size-3.5 animate-spin" />}
-              {editing ? "Save" : "Add server"}
+              {editing ? t("mcp.save") : t("mcp.addServer")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -990,7 +992,7 @@ export default function McpSettings() {
           <DialogHeader>
             <DialogTitle>{logTitle}</DialogTitle>
             <DialogDescription>
-              Server notifications from pi-rs (last 200 lines).
+              {t("mcp.logDescription")}
             </DialogDescription>
           </DialogHeader>
           <pre className="border-hairline bg-muted/30 max-h-[55vh] overflow-auto rounded-lg border p-3 font-mono text-[11px] whitespace-pre-wrap">
@@ -1004,10 +1006,10 @@ export default function McpSettings() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {resourcesServer?.name ?? "MCP"} — resources
+              {resourcesServer?.name ?? "MCP"} — {t("mcp.resourcesTitle")}
             </DialogTitle>
             <DialogDescription>
-              Resources and templates exposed by this MCP server.
+              {t("mcp.resourcesDescription")}
             </DialogDescription>
           </DialogHeader>
 
@@ -1020,7 +1022,7 @@ export default function McpSettings() {
           {resourcesLoading ? (
             <div className="text-muted-foreground flex items-center gap-2 p-6 text-sm">
               <Loader2 className="size-4 animate-spin" />
-              Loading resources…
+              {t("mcp.loadingResources")}
             </div>
           ) : activeResource ? (
             <div className="space-y-3">
@@ -1034,7 +1036,7 @@ export default function McpSettings() {
                 }}
               >
                 <ArrowLeft className="size-3.5" />
-                Back to list
+                {t("mcp.backToList")}
               </button>
               <div>
                 <div className="text-foreground text-sm font-medium">
@@ -1049,12 +1051,12 @@ export default function McpSettings() {
               {resourceLoading ? (
                 <div className="text-muted-foreground flex items-center gap-2 p-4 text-xs">
                   <Loader2 className="size-3.5 animate-spin" />
-                  Reading resource…
+                  {t("mcp.readingResource")}
                 </div>
               ) : (
                 <pre className="border-hairline bg-muted/30 max-h-[50vh] overflow-auto rounded-lg border p-3 font-mono text-[11px] whitespace-pre-wrap">
                   {resourceContents.length === 0
-                    ? "No contents."
+                    ? t("mcp.noContents")
                     : resourceContents
                         .map(
                           (item) =>
@@ -1069,14 +1071,14 @@ export default function McpSettings() {
             <div className="max-h-[55vh] space-y-5 overflow-y-auto">
               <section>
                 <h3 className="text-foreground mb-1.5 text-xs font-medium">
-                  Resources
+                  {t("mcp.resourcesTitle")}
                   <span className="text-muted-foreground ml-1 font-normal">
                     {resourcesData?.resources.length ?? 0}
                   </span>
                 </h3>
                 {(resourcesData?.resources.length ?? 0) === 0 ? (
                   <p className="text-muted-foreground text-[11px]">
-                    No resources reported by this server.
+                    {t("mcp.noResources")}
                   </p>
                 ) : (
                   <div className="flex flex-col gap-1">
@@ -1108,14 +1110,14 @@ export default function McpSettings() {
 
               <section>
                 <h3 className="text-foreground mb-1.5 text-xs font-medium">
-                  Templates
+                  {t("mcp.templates")}
                   <span className="text-muted-foreground ml-1 font-normal">
                     {resourcesData?.templates.length ?? 0}
                   </span>
                 </h3>
                 {(resourcesData?.templates.length ?? 0) === 0 ? (
                   <p className="text-muted-foreground text-[11px]">
-                    No resource templates.
+                    {t("mcp.noTemplates")}
                   </p>
                 ) : (
                   <div className="flex flex-col gap-1">

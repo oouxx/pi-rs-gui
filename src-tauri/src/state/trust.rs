@@ -20,4 +20,3 @@ pub fn set_project_trust(cwd: &str, decision: Option<bool>) -> Value {
     trust_manager().set(cwd, decision);
     json!({ "cwd": cwd, "decision": decision })
 }
-

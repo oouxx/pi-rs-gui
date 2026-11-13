@@ -113,10 +113,7 @@ impl Store {
                     let scoped_models = {
                         let patterns = {
                             let state = store.state.lock().await;
-                            state
-                                .global_model_settings
-                                .enabled_model_patterns
-                                .clone()
+                            state.global_model_settings.enabled_model_patterns.clone()
                         };
                         let models: Vec<_> = patterns
                             .iter()
@@ -134,7 +131,7 @@ impl Store {
                             services,
                             session_manager: params.session_manager,
                             model: Some(model),
-                            thinking_level: thinking_level,
+                            thinking_level,
                             scoped_models,
                             tools: None,
                             no_tools: None,
@@ -290,16 +287,25 @@ impl Store {
             .to_string_lossy()
             .to_string();
         let (factory, sid_holder) = self.build_runtime_factory(app);
-        let runtime = create_agent_session_runtime(
-            factory,
-            CreateAgentSessionRuntimeParams {
-                cwd: cwd.to_string(),
-                agent_dir,
-                session_manager,
-                session_start_event: None,
-            },
-        )
-        .await;
+        // pi-rs's factory contract returns a bare result (no error channel),
+        // so an upstream failure would panic inside the future. Run it on a
+        // task: the panic becomes a JoinError we can return to the caller
+        // instead of unwinding the command handler.
+        let runtime_cwd = cwd.to_string();
+        let runtime = tokio::spawn(async move {
+            create_agent_session_runtime(
+                factory,
+                CreateAgentSessionRuntimeParams {
+                    cwd: runtime_cwd,
+                    agent_dir,
+                    session_manager,
+                    session_start_event: None,
+                },
+            )
+            .await
+        })
+        .await
+        .map_err(|error| format!("Failed to create agent session: {error}"))?;
         let sid = runtime.session().get_session_id();
         let session_file = runtime
             .session()

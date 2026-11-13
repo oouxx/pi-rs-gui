@@ -69,13 +69,17 @@ pub enum SessionCommand {
     },
     /// Duplicate the session at the current position (`/clone`). Same as
     /// ForkAt but always targets the current leaf.
-    Clone { reply: oneshot::Sender<Result<String, String>> },
+    Clone {
+        reply: oneshot::Sender<Result<String, String>>,
+    },
     /// Switch the session to a different session file (matches TS `/import`).
     Import {
         path: String,
         reply: oneshot::Sender<Result<String, String>>,
     },
-    Reload { reply: oneshot::Sender<Result<(), String>> },
+    Reload {
+        reply: oneshot::Sender<Result<(), String>>,
+    },
     SetName {
         name: String,
         reply: oneshot::Sender<()>,
@@ -214,7 +218,7 @@ impl SessionActor {
                 model_id,
                 reply,
             } => {
-                let result = (|| async {
+                let result = async {
                     let model = self
                         .session
                         .get_model_registry()
@@ -224,7 +228,7 @@ impl SessionActor {
                     // store (`model::set_default_model`) after this succeeds.
                     self.session.set_model(model, false).await?;
                     Ok(())
-                })()
+                }
                 .await;
                 let _ = reply.send(result);
             }
@@ -266,7 +270,7 @@ impl SessionActor {
                 let _ = reply.send(result);
             }
             SessionCommand::Clone { reply } => {
-                let result = (|| async {
+                let result = async {
                     let leaf = {
                         let mgr = self.session.get_session_manager();
                         mgr.get_leaf_id()
@@ -279,7 +283,7 @@ impl SessionActor {
                         .await
                         .map(|_| ())
                         .map_err(|e| e.to_string())
-                })()
+                }
                 .await;
                 let result = self.finish_swap(result).await;
                 let _ = reply.send(result);
@@ -374,7 +378,9 @@ impl SessionActor {
                         pi_coding_agent::core::slash_commands::SlashCommandSource::Extension => {
                             "extension"
                         }
-                        pi_coding_agent::core::slash_commands::SlashCommandSource::Prompt => "prompt",
+                        pi_coding_agent::core::slash_commands::SlashCommandSource::Prompt => {
+                            "prompt"
+                        }
                         pi_coding_agent::core::slash_commands::SlashCommandSource::Skill => "skill",
                     };
                     items.push(json!({
@@ -495,29 +501,26 @@ impl SessionActor {
         let app = self.app.clone();
         let sid = self.session_id.clone();
         tokio::spawn(async move {
-            let result = tokio::time::timeout(
-                std::time::Duration::from_secs(300),
-                async {
-                    // `add_user_text` is no longer public (v1.87); `prompt`
-                    // is the equivalent entry point. Prompt templates and
-                    // skill commands (`/skill:name`) are expanded by pi-rs;
-                    // builtin commands never reach here (the frontend routes
-                    // them locally).
-                    session
-                        .prompt(
-                            &text,
-                            Some(PromptOptions {
-                                expand_prompt_templates: Some(true),
-                                images: (!images.is_empty()).then_some(images),
-                                // When a turn is already running, pi-rs queues
-                                // the message and returns immediately.
-                                streaming_behavior,
-                                ..Default::default()
-                            }),
-                        )
-                        .await
-                },
-            )
+            let result = tokio::time::timeout(std::time::Duration::from_secs(300), async {
+                // `add_user_text` is no longer public (v1.87); `prompt`
+                // is the equivalent entry point. Prompt templates and
+                // skill commands (`/skill:name`) are expanded by pi-rs;
+                // builtin commands never reach here (the frontend routes
+                // them locally).
+                session
+                    .prompt(
+                        &text,
+                        Some(PromptOptions {
+                            expand_prompt_templates: Some(true),
+                            images: (!images.is_empty()).then_some(images),
+                            // When a turn is already running, pi-rs queues
+                            // the message and returns immediately.
+                            streaming_behavior,
+                            ..Default::default()
+                        }),
+                    )
+                    .await
+            })
             .await;
             match result {
                 // Outer error = the 300s timeout elapsed.

@@ -11,6 +11,9 @@ import {
   terminalWrite,
 } from "@/api/commands";
 import { tauriListen } from "@/api/events";
+import { useTheme } from "@/hooks/useTheme";
+import { useI18n } from "@/i18n";
+import { useToast } from "@/components/ui/toast";
 
 // ── terminal-output bus ──────────────────────────────────────────
 // Retains a capped raw-output log per session (so a re-mounted tab can
@@ -60,11 +63,70 @@ function writeLog(id: string, term: Terminal) {
   }
 }
 
+/** Warm ANSI palette so shell colors sit on the paper/charcoal surfaces
+ *  instead of xterm's default cool primaries. */
+const TERMINAL_ANSI_LIGHT = {
+  black: "#1f1e1d",
+  red: "#bf4d43",
+  green: "#5c7a4a",
+  yellow: "#96601a",
+  blue: "#4f6b8a",
+  magenta: "#8a5a76",
+  cyan: "#4f7470",
+  white: "#d9d6cc",
+  brightBlack: "#75736b",
+  brightRed: "#d0655a",
+  brightGreen: "#72925c",
+  brightYellow: "#b57a2a",
+  brightBlue: "#5f7ea3",
+  brightMagenta: "#a36c8d",
+  brightCyan: "#5f8783",
+  brightWhite: "#faf9f5",
+} as const;
+
+const TERMINAL_ANSI_DARK = {
+  black: "#1f1e1d",
+  red: "#e07a6e",
+  green: "#8fa870",
+  yellow: "#d9a441",
+  blue: "#7f9cc0",
+  magenta: "#c08ba8",
+  cyan: "#7fb3ac",
+  white: "#d8d4ca",
+  brightBlack: "#8d8b83",
+  brightRed: "#ef9185",
+  brightGreen: "#a8c088",
+  brightYellow: "#e9b95a",
+  brightBlue: "#9cb6d6",
+  brightMagenta: "#d4a0bd",
+  brightCyan: "#98c9c2",
+  brightWhite: "#f5f3ec",
+} as const;
+
+/** Resolve the terminal palette from the active theme tokens. xterm needs
+ *  literal colors, so the surface values live as CSS variables in theme.css. */
+function readTerminalTheme() {
+  const styles = getComputedStyle(document.documentElement);
+  const token = (name: string, fallback: string) =>
+    styles.getPropertyValue(name).trim() || fallback;
+  const dark = document.documentElement.dataset.theme === "dark";
+  return {
+    background: token("--terminal-bg", "#faf9f5"),
+    foreground: token("--terminal-fg", "#141413"),
+    cursor: token("--terminal-cursor", "#b85c3f"),
+    selectionBackground: token("--terminal-selection", "rgba(184, 92, 63, 0.18)"),
+    ...(dark ? TERMINAL_ANSI_DARK : TERMINAL_ANSI_LIGHT),
+  };
+}
+
 // ── Single terminal tab (only mounted while active) ──────────────
 function TerminalInstance({ sessionId }: { sessionId: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
   const [hasOutput, setHasOutput] = useState(false);
   const hasOutputRef = useRef(false);
+  const { resolved } = useTheme();
+  const { t } = useI18n();
 
   useEffect(() => {
     const container = containerRef.current;
@@ -74,8 +136,9 @@ function TerminalInstance({ sessionId }: { sessionId: string }) {
       cursorBlink: true,
       fontSize: 12,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-      theme: { background: "#0d1117" },
+      theme: readTerminalTheme(),
     });
+    termRef.current = term;
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(container);
@@ -131,19 +194,26 @@ function TerminalInstance({ sessionId }: { sessionId: string }) {
       window.removeEventListener("resize", doFit);
       dataSub.dispose();
       resizeSub.dispose();
+      termRef.current = null;
       term.dispose();
     };
   }, [sessionId]);
 
+  // Follow light/dark switches without recreating the terminal (which would
+  // drop the shell session).
+  useEffect(() => {
+    if (termRef.current) termRef.current.options.theme = readTerminalTheme();
+  }, [resolved]);
+
   return (
-    <div className="relative h-full w-full bg-[#0d1117]">
+    <div className="bg-[var(--terminal-bg)] relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
       {/* Shell is still initializing (e.g. slow .zshrc) — show a hint so the
           blank screen doesn't look frozen. */}
       {!hasOutput && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span className="text-muted-foreground animate-pulse text-xs">
-            Starting shell…
+            {t("terminal.starting")}
           </span>
         </div>
       )}
@@ -167,6 +237,8 @@ export default function TerminalDock({
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const autoCreatedRef = useRef(false);
+  const { t } = useI18n();
+  const { toast } = useToast();
 
   // One global listener routes output to the bus (log + subscriber).
   // The `disposed` flag guards against React StrictMode's double effect: the
@@ -209,8 +281,13 @@ export default function TerminalDock({
       setActiveId(id);
     } catch (e) {
       console.error("[terminal start]", e);
+      toast({
+        variant: "error",
+        title: t("terminal.startFailed"),
+        description: e instanceof Error ? e.message : String(e),
+      });
     }
-  }, [cwd]);
+  }, [cwd, t, toast]);
 
   // Auto-create the first tab when the dock opens with none (guarded against
   // React StrictMode's double effect invocation).
@@ -237,33 +314,33 @@ export default function TerminalDock({
   );
 
   return (
-    <div className="border-codex-border bg-codex-bg flex h-56 shrink-0 flex-col border-t">
+    <div className="border-border bg-background flex h-56 shrink-0 flex-col border-t">
       {/* Tab bar */}
-      <div className="border-codex-border/60 flex items-center border-b px-1.5 pt-1">
-        <TerminalSquare className="text-codex-faint mx-1.5 size-3.5 shrink-0" />
+      <div className="border-border/60 flex items-center border-b px-1.5 pt-1">
+        <TerminalSquare className="text-subtle-foreground mx-1.5 size-3.5 shrink-0" />
         <div className="flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto">
-          {tabs.map((t) => {
-            const active = t.id === activeId;
+          {tabs.map((tab) => {
+            const active = tab.id === activeId;
             return (
               <div
-                key={t.id}
-                onClick={() => setActiveId(t.id)}
+                key={tab.id}
+                onClick={() => setActiveId(tab.id)}
                 className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md border border-b-0 px-3 py-1 text-[11px] transition-colors ${
                   active
-                    ? "border-codex-border bg-codex-inset text-codex-text"
-                    : "text-codex-faint hover:text-codex-dim border-transparent"
+                    ? "border-border bg-muted text-foreground"
+                    : "text-subtle-foreground hover:text-muted-foreground border-transparent"
                 }`}
-                title={`${t.title} — ${cwd ?? ""}`}
+                title={`${tab.title} — ${cwd ?? ""}`}
               >
-                <span className="max-w-[120px] truncate">{t.title}</span>
+                <span className="max-w-[120px] truncate">{tab.title}</span>
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    closeTab(t.id);
+                    closeTab(tab.id);
                   }}
-                  className="hover:bg-codex-panel-3 rounded p-0.5"
-                  title="Close terminal"
+                  className="hover:bg-accent rounded p-0.5"
+                  title={t("terminal.close")} aria-label={t("terminal.close")}
                 >
                   <X className="size-3" />
                 </button>
@@ -273,8 +350,8 @@ export default function TerminalDock({
           <button
             type="button"
             onClick={addTab}
-            className="text-codex-faint hover:text-codex-dim mb-1 ml-1 rounded p-1"
-            title="New terminal"
+            className="text-subtle-foreground hover:text-muted-foreground mb-1 ml-1 rounded p-1"
+            title={t("terminal.new")} aria-label={t("terminal.new")}
           >
             <Plus className="size-3.5" />
           </button>
@@ -282,8 +359,8 @@ export default function TerminalDock({
         <button
           type="button"
           onClick={onClose}
-          className="text-codex-faint hover:text-codex-dim ml-1 rounded p-1.5"
-          title="Close terminal panel"
+          className="text-subtle-foreground hover:text-muted-foreground ml-1 rounded p-1.5"
+          title={t("terminal.closePanel")} aria-label={t("terminal.closePanel")}
         >
           <ChevronDown className="size-3.5" />
         </button>

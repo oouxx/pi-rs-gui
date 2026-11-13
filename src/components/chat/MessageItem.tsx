@@ -1,4 +1,6 @@
 import { memo } from "react";
+import { motion } from "motion/react";
+import { PANEL_TRANSITION } from "@/lib/motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AlertCircle, FileText } from "lucide-react";
@@ -67,7 +69,7 @@ const BlockRenderer = memo(function BlockRenderer({
           <img
             src={imageDataUrl(block)}
             alt=""
-            className="border-codex-border max-h-64 rounded-md border"
+            className="border-border max-h-64 rounded-md border"
           />
         </div>
       );
@@ -93,16 +95,21 @@ export const MessageItem = memo(function MessageItem({
   const userContent =
     msg.role === "user" ? parseAttachedFiles(msg.content) : null;
   return (
-    <div
+    <motion.div
       {...(isLast ? { "data-msg-last": "true" } : {})}
       className="group mx-auto w-full max-w-[820px]"
+      // Only the newest message animates in; replayed transcripts mount all
+      // messages at once and should not fade in as a block.
+      initial={isLast ? { opacity: 0, y: 6 } : false}
+      animate={{ opacity: 1, y: 0 }}
+      transition={PANEL_TRANSITION}
     >
       {msg.role === "user" ? (
-        /* Codex desktop: user prompt in a subtle neutral box, full width */
-        <div className="border-codex-border bg-codex-panel relative rounded-lg border px-4 py-3 text-[15px] leading-relaxed text-codex-text">
+        /* User prompt in a subtle neutral box, full width */
+        <div className="border-border bg-card relative rounded-lg border px-4 py-3 text-[15px] leading-relaxed text-foreground">
           <CopyButton
             text={msg.content}
-            className="text-codex-faint hover:text-codex-dim absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+            className="text-subtle-foreground hover:text-muted-foreground absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
           />
           <div className="break-words whitespace-pre-wrap">
             {userContent?.text}
@@ -112,10 +119,10 @@ export const MessageItem = memo(function MessageItem({
               {userContent.files.map((name, index) => (
                 <span
                   key={`${name}-${index}`}
-                  className="border-codex-border bg-codex-inset text-codex-dim inline-flex max-w-[240px] items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]"
+                  className="border-border bg-muted text-muted-foreground inline-flex max-w-[240px] items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]"
                   title={name}
                 >
-                  <FileText className="text-codex-faint size-3 shrink-0" />
+                  <FileText className="text-subtle-foreground size-3 shrink-0" />
                   <span className="truncate">{name}</span>
                 </span>
               ))}
@@ -128,7 +135,7 @@ export const MessageItem = memo(function MessageItem({
                 key={`${msg.id}-img${bi}`}
                 src={imageDataUrl(b)}
                 alt=""
-                className="border-codex-border mt-2 max-h-48 rounded-lg border"
+                className="border-border mt-2 max-h-48 rounded-lg border"
               />
             ))}
         </div>
@@ -140,21 +147,21 @@ export const MessageItem = memo(function MessageItem({
           </div>
         </div>
       ) : (
-        /* Codex web: assistant answers are plain markdown, no bubble */
-        <div className="text-codex-text relative text-[15px] leading-relaxed">
+        /* Assistant answers are plain markdown, no bubble */
+        <div className="text-foreground relative text-[15px] leading-relaxed">
           <CopyButton
             text={msg.content}
-            className="text-codex-faint hover:text-codex-dim absolute -top-1 right-1 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+            className="text-subtle-foreground hover:text-muted-foreground absolute -top-1 right-1 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
           />
           {msg.blocks.length > 0 ? (
             msg.blocks.map((block, bi) => (
               <BlockRenderer key={`${msg.id}-b${bi}`} block={block} />
             ))
           ) : streaming && isLastAi ? (
-            <span className="text-codex-faint inline-block animate-pulse">▍</span>
+            <span className="text-subtle-foreground inline-block animate-pulse">▍</span>
           ) : null}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 });

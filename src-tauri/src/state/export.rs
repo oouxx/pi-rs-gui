@@ -9,7 +9,11 @@ use std::path::Path;
 use pi_coding_agent::core::session_manager::SessionManager;
 
 /// Export the session file to `target_path`. Returns the written path.
-pub fn export_session(session_file: &str, format: &str, target_path: &str) -> Result<String, String> {
+pub fn export_session(
+    session_file: &str,
+    format: &str,
+    target_path: &str,
+) -> Result<String, String> {
     let target = Path::new(target_path);
 
     if let Some(dir) = target.parent() {
@@ -33,4 +37,3 @@ pub fn export_session(session_file: &str, format: &str, target_path: &str) -> Re
 
     Ok(target.to_string_lossy().to_string())
 }
-

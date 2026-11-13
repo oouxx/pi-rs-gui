@@ -69,7 +69,7 @@ function cwdBasename(cwd?: string | null): string {
   return cwd.split("/").filter(Boolean).pop() ?? cwd;
 }
 
-// Sort sessions: running ones float to the top (Codex keeps active threads
+// Sort sessions: running ones float to the top (active threads stay
 // visible), then most-recent-first.
 function byRunningThenRecent(a: SessionItem, b: SessionItem): number {
   const aRun = a.status === "running" ? 0 : 1;
@@ -145,7 +145,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     };
   }, [search]);
 
-  // Codex-style project/workspace switcher. The currently selected project is
+  // Project/workspace switcher. The currently selected project is
   // a cwd path (""/"null" = "All conversations"). Persisted across reloads.
   const [currentProject, setCurrentProjectState] = useState<string | null>(
     () => {
@@ -234,14 +234,27 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     const onKeyDown = (e: KeyboardEvent) => {
       if (matchesBinding(e, bindings.newThread)) {
         e.preventDefault();
-        void createSession(undefined, currentProject ?? undefined).then(() =>
-          onModeChange("chat"),
-        );
+        void createSession(undefined, currentProject ?? undefined)
+          .then(() => onModeChange("chat"))
+          .catch((e) => {
+            toast({
+              variant: "error",
+              title: t("sidebar.createFailed"),
+              description: e instanceof Error ? e.message : String(e),
+            });
+          });
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [bindings.newThread, createSession, onModeChange, currentProject]);
+  }, [
+    bindings.newThread,
+    createSession,
+    onModeChange,
+    currentProject,
+    t,
+    toast,
+  ]);
 
   const matches = (s: { title: string }) =>
     !search.trim() ||
@@ -285,7 +298,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     }
     arr.sort((a, b) => {
       // Groups with a running session float to the top so in-flight work stays
-      // glanceable after switching away (Codex keeps active threads visible).
+      // glanceable after switching away.
       const aRun = a.sessions.some((s) => s.status === "running") ? 0 : 1;
       const bRun = b.sessions.some((s) => s.status === "running") ? 0 : 1;
       if (aRun !== bRun) return aRun - bRun;
@@ -326,9 +339,17 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
 
   const handleDelete = useCallback(
     async (sessionId: string) => {
-      await deleteSession(sessionId);
+      try {
+        await deleteSession(sessionId);
+      } catch (e) {
+        toast({
+          variant: "error",
+          title: t("sidebar.deleteFailed"),
+          description: e instanceof Error ? e.message : String(e),
+        });
+      }
     },
-    [deleteSession],
+    [deleteSession, t, toast],
   );
 
   const handleStop = useCallback(async (sessionId: string) => {
@@ -336,18 +357,29 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
       await abortSession(sessionId);
     } catch (e) {
       console.error("[abortSession]", e);
+      toast({
+        variant: "error",
+        title: t("sidebar.abortFailed"),
+        description: e instanceof Error ? e.message : String(e),
+      });
     }
-  }, []);
+  }, [t, toast]);
 
   const commitRename = useCallback(
     (id: string, value: string, original: string) => {
       setRenamingId(null);
       const trimmed = value.trim();
       if (trimmed && trimmed !== original) {
-        renameSession(id, trimmed).catch(() => {});
+        renameSession(id, trimmed).catch((e) => {
+          toast({
+            variant: "error",
+            title: t("sidebar.renameFailed"),
+            description: e instanceof Error ? e.message : String(e),
+          });
+        });
       }
     },
-    [],
+    [t, toast],
   );
 
   const handleStartRename = useCallback((id: string, title: string) => {
@@ -371,11 +403,11 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
         .replace(/^-+|-+$/g, "")
         .slice(0, 80);
       const path = await save({
-        title: `Export session (${format.toUpperCase()})`,
+        title: t("sidebar.exportDialog", { format: format.toUpperCase() }),
         defaultPath: `${base || "session"}.${ext}`,
         filters: [
           {
-            name: format === "html" ? "HTML file" : "JSONL file",
+            name: t(format === "html" ? "sidebar.htmlFile" : "sidebar.jsonlFile"),
             extensions: [ext],
           },
         ],
@@ -387,12 +419,12 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
         console.error(`[export ${format}]`, e);
         toast({
           variant: "error",
-          title: "Export failed",
+          title: t("sidebar.exportFailed"),
           description: e instanceof Error ? e.message : String(e),
         });
       }
     },
-    [toast],
+    [t, toast],
   );
 
   const renderSessionItem = (s: SessionItem) => (
@@ -425,29 +457,29 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 isActive={activeSessionId === s.id}
                 onClick={() => {
                   onModeChange("chat");
-                  // Codex behaviour: opening a thread switches the sidebar to
+                  // Opening a thread switches the sidebar to
                   // that thread's project/workspace.
                   setCurrentProject(s.cwd || null);
                   selectSession(s.id).catch((e) => {
                     console.error("[selectSession]", e);
                     toast({
                       variant: "error",
-                      title: "Failed to open session",
+                      title: t("sidebar.openSessionFailed"),
                       description: e instanceof Error ? e.message : String(e),
                     });
                   });
                 }}
                 tooltip={s.title}
-                className="data-[active=true]:bg-codex-panel-2 data-[active=true]:text-codex-text hover:bg-codex-inset hover:text-codex-text"
+                className="data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground hover:bg-muted hover:text-foreground"
               >
                 <span
-                  className={`size-1.5 shrink-0 rounded-full ${activeSessionId === s.id ? "bg-codex-green" : "bg-codex-faint"}`}
+                  className={`size-1.5 shrink-0 rounded-full ${activeSessionId === s.id ? "bg-primary" : "bg-subtle-foreground"}`}
                 />
                 <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
                   <span className="flex w-full min-w-0 items-center gap-1.5">
                     <span className="truncate leading-tight">{s.title}</span>
                     {s.status === "running" && (
-                      <Loader2 className="text-codex-green size-3 shrink-0 animate-spin" />
+                      <Loader2 className="text-success size-3 shrink-0 animate-spin" />
                     )}
                   </span>
                 </span>
@@ -456,12 +488,12 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             <div className="absolute top-1/2 right-1.5 z-10 flex -translate-y-1/2 items-center gap-0.5">
               {s.status === "running" && (
                 <button
-                  className="text-codex-green hover:text-destructive rounded p-1 transition-colors"
+                  className="text-success hover:text-destructive rounded p-1 transition-colors"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleStop(s.id);
                   }}
-                  title={t("session.stopRunning")}
+                  title={t("session.stopRunning")} aria-label={t("session.stopRunning")}
                 >
                   <Square className="size-3 fill-current" />
                 </button>
@@ -472,7 +504,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                   e.stopPropagation();
                   handleDelete(s.id);
                 }}
-                title="Delete permanently"
+                title={t("sidebar.deletePermanently")} aria-label={t("sidebar.deletePermanently")}
                 style={{ display: renamingId === s.id ? "none" : undefined }}
               >
                 <Trash2 className="size-3" />
@@ -483,7 +515,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
         <ContextMenuContent>
           {s.status === "running" && (
             <ContextMenuItem onSelect={() => handleStop(s.id)}>
-              <Square className="text-codex-green size-3.5 fill-current" />
+              <Square className="text-success size-3.5 fill-current" />
               {t("session.stopRunning")}
             </ContextMenuItem>
           )}
@@ -493,7 +525,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           </ContextMenuItem>
           <ContextMenuItem onSelect={() => handleCopyId(s.id)}>
             {copiedId === s.id ? (
-              <Check className="size-3.5 text-emerald-500" />
+              <Check className="size-3.5 text-success" />
             ) : (
               <Copy className="size-3.5" />
             )}
@@ -507,7 +539,17 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             <FileJson className="size-3.5" />
             {t("session.exportJsonl")}
           </ContextMenuItem>
-          <ContextMenuItem onSelect={() => archiveSession(s.id)}>
+          <ContextMenuItem
+            onSelect={() =>
+              archiveSession(s.id).catch((e) =>
+                toast({
+                  variant: "error",
+                  title: t("sidebar.archiveFailed"),
+                  description: e instanceof Error ? e.message : String(e),
+                }),
+              )
+            }
+          >
             <Archive className="size-3.5" />
             {t("session.archive")}
           </ContextMenuItem>
@@ -521,17 +563,17 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            {/* Codex-style brand header */}
+            {/* Brand header */}
             <div className="flex items-center gap-2 px-2 py-1 group-data-[collapsible=icon]:justify-center">
-              <span className="bg-codex-green flex size-5 shrink-0 items-center justify-center rounded-md text-[11px] font-bold text-white">
+              <span className="bg-primary font-serif flex size-5 shrink-0 items-center justify-center rounded-md text-[12px] font-bold text-primary-foreground">
                 p
               </span>
-              <span className="text-codex-text text-sm font-semibold group-data-[collapsible=icon]:hidden">
+              <span className="text-foreground text-sm font-semibold group-data-[collapsible=icon]:hidden">
                 pi
               </span>
             </div>
           </SidebarMenuItem>
-          {/* Project/workspace switcher — Codex desktop: current project with
+          {/* Project/workspace switcher — current project with
               a dropdown to switch between projects / all conversations */}
           <SidebarMenuItem>
             <div
@@ -541,10 +583,10 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
               <button
                 type="button"
                 onClick={() => setProjectSwitcherOpen((o) => !o)}
-                className="text-codex-text hover:bg-codex-inset flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors"
+                className="text-foreground hover:bg-muted flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors"
                 title={activeProject?.path ?? t("sidebar.allConversations")}
               >
-                <FolderOpen className="text-codex-faint size-3.5 shrink-0" />
+                <FolderOpen className="text-subtle-foreground size-3.5 shrink-0" />
                 <span className="min-w-0 flex-1 truncate text-left group-data-[collapsible=icon]:hidden">
                   {activeProject ? activeProject.label : t("sidebar.allConversations")}
                 </span>
@@ -564,8 +606,8 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                     }}
                     className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
                       !activeProject
-                        ? "bg-codex-green/10 text-codex-green"
-                        : "text-codex-dim hover:bg-codex-inset"
+                        ? "bg-success/10 text-success"
+                        : "text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     <MessageSquare className="size-3.5 shrink-0" />
@@ -582,18 +624,18 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                       }}
                       className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
                         activeProject?.path === p.path
-                          ? "bg-codex-green/10 text-codex-green"
-                          : "text-codex-dim hover:bg-codex-inset"
+                          ? "bg-success/10 text-success"
+                          : "text-muted-foreground hover:bg-muted"
                       }`}
                     >
                       <FolderOpen className="size-3.5 shrink-0" />
                       <span className="min-w-0 flex-1 truncate">
                         <span className="block truncate">{p.label}</span>
-                        <span className="text-codex-faint block truncate text-[11px]">
+                        <span className="text-subtle-foreground block truncate text-[11px]">
                           {p.path}
                         </span>
                       </span>
-                      <span className="text-codex-faint shrink-0 text-[11px]">
+                      <span className="text-subtle-foreground shrink-0 text-[11px]">
                         {p.count}
                       </span>
                     </button>
@@ -609,8 +651,8 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 await createSession(undefined, currentProject ?? undefined);
                 onModeChange("chat");
               }}
-              tooltip="New conversation"
-              className="bg-codex-green text-white hover:bg-codex-green-bright data-[active=true]:bg-codex-green data-[active=true]:text-white"
+              tooltip={t("sidebar.newThread")}
+              className="bg-primary/10 text-primary hover:bg-primary/15 data-[active=true]:bg-primary/15 data-[active=true]:text-primary"
             >
               <Plus />
               <span>{t("sidebar.newThread")}</span>
@@ -661,8 +703,8 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           </div>
         </SidebarGroup>
         {search.trim().length >= 2 && (
-          <SidebarGroup className="border-codex-border border-t pt-2 group-data-[collapsible=icon]:hidden">
-            <div className="text-codex-faint flex items-center gap-1.5 px-3 pb-1 text-[10px] font-medium tracking-wide uppercase">
+          <SidebarGroup className="border-border border-t pt-2 group-data-[collapsible=icon]:hidden">
+            <div className="text-subtle-foreground flex items-center gap-1.5 px-3 pb-1 text-[10px] font-medium tracking-wide uppercase">
               <MessageSquare className="size-3" />
               {t("sidebar.messages")}
               <span className="ml-auto">
@@ -670,7 +712,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
               </span>
             </div>
             {contentHits.length === 0 ? (
-              <div className="text-codex-faint px-3 py-2 text-[11px]">
+              <div className="text-subtle-foreground px-3 py-2 text-[11px]">
                 {searchingContent ? t("sidebar.searching") : t("sidebar.noMessageMatches")}
               </div>
             ) : (
@@ -680,9 +722,9 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                     key={`${hit.sessionId}-${index}`}
                     type="button"
                     onClick={() => selectSession(hit.sessionId)}
-                    className={`hover:bg-codex-panel-2 w-full rounded-md px-2 py-1.5 text-left transition-colors ${
+                    className={`hover:bg-secondary w-full rounded-md px-2 py-1.5 text-left transition-colors ${
                       hit.sessionId === activeSessionId
-                        ? "bg-codex-panel-2"
+                        ? "bg-secondary"
                         : ""
                     }`}
                   >
@@ -690,17 +732,17 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                       <span
                         className={
                           hit.role === "user"
-                            ? "text-codex-dim"
-                            : "text-codex-green"
+                            ? "text-muted-foreground"
+                            : "text-success"
                         }
                       >
                         {hit.role === "user" ? t("sidebar.roleYou") : t("sidebar.roleAI")}
                       </span>
-                      <span className="text-codex-faint truncate">
+                      <span className="text-subtle-foreground truncate">
                         {hit.title}
                       </span>
                     </div>
-                    <div className="text-codex-dim mt-0.5 line-clamp-2 text-[11px]">
+                    <div className="text-muted-foreground mt-0.5 line-clamp-2 text-[11px]">
                       {hit.snippet}
                     </div>
                   </button>
@@ -715,7 +757,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             <div className="flex h-full flex-col">
               <div className="px-3 pt-2 pb-1 group-data-[collapsible=icon]:hidden">
                 <div
-                  className="flex items-center gap-1.5 text-[11px] text-codex-faint"
+                  className="flex items-center gap-1.5 text-[11px] text-subtle-foreground"
                   title={activeProject?.path}
                 >
                   <FolderOpen className="size-3 shrink-0" />

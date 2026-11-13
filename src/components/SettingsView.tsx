@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { motion } from "motion/react";
+import { enter, FAST_TRANSITION } from "@/lib/motion";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -28,7 +30,11 @@ import ModelsSettings from "./ModelsSettings";
 import McpSettings from "./McpSettings";
 import { useTheme, type ThemePreference } from "@/hooks/useTheme";
 import { useChatContext } from "@/hooks/ChatProvider";
-import { useI18n, type LanguagePreference } from "@/i18n";
+import {
+  useI18n,
+  type LanguagePreference,
+  type TranslationKey,
+} from "@/i18n";
 import {
   checkForUpdate,
   downloadAndInstall,
@@ -46,61 +52,21 @@ import {
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   getActiveSessionCwd,
-  getGeneralSettings,
   listExtensions,
   listSkills,
   openPath,
-  setGeneralSetting,
 } from "@/api/commands";
+import { useSettingsStore } from "@/stores/settings";
 
 const settingsTabs = [
-  { id: "general", labelKey: "settings.general", descKey: "settings.generalDesc" },
-  { id: "models", labelKey: "settings.models", descKey: "settings.modelsDesc" },
-  { id: "mcp", labelKey: "settings.mcp", descKey: "settings.mcpDesc" },
-  { id: "skills", labelKey: "settings.skills", descKey: "settings.skillsDesc" },
-  {
-    id: "extensions",
-    labelKey: "settings.extensions",
-    descKey: "settings.extensionsDesc",
-  },
-  {
-    id: "keybindings",
-    labelKey: "settings.keybindings",
-    descKey: "settings.keybindingsDesc",
-  },
-  { id: "about", labelKey: "settings.about", descKey: "settings.aboutDesc" },
+  { id: "general", labelKey: "settings.general" },
+  { id: "models", labelKey: "settings.models" },
+  { id: "mcp", labelKey: "settings.mcp" },
+  { id: "skills", labelKey: "settings.skills" },
+  { id: "extensions", labelKey: "settings.extensions" },
+  { id: "keybindings", labelKey: "settings.keybindings" },
+  { id: "about", labelKey: "settings.about" },
 ] as const;
-
-interface GeneralSettings {
-  defaultThinkingLevel: string;
-  compactionEnabled: boolean;
-  compactionReserveTokens: number;
-  compactionKeepRecentTokens: number;
-  retryEnabled: boolean;
-  hideThinkingBlock: boolean;
-  shellPath: string | null;
-  quietStartup: boolean;
-  theme: string | null;
-  enableSkillCommands: boolean;
-  skillPaths: string[];
-  promptPaths: string[];
-  steeringMode: string;
-  followUpMode: string;
-  transport: string;
-  cacheWarming: string;
-  showCacheMissNotices: boolean;
-  externalEditor: string | null;
-  defaultProjectTrust: string;
-  shellCommandPrefix: string | null;
-  npmCommand: string[] | null;
-  collapseChangelog: boolean;
-  paths?: {
-    agentDir?: string;
-    settingsPath?: string;
-    sessionsDir?: string;
-  };
-  version?: string;
-}
 
 function Row({
   label,
@@ -180,6 +146,7 @@ function PathList({
   onAdd: (path: string) => void;
   onRemove: (path: string) => void;
 }) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState("");
   return (
     <div className="space-y-1.5">
@@ -192,7 +159,7 @@ function PathList({
             variant="ghost"
             size="icon-xs"
             onClick={() => onRemove(path)}
-            title="Remove"
+            title={t("settings.remove")} aria-label={t("settings.remove")}
           >
             <X className="size-3.5" />
           </Button>
@@ -223,7 +190,7 @@ function PathList({
             setDraft("");
           }}
         >
-          Add
+          {t("settings.add")}
         </Button>
       </div>
     </div>
@@ -231,37 +198,18 @@ function PathList({
 }
 
 function GeneralTab() {
-  const [settings, setSettings] = useState<GeneralSettings | null>(null);
+  const { settings, refresh, apply } = useSettingsStore();
   const { preference, setTheme } = useTheme();
   const { preference: languagePreference, setLanguage, t } = useI18n();
 
-  const refresh = useCallback(async () => {
-    try {
-      setSettings((await getGeneralSettings()) as GeneralSettings);
-    } catch (e) {
-      console.error("getGeneralSettings failed", e);
-    }
-  }, []);
-
   useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const apply = useCallback(
-    async (key: keyof GeneralSettings, value: unknown) => {
-      try {
-        setSettings((await setGeneralSetting(key, value)) as GeneralSettings);
-      } catch (e) {
-        console.error(`set ${key} failed`, e);
-      }
-    },
-    [],
-  );
+    if (!settings) void refresh();
+  }, [refresh, settings]);
 
   if (!settings) {
     return (
       <div className="text-muted-foreground p-8 text-sm">
-        Loading settings...
+        {t("settings.loading")}
       </div>
     );
   }
@@ -282,9 +230,9 @@ function GeneralTab() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="system">System</SelectItem>
-              <SelectItem value="light">Light</SelectItem>
-              <SelectItem value="dark">Dark</SelectItem>
+              <SelectItem value="system">{t("settings.system")}</SelectItem>
+              <SelectItem value="light">{t("settings.light")}</SelectItem>
+              <SelectItem value="dark">{t("settings.dark")}</SelectItem>
             </SelectContent>
           </Select>
         </Row>
@@ -311,26 +259,26 @@ function GeneralTab() {
         <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.behavior")}</h3>
         <Separator className="my-2" />
         <ToggleRow
-          label="Auto-compact long conversations"
-          hint="Summarize the context when it approaches the model window"
+          label={t("settings.autoCompact")}
+          hint={t("settings.autoCompactHint")}
           checked={settings.compactionEnabled}
           onChange={(v) => apply("compactionEnabled", v)}
         />
-        <Row label="Compaction reserve tokens" hint="Headroom kept below the context limit">
+        <Row label={t("settings.compactionReserve")} hint={t("settings.compactionReserveHint")}>
           <NumberField
             value={settings.compactionReserveTokens}
             onCommit={(v) => apply("compactionReserveTokens", v)}
           />
         </Row>
-        <Row label="Compaction keep-recent tokens" hint="Recent context preserved verbatim">
+        <Row label={t("settings.compactionKeep")} hint={t("settings.compactionKeepHint")}>
           <NumberField
             value={settings.compactionKeepRecentTokens}
             onCommit={(v) => apply("compactionKeepRecentTokens", v)}
           />
         </Row>
         <Row
-          label="Steering mode"
-          hint="How queued steering messages are delivered mid-run"
+          label={t("settings.steeringMode")}
+          hint={t("settings.steeringModeHint")}
         >
           <Select
             value={settings.steeringMode}
@@ -340,14 +288,14 @@ function GeneralTab() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="one-at-a-time">One at a time</SelectItem>
-              <SelectItem value="all">All at once</SelectItem>
+              <SelectItem value="one-at-a-time">{t("settings.oneAtATime")}</SelectItem>
+              <SelectItem value="all">{t("settings.allAtOnce")}</SelectItem>
             </SelectContent>
           </Select>
         </Row>
         <Row
-          label="Follow-up mode"
-          hint="How queued follow-up messages are delivered after a run"
+          label={t("settings.followUpMode")}
+          hint={t("settings.followUpModeHint")}
         >
           <Select
             value={settings.followUpMode}
@@ -357,32 +305,32 @@ function GeneralTab() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="one-at-a-time">One at a time</SelectItem>
-              <SelectItem value="all">All at once</SelectItem>
+              <SelectItem value="one-at-a-time">{t("settings.oneAtATime")}</SelectItem>
+              <SelectItem value="all">{t("settings.allAtOnce")}</SelectItem>
             </SelectContent>
           </Select>
         </Row>
         <ToggleRow
-          label="Auto-retry failed requests"
-          hint="Retry transient provider errors automatically"
+          label={t("settings.autoRetry")}
+          hint={t("settings.autoRetryHint")}
           checked={settings.retryEnabled}
           onChange={(v) => apply("retryEnabled", v)}
         />
         <ToggleRow
-          label="Show cache-miss notices"
-          hint="Surface prompt-cache misses in the transcript"
+          label={t("settings.cacheMissNotices")}
+          hint={t("settings.cacheMissNoticesHint")}
           checked={settings.showCacheMissNotices}
           onChange={(v) => apply("showCacheMissNotices", v)}
         />
         <ToggleRow
-          label="Hide thinking blocks"
-          hint="Do not render reasoning blocks in the transcript"
+          label={t("settings.hideThinking")}
+          hint={t("settings.hideThinkingHint")}
           checked={settings.hideThinkingBlock}
           onChange={(v) => apply("hideThinkingBlock", v)}
         />
         <ToggleRow
-          label="Quiet startup"
-          hint="Suppress non-essential startup output"
+          label={t("settings.quietStartup")}
+          hint={t("settings.quietStartupHint")}
           checked={settings.quietStartup}
           onChange={(v) => apply("quietStartup", v)}
         />
@@ -391,7 +339,7 @@ function GeneralTab() {
       <section>
         <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.model")}</h3>
         <Separator className="my-2" />
-        <Row label="Default thinking level" hint="Used when creating new sessions">
+        <Row label={t("settings.defaultThinking")} hint={t("settings.defaultThinkingHint")}>
           <Select
             value={settings.defaultThinkingLevel}
             onValueChange={(v) => apply("defaultThinkingLevel", v)}
@@ -406,7 +354,7 @@ function GeneralTab() {
             </SelectContent>
           </Select>
         </Row>
-        <Row label="Agent theme" hint="Theme id passed to the agent (empty = default)">
+        <Row label={t("settings.agentTheme")} hint={t("settings.agentThemeHint")}>
           <Input
             className="h-8 w-40 text-xs"
             value={settings.theme ?? ""}
@@ -420,8 +368,8 @@ function GeneralTab() {
         <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.shell")}</h3>
         <Separator className="my-2" />
         <Row
-          label="Shell path"
-          hint="Override the shell used by the bash tool (empty = system default)"
+          label={t("settings.shellPath")}
+          hint={t("settings.shellPathHint")}
         >
           <Input
             className="h-8 w-64 font-mono text-xs"
@@ -431,8 +379,8 @@ function GeneralTab() {
           />
         </Row>
         <Row
-          label="Shell command prefix"
-          hint="Prepended to every bash tool command (e.g. mise exec --)"
+          label={t("settings.shellPrefix")}
+          hint={t("settings.shellPrefixHint")}
         >
           <Input
             className="h-8 w-64 font-mono text-xs"
@@ -447,8 +395,8 @@ function GeneralTab() {
         <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.advanced")}</h3>
         <Separator className="my-2" />
         <Row
-          label="Provider transport"
-          hint="auto lets the provider choose between SSE and WebSocket"
+          label={t("settings.transport")}
+          hint={t("settings.transportHint")}
         >
           <Select
             value={settings.transport}
@@ -458,16 +406,16 @@ function GeneralTab() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="auto">Auto</SelectItem>
+              <SelectItem value="auto">{t("settings.auto")}</SelectItem>
               <SelectItem value="sse">SSE</SelectItem>
-              <SelectItem value="websocket">WebSocket</SelectItem>
-              <SelectItem value="websocket-cached">WebSocket cached</SelectItem>
+              <SelectItem value="websocket">{t("settings.websocket")}</SelectItem>
+              <SelectItem value="websocket-cached">{t("settings.websocketCached")}</SelectItem>
             </SelectContent>
           </Select>
         </Row>
         <Row
-          label="Prompt cache warming"
-          hint="Idle warming costs money — off disables all warming"
+          label={t("settings.cacheWarming")}
+          hint={t("settings.cacheWarmingHint")}
         >
           <Select
             value={settings.cacheWarming}
@@ -477,15 +425,15 @@ function GeneralTab() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="off">Off</SelectItem>
-              <SelectItem value="streaming">While streaming</SelectItem>
-              <SelectItem value="idle">While idle</SelectItem>
+              <SelectItem value="off">{t("settings.off")}</SelectItem>
+              <SelectItem value="streaming">{t("settings.whileStreaming")}</SelectItem>
+              <SelectItem value="idle">{t("settings.whileIdle")}</SelectItem>
             </SelectContent>
           </Select>
         </Row>
         <Row
-          label="Default project trust"
-          hint="Decision applied to projects without an explicit trust record"
+          label={t("settings.defaultTrust")}
+          hint={t("settings.defaultTrustHint")}
         >
           <Select
             value={settings.defaultProjectTrust}
@@ -495,15 +443,15 @@ function GeneralTab() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ask">Ask</SelectItem>
-              <SelectItem value="always">Always trust</SelectItem>
-              <SelectItem value="never">Never trust</SelectItem>
+              <SelectItem value="ask">{t("settings.ask")}</SelectItem>
+              <SelectItem value="always">{t("settings.alwaysTrust")}</SelectItem>
+              <SelectItem value="never">{t("settings.neverTrust")}</SelectItem>
             </SelectContent>
           </Select>
         </Row>
         <Row
-          label="External editor"
-          hint="Command used to open files (empty = system default)"
+          label={t("settings.externalEditor")}
+          hint={t("settings.externalEditorHint")}
         >
           <Input
             className="h-8 w-64 font-mono text-xs"
@@ -520,12 +468,12 @@ function GeneralTab() {
         </h3>
         <Separator className="my-2" />
         <ToggleRow
-          label="Enable skill slash commands"
-          hint="Expose discovered skills as /skill:name commands"
+          label={t("settings.enableSkillCommands")}
+          hint={t("settings.enableSkillCommandsHint")}
           checked={settings.enableSkillCommands}
           onChange={(v) => apply("enableSkillCommands", v)}
         />
-        <Row label="Skill paths" hint="Extra directories scanned for skills">
+        <Row label={t("settings.skillPaths")} hint={t("settings.skillPathsHint")}>
           <span className="text-muted-foreground text-xs">
             {settings.skillPaths.length} path(s)
           </span>
@@ -544,7 +492,7 @@ function GeneralTab() {
           }
         />
         <div className="mt-4" />
-        <Row label="Prompt paths" hint="Extra directories scanned for /prompt templates">
+        <Row label={t("settings.promptPaths")} hint={t("settings.promptPathsHint")}>
           <span className="text-muted-foreground text-xs">
             {settings.promptPaths.length} path(s)
           </span>
@@ -568,7 +516,7 @@ function GeneralTab() {
 }
 
 function AboutTab() {
-  const [settings, setSettings] = useState<GeneralSettings | null>(null);
+  const { settings, refresh } = useSettingsStore();
   const { t } = useI18n();
   const { toast } = useToast();
   const [checking, setChecking] = useState(false);
@@ -580,14 +528,8 @@ function AboutTab() {
   const [updateError, setUpdateError] = useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        setSettings((await getGeneralSettings()) as GeneralSettings);
-      } catch {
-        /* ignore */
-      }
-    })();
-  }, []);
+    if (!settings) void refresh();
+  }, [refresh, settings]);
 
   const checkUpdates = useCallback(async () => {
     setChecking(true);
@@ -626,14 +568,14 @@ function AboutTab() {
     ? Math.min(100, Math.round((progress.downloaded / progress.total) * 100))
     : null;
 
-  const paths = settings?.paths ?? {};
+  const paths = settings?.paths;
   const showPath = async (path?: string) => {
     if (path) await openPath(path);
   };
   const rows = [
-    { label: "Agent directory", value: paths.agentDir },
-    { label: "Settings file", value: paths.settingsPath },
-    { label: "Sessions directory", value: paths.sessionsDir },
+    { label: t("settings.agentDir"), value: paths?.agentDir },
+    { label: t("settings.settingsFile"), value: paths?.settingsPath },
+    { label: t("settings.sessionsDir"), value: paths?.sessionsDir },
   ];
 
   return (
@@ -641,12 +583,12 @@ function AboutTab() {
       <section>
         <h3 className="mb-1 text-sm font-medium text-foreground">pi-gui-rs</h3>
         <Separator className="my-2" />
-        <Row label="App version" hint="GUI frontend + backend">
+        <Row label={t("settings.appVersion")} hint={t("settings.appVersionHint")}>
           <span className="font-mono text-xs">{settings?.version ?? "—"}</span>
         </Row>
         <Row
-          label="Agent runtime"
-          hint="Core agent, tools, and sessions run on pi-rs"
+          label={t("settings.agentRuntime")}
+          hint={t("settings.agentRuntimeHint")}
         >
           <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
             <Info className="size-3.5" />
@@ -742,7 +684,7 @@ function AboutTab() {
       </section>
 
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">Paths</h3>
+        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.paths")}</h3>
         <Separator className="my-2" />
         {rows.map((r) => (
           <Row key={r.label} label={r.label}>
@@ -751,7 +693,7 @@ function AboutTab() {
                 type="button"
                 className="text-muted-foreground hover:text-foreground flex max-w-[420px] items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-xs transition-colors"
                 onClick={() => showPath(r.value)}
-                title="Reveal in Finder"
+                title={t("settings.revealInFinder")}
               >
                 <FolderOpen className="size-3.5 shrink-0" />
                 <span className="truncate">{r.value}</span>
@@ -768,17 +710,10 @@ function AboutTab() {
 
 function SkillsTab() {
   const { activeSessionId, activeSessionCwd } = useChatContext();
-  const [settings, setSettings] = useState<GeneralSettings | null>(null);
+  const { settings, refresh, apply } = useSettingsStore();
+  const { t } = useI18n();
   const [skillCount, setSkillCount] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
-
-  const refresh = useCallback(async () => {
-    try {
-      setSettings((await getGeneralSettings()) as GeneralSettings);
-    } catch (e) {
-      console.error("getGeneralSettings failed", e);
-    }
-  }, []);
 
   // Count skills for the active session's cwd (workspace skills differ per
   // project); the process cwd would be `/` in a packaged app.
@@ -792,20 +727,9 @@ function SkillsTab() {
   }, [activeSessionCwd]);
 
   useEffect(() => {
-    refresh();
+    if (!settings) void refresh();
     refreshCount();
-  }, [refresh, refreshCount, activeSessionId]);
-
-  const apply = useCallback(
-    async (key: keyof GeneralSettings, value: unknown) => {
-      try {
-        setSettings((await setGeneralSetting(key, value)) as GeneralSettings);
-      } catch (e) {
-        console.error(`set ${key} failed`, e);
-      }
-    },
-    [],
-  );
+  }, [refresh, refreshCount, activeSessionId, settings]);
 
   const addPath = useCallback(async () => {
     const selected = await openDialog({ directory: true, multiple: false });
@@ -836,24 +760,24 @@ function SkillsTab() {
 
   if (!settings) {
     return (
-      <div className="text-muted-foreground p-8 text-sm">Loading settings...</div>
+      <div className="text-muted-foreground p-8 text-sm">{t("settings.loading")}</div>
     );
   }
 
   return (
     <div className="space-y-8">
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">Discovery</h3>
+        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.discovery")}</h3>
         <Separator className="my-2" />
         <ToggleRow
-          label="Skill slash commands"
-          hint="Enable /skill:name commands in the composer"
+          label={t("settings.skillSlashCommands")}
+          hint={t("settings.skillSlashCommandsHint")}
           checked={settings.enableSkillCommands}
           onChange={(v) => apply("enableSkillCommands", v)}
         />
         <Row
-          label="Discovered skills"
-          hint="Skills in the global and workspace directories"
+          label={t("settings.discoveredSkills")}
+          hint={t("settings.discoveredSkillsHint")}
         >
           <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
             <BookOpen className="size-3.5" />
@@ -864,11 +788,11 @@ function SkillsTab() {
 
       <section>
         <h3 className="mb-1 text-sm font-medium text-foreground">
-          Custom skill paths
+          {t("settings.customSkillPaths")}
         </h3>
         <Separator className="my-2" />
         <p className="text-muted-foreground mb-3 text-xs leading-relaxed">
-          Additional directories scanned for SKILL.md files.
+          {t("settings.customSkillPathsHint")}
         </p>
         {settings.skillPaths.length === 0 ? (
           <p className="text-muted-foreground text-xs">No custom paths configured.</p>
@@ -877,7 +801,7 @@ function SkillsTab() {
             {settings.skillPaths.map((path) => (
               <div
                 key={path}
-                className="border-hairline bg-bg-surface flex items-center gap-2 rounded-md border px-3 py-2"
+                className="border-hairline bg-card flex items-center gap-2 rounded-md border px-3 py-2"
               >
                 <span className="text-foreground/80 min-w-0 flex-1 truncate font-mono text-xs">
                   {path}
@@ -886,7 +810,7 @@ function SkillsTab() {
                   type="button"
                   className="text-muted-foreground hover:text-destructive shrink-0 rounded p-1 transition-colors"
                   onClick={() => removePath(path)}
-                  title="Remove path"
+                  title={t("settings.removePath")} aria-label={t("settings.removePath")}
                 >
                   <Trash2 className="size-3.5" />
                 </button>
@@ -897,11 +821,11 @@ function SkillsTab() {
         <button
           type="button"
           disabled={adding}
-          className="text-accent hover:bg-accent/10 mt-3 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors disabled:opacity-50"
+          className="text-primary hover:bg-primary/10 mt-3 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors disabled:opacity-50"
           onClick={addPath}
         >
           <FolderPlus className="size-3.5" />
-          Add path…
+          {t("settings.addPath")}
         </button>
       </section>
     </div>
@@ -909,6 +833,8 @@ function SkillsTab() {
 }
 
 function ExtensionsTab() {
+  const { t } = useI18n();
+  const { toast } = useToast();
   const [extensions, setExtensions] = useState<
     { name: string; location: string; tools: string[]; commands: { name: string }[] }[]
   >([]);
@@ -917,28 +843,29 @@ function ExtensionsTab() {
     (async () => {
       try {
         setExtensions(((await listExtensions()) ?? []) as typeof extensions);
-      } catch {
-        /* ignore */
+      } catch (e) {
+        toast({
+          variant: "error",
+          title: t("settings.loadExtensionsFailed"),
+          description: e instanceof Error ? e.message : String(e),
+        });
       }
     })();
-  }, []);
+  }, [t, toast]);
 
   return (
     <div className="space-y-6">
       <p className="text-muted-foreground text-xs leading-relaxed">
-        Extensions are compiled into pi-gui as Rust plugins. Built-ins are
-        opt-in: enable them in <code>settings.json</code> via{" "}
-        <code>{`"extensionsEnabled": { "subagent": true, "web_search": true }`}</code>{" "}
-        (default off).
+        {t("settings.extensionsHint")}
       </p>
       {extensions.length === 0 ? (
-        <p className="text-muted-foreground text-xs">No extensions registered.</p>
+        <p className="text-muted-foreground text-xs">{t("settings.noExtensions")}</p>
       ) : (
         <div className="flex flex-col gap-2">
           {extensions.map((e) => (
             <div
               key={e.name}
-              className="border-hairline bg-bg-surface flex items-center gap-2 rounded-md border px-3 py-2"
+              className="border-hairline bg-card flex items-center gap-2 rounded-md border px-3 py-2"
             >
               <Puzzle className="text-muted-foreground size-3.5 shrink-0" />
               <span className="text-foreground font-mono text-sm">{e.name}</span>
@@ -957,13 +884,23 @@ function ExtensionsTab() {
   );
 }
 
-const FIXED_KEYBINDINGS: { keys: string[]; action: string }[] = [
-  { keys: ["Enter"], action: "Send message (steer while a run is active)" },
-  { keys: ["Alt+Enter"], action: "Queue a follow-up while a run is active" },
-  { keys: ["Shift+Enter"], action: "Insert new line" },
-  { keys: ["/"], action: "Open slash commands" },
-  { keys: ["@"], action: "Reference files in the workspace" },
-  { keys: ["Esc"], action: "Close dialogs and search" },
+const KEYBINDING_LABEL_KEYS: Record<string, TranslationKey> = {
+  newThread: "keybindings.newThread",
+  focusComposer: "keybindings.focusComposer",
+  openSettings: "keybindings.openSettings",
+  findInChat: "keybindings.findInChat",
+  toggleTerminal: "keybindings.toggleTerminal",
+  cycleModel: "keybindings.cycleModel",
+  cycleModelBackward: "keybindings.cycleModelBackward",
+};
+
+const FIXED_KEYBINDINGS: { keys: string[]; actionKey: TranslationKey }[] = [
+  { keys: ["Enter"], actionKey: "keybindings.fixedSend" },
+  { keys: ["Alt+Enter"], actionKey: "keybindings.fixedQueue" },
+  { keys: ["Shift+Enter"], actionKey: "keybindings.fixedNewline" },
+  { keys: ["/"], actionKey: "keybindings.fixedSlash" },
+  { keys: ["@"], actionKey: "keybindings.fixedFiles" },
+  { keys: ["Esc"], actionKey: "keybindings.fixedEsc" },
 ];
 
 function KeybindingsTab() {
@@ -985,12 +922,18 @@ function KeybindingsTab() {
       }
       const value = bindingFromEvent(e);
       if (!value) {
-        setConflict("Hold Cmd/Ctrl (optionally with Shift/Alt)");
+        setConflict(t("keybindings.holdMod"));
         return;
       }
       const other = findKeybindingConflict(recording, value);
       if (other) {
-        setConflict(`Already used by “${other.label}”`);
+        setConflict(
+          t("keybindings.conflict", {
+            name: KEYBINDING_LABEL_KEYS[other.id]
+              ? t(KEYBINDING_LABEL_KEYS[other.id])
+              : other.label,
+          }),
+        );
         return;
       }
       setBinding(recording, value);
@@ -999,7 +942,7 @@ function KeybindingsTab() {
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [recording, setBinding]);
+  }, [recording, setBinding, t]);
 
   return (
     <div className="space-y-6">
@@ -1029,13 +972,15 @@ function KeybindingsTab() {
             className="flex items-center justify-between gap-6 py-1.5"
           >
             <span className="text-foreground text-sm">
-              {definition.label}
+              {KEYBINDING_LABEL_KEYS[definition.id]
+                ? t(KEYBINDING_LABEL_KEYS[definition.id])
+                : definition.label}
             </span>
             <span className="flex items-center gap-1">
               {formatBinding(bindings[definition.id]).map((key, index) => (
                 <kbd
                   key={`${key}-${index}`}
-                  className="bg-bg-hover border-hairline text-ink-muted rounded-md border px-1.5 py-0.5 font-mono text-[11px]"
+                  className="bg-accent border-hairline text-muted-foreground rounded-md border px-1.5 py-0.5 font-mono text-[11px]"
                 >
                   {key}
                 </kbd>
@@ -1065,15 +1010,17 @@ function KeybindingsTab() {
         <div className="flex flex-col gap-1">
           {FIXED_KEYBINDINGS.map((binding) => (
             <div
-              key={binding.action}
+              key={binding.actionKey}
               className="flex items-center justify-between gap-6 py-1.5"
             >
-              <span className="text-foreground text-sm">{binding.action}</span>
+              <span className="text-foreground text-sm">
+                {t(binding.actionKey)}
+              </span>
               <span className="flex items-center gap-1">
                 {binding.keys.map((key) => (
                   <kbd
                     key={key}
-                    className="bg-bg-hover border-hairline text-ink-muted rounded-md border px-1.5 py-0.5 font-mono text-[11px]"
+                    className="bg-accent border-hairline text-muted-foreground rounded-md border px-1.5 py-0.5 font-mono text-[11px]"
                   >
                     {key}
                   </kbd>
@@ -1094,8 +1041,6 @@ export default function SettingsView({
 }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const { t } = useI18n();
-  const active = settingsTabs.find((tab) => tab.id === activeTab);
-
   return (
     <div className="flex h-full max-h-screen min-w-0 flex-1 flex-col">
       {/* Top bar */}
@@ -1113,14 +1058,13 @@ export default function SettingsView({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex flex-col gap-0.5 rounded-md px-3 py-2 text-left transition-colors ${
+                className={`rounded-md px-3 py-1.5 text-left text-sm transition-colors ${
                   activeTab === tab.id
-                    ? "bg-accent/10 text-accent"
+                    ? "bg-accent text-accent-foreground font-medium"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                 }`}
               >
-                <span className="text-sm font-medium">{t(tab.labelKey)}</span>
-                <span className="text-xs opacity-70">{t(tab.descKey)}</span>
+                {t(tab.labelKey)}
               </button>
             ))}
           </nav>
@@ -1129,34 +1073,33 @@ export default function SettingsView({
         {/* Right — settings content */}
         <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
           <div className="mx-auto w-full max-w-2xl px-8 py-8">
-            <h2 className="text-foreground mb-1 text-lg font-medium">
-              {active ? t(active.labelKey) : ""}
-            </h2>
-            <p className="text-muted-foreground mb-6 text-sm">
-              {active ? t(active.descKey) : ""}
-            </p>
-
-            {activeTab === "models" ? (
-              <ModelsSettings />
-            ) : activeTab === "mcp" ? (
-              <McpSettings />
-            ) : activeTab === "general" ? (
-              <GeneralTab />
-            ) : activeTab === "skills" ? (
-              <SkillsTab />
-            ) : activeTab === "extensions" ? (
-              <ExtensionsTab />
-            ) : activeTab === "keybindings" ? (
-              <KeybindingsTab />
-            ) : activeTab === "about" ? (
-              <AboutTab />
-            ) : (
-              <div className="border-hairline flex items-center justify-center rounded-lg border p-16">
-                <p className="text-muted-foreground text-xs">
-                  {activeTab} settings — coming soon
-                </p>
-              </div>
-            )}
+            <motion.div
+              key={activeTab}
+              {...enter}
+              transition={FAST_TRANSITION}
+            >
+                {activeTab === "models" ? (
+                  <ModelsSettings />
+                ) : activeTab === "mcp" ? (
+                  <McpSettings />
+                ) : activeTab === "general" ? (
+                  <GeneralTab />
+                ) : activeTab === "skills" ? (
+                  <SkillsTab />
+                ) : activeTab === "extensions" ? (
+                  <ExtensionsTab />
+                ) : activeTab === "keybindings" ? (
+                  <KeybindingsTab />
+                ) : activeTab === "about" ? (
+                  <AboutTab />
+                ) : (
+                  <div className="border-hairline flex items-center justify-center rounded-lg border p-16">
+                    <p className="text-muted-foreground text-xs">
+                      {activeTab} settings — coming soon
+                    </p>
+                  </div>
+                )}
+            </motion.div>
           </div>
         </div>
       </div>

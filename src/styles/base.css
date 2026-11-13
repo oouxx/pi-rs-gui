@@ -1,62 +1,70 @@
-/* base.css — Reset、body、scrollbar、selection */
+/* base.css — Reset, typography, scrollbars, selection */
+
 @layer base {
   *,
   *::before,
   *::after {
-    transition:
-      background-color 0.3s,
-      color 0.3s,
-      border-color 0.3s,
-      box-shadow 0.3s;
-  }
-
-  * {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
     /* shadcn base reset: bare `border`/`border-r` etc. default to the theme
        border color instead of falling back to currentColor (near-black). */
-    border-color: var(--color-border);
+    border-color: var(--border);
   }
 
   html {
-    font-family: var(--font-sans, "Inter", system-ui, sans-serif);
+    font-family: var(--font-sans, "Geist Variable", ui-sans-serif, system-ui, sans-serif);
   }
 
   body {
-    background: var(--color-background, oklch(0.97 0 0));
-    color: var(--color-foreground, oklch(0.2 0 0));
+    background: var(--background);
+    color: var(--foreground);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /* Raw interactive elements need the affordances shadcn primitives already
+     carry (pointer cursor + visible keyboard focus). */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  button:not([data-slot]):focus-visible,
+  [role="button"]:not([data-slot]):focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
   ::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
   ::-webkit-scrollbar-track {
-    background: var(--color-surface, oklch(1 0 0));
+    background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--color-muted, oklch(0.53 0.005 88));
+    background: var(--muted-foreground);
+    opacity: 0.4;
     border-radius: 3px;
   }
 
   ::selection {
-    background: rgba(59, 130, 246, 0.2);
-    color: var(--color-foreground, oklch(0.15 0.008 260));
+    background: var(--selection);
   }
 }
 
 /* Thread search highlights (useThreadSearch) */
 mark.thread-find-match {
-  background: rgba(251, 191, 36, 0.4);
+  background: color-mix(in oklch, var(--warning) 40%, transparent);
   color: inherit;
   border-radius: 2px;
   padding: 0 1px;
 }
 mark.thread-find-active {
-  background: rgba(251, 191, 36, 0.85);
-  color: #1c1917;
+  background: color-mix(in oklch, var(--warning) 85%, transparent);
+  color: var(--foreground);
   border-radius: 2px;
   padding: 0 1px;
 }

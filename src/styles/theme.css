@@ -1,278 +1,184 @@
-/* theme.css — Design Tokens
+/* theme.css — Design tokens
  *
- * Inspired by Cursor (blue-primary AI coding IDE) and Codex/OpenAI
- * (green-accent minimal design).  Both tools converge on:
- *   - Dark mode as first-class citizen
- *   - Neutral, cool-toned surfaces (not warm)
- *   - A single, saturated accent that feels "AI-native"
- *   - Minimal chrome, hairline borders, lots of breathing room
+ * Claude-style warm palette: paper-like neutral surfaces, clay-orange
+ * primary, warm-gray hairlines. Single semantic token system — values live
+ * in `:root` / `.dark`; `@theme inline` only maps them to Tailwind utilities,
+ * so every utility follows the active theme without duplicate palettes.
  *
- * Cursor contributes:  blue-primary palette, sharp sidebar chrome,
- *                        high-contrast foreground on dark.
- * Codex contributes:   green-ai accent for "assistant" states,
- *                        Inter + IBM Plex Mono typography,
- *                        subtle surface differentiation.
+ * Scales:
+ *   background → page (ivory)
+ *   card       → raised surface (panels, cards, dialogs)
+ *   muted      → recessed surface
+ *   accent     → hover / selected surface
+ *   foreground → primary text
+ *   muted-foreground → secondary text
+ *   subtle-foreground → tertiary text (labels, hints, placeholders)
  */
 
-/* ── Light Mode ── */
 :root {
-  /* Raw RGB — for canvas / inline-style gradients */
-  --color-bg-rgb: 248 249 252;
-  --color-surface-rgb: 255 255 255;
-  --color-surface-hover-rgb: 243 244 247;
-  --color-fg-rgb: 30 31 38;
-  --color-muted-rgb: 130 134 148;
-  --color-border-rgb: 0 0 0;
-  --color-accent-rgb: 59 130 246;
-  --color-accent-hover-rgb: 37 99 235;
-  --color-ai-rgb: 16 163 127;
-  --color-tag-bg: rgba(0, 0, 0, 0.04);
-  --color-header-bg: #ffffff;
-
-  /* ── Codex desktop palette ──
-   * The chat view follows the Codex desktop/web app look: white canvas,
-   * neutral-50/100 surfaces, hairline borders, sans type, OpenAI-green
-   * accents. Independent of the app's light/dark switch. */
-  --color-codex-bg: #ffffff;
-  --color-codex-inset: #f7f7f8;
-  --color-codex-panel: #f5f5f5;
-  --color-codex-panel-2: #f0f0f0;
-  --color-codex-panel-3: #e8e8e8;
-  --color-codex-border: rgb(0 0 0 / 0.08);
-  --color-codex-border-strong: rgb(0 0 0 / 0.14);
-  --color-codex-text: #171717;
-  --color-codex-dim: #525252;
-  --color-codex-faint: #a3a3a3;
-  --color-codex-green: #10a37f;
-  --color-codex-green-bright: #19b28d;
-  --color-codex-amber: #f59e0b;
-  --color-codex-red: #dc2626;
-
-  /* shadcn CSS 变量 - OKLCH 空格格式 */
-  --background: 0.975 0.003 260;
-  --foreground: 0.15 0.008 260;
-  --card: 1 0 0;
-  --card-foreground: 0.15 0.008 260;
-  --popover: 1 0 0;
-  --popover-foreground: 0.15 0.008 260;
-  --primary: 0.55 0.16 260;
-  --primary-foreground: 0.985 0 0;
-  --secondary: 0.96 0.005 260;
-  --secondary-foreground: 0.15 0.008 260;
-  --muted: 0.96 0.005 260;
-  --muted-foreground: 0.55 0.01 260;
-  --accent: 0.96 0.005 260;
-  --accent-foreground: 0.15 0.008 260;
-  --destructive: 0.55 0.2 27;
-  --border: 0.15 0.008 260 / 0.10;
-  --input: 0.15 0.008 260 / 0.12;
-  --ring: 0.55 0.16 260;
   --radius: 0.5rem;
-  --sidebar: 0.975 0.003 260;
-  --sidebar-foreground: 0.15 0.008 260;
-  --sidebar-primary: 0.55 0.16 260;
-  --sidebar-primary-foreground: 0.985 0 0;
-  --sidebar-accent: 0.96 0.005 260;
-  --sidebar-accent-foreground: 0.15 0.008 260;
-  --sidebar-border: 0.15 0.008 260 / 0.06;
-  --sidebar-ring: 0.55 0.16 260;
+
+  /* Warm paper neutrals */
+  --background: #faf9f5;
+  --foreground: #141413;
+
+  --card: #ffffff;
+  --card-foreground: #141413;
+  --popover: #ffffff;
+  --popover-foreground: #141413;
+
+  /* Clay orange — Claude's accent */
+  --primary: #b85c3f;
+  --primary-foreground: #ffffff;
+
+  --secondary: #f0eee6;
+  --secondary-foreground: #3d3d3a;
+
+  --muted: #f0eee6;
+  --muted-foreground: #6b6a64;
+  --subtle-foreground: #75736b;
+
+  --accent: #efece3;
+  --accent-foreground: #2b2b28;
+
+  /* Status colors tuned for warm surfaces */
+  --destructive: #bf4d43;
+  --destructive-foreground: #ffffff;
+  --success: #5c7a4a;
+  --success-foreground: #ffffff;
+  --warning: #96601a;
+  --warning-foreground: #ffffff;
+
+  --border: rgb(20 20 19 / 0.12);
+  --hairline: rgb(20 20 19 / 0.07);
+  --input: rgb(20 20 19 / 0.16);
+  --ring: #b85c3f;
+
+  --sidebar: #f5f3ec;
+  --sidebar-foreground: #141413;
+  --sidebar-primary: #b85c3f;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ebe8de;
+  --sidebar-accent-foreground: #2b2b28;
+  --sidebar-border: rgb(20 20 19 / 0.08);
+  --sidebar-ring: #b85c3f;
+
+  --selection: rgb(184 92 63 / 0.2);
+  --scrim: rgb(20 20 19 / 0.35);
+
+  /* Terminal (xterm needs literal colors, not theme tokens). */
+  --terminal-bg: #faf9f5;
+  --terminal-fg: #141413;
+  --terminal-cursor: #b85c3f;
+  --terminal-selection: rgb(184 92 63 / 0.18);
 }
 
-@theme {
-  /* ── Codex desktop palette (chat view) ── */
-  --color-codex-bg: #ffffff;
-  --color-codex-inset: #f7f7f8;
-  --color-codex-panel: #f5f5f5;
-  --color-codex-panel-2: #f0f0f0;
-  --color-codex-panel-3: #e8e8e8;
-  --color-codex-border: rgb(0 0 0 / 0.08);
-  --color-codex-border-strong: rgb(0 0 0 / 0.14);
-  --color-codex-text: #171717;
-  --color-codex-dim: #525252;
-  --color-codex-faint: #a3a3a3;
-  --color-codex-green: #10a37f;
-  --color-codex-green-bright: #19b28d;
-  --color-codex-amber: #f59e0b;
-  --color-codex-red: #dc2626;
-
-  /* Background / Surface */
-  --color-background: oklch(0.975 0.003 260);
-  --color-foreground: oklch(0.15 0.008 260);
-  --color-surface: oklch(1 0 0);
-  --color-surface-hover: oklch(0.955 0.004 260);
-  --color-muted: oklch(0.55 0.01 260);
-        --color-muted-foreground: oklch(0.55 0.01 260);
-
-        /* shadcn semantic colors */
-        --color-card: oklch(1 0 0);
-        --color-card-foreground: oklch(0.15 0.008 260);
-        --color-popover: oklch(1 0 0);
-        --color-popover-foreground: oklch(0.15 0.008 260);
-        --color-secondary: oklch(0.96 0.005 260);
-        --color-secondary-foreground: oklch(0.15 0.008 260);
-        --color-destructive: oklch(0.55 0.2 27);
-        --color-destructive-foreground: oklch(0.985 0 0);
-
-  /* Border / Ring */
-  --color-border: oklch(0.15 0.008 260 / 0.10);
-  --color-input: oklch(0.15 0.008 260 / 0.12);
-  --color-ring: oklch(0.55 0.16 260);
-  --color-hairline: oklch(0.15 0.008 260 / 0.05);
-  --color-hairline-dark: oklch(0.15 0.008 260 / 0.03);
-
-  /* Primary / Accent — blue (Cursor-inspired) */
-  --color-accent: oklch(0.55 0.16 260);
-  --color-accent-hover: oklch(0.48 0.16 260);
-  --color-accent-foreground: oklch(0.985 0 0);
-  --color-primary: oklch(0.55 0.16 260);
-  --color-primary-hover: oklch(0.48 0.16 260);
-  --color-primary-foreground: oklch(0.985 0 0);
-
-  /* AI accent — green-teal (Codex-inspired) */
-  --color-ai: oklch(0.55 0.14 175);
-  --color-ai-hover: oklch(0.48 0.14 175);
-  --color-ai-muted: oklch(0.55 0.14 175 / 0.15);
-  --color-ai-focus: oklch(0.48 0.14 175);
-
-  /* Legacy aliases (transition helpers, to be removed) */
-  --color-bg: oklch(0.975 0.003 260);
-  --color-bg-surface: oklch(1 0 0);
-  --color-bg-hover: oklch(0.955 0.004 260);
-  --color-white: oklch(0.975 0.003 260);
-  --color-black: oklch(0.15 0.008 260);
-  --color-canvas: oklch(0.975 0.003 260);
-  --color-canvas-parchment: oklch(1 0 0);
-  --color-surface-dark: oklch(1 0 0);
-  --color-surface-dark-2: oklch(0.955 0.004 260);
-  --color-surface-dark-3: oklch(0.975 0.003 260);
-  --color-ink: oklch(0.15 0.008 260);
-  --color-ink-muted: oklch(0.55 0.01 260);
-  --color-ink-dim: oklch(0.15 0.008 260 / 0.06);
-
-  /* Typography — Inter (UI), IBM Plex Mono (code) */
-  --font-sans: "Inter", "SF Pro", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", "JetBrains Mono", "SF Mono", ui-monospace, monospace;
-  --font-size-display-lg: 36px;
-  --font-size-display-md: 24px;
-  --font-size-body: 15px;
-  --font-size-body-strong: 15px;
-  --font-size-caption: 13px;
-  --font-size-caption-strong: 13px;
-  --font-size-nav-link: 12px;
-
-  /* Border radius — sharper (Codex-inspired) */
-  --radius-card: 12px;
-  --radius-button: 8px;
-  --radius-input: 8px;
-  --radius-badge: 4px;
-
-  /* Shadows — subtle */
-  --shadow-terminal: 0 1px 2px rgba(0, 0, 0, 0.08);
-  --shadow-terminal-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
-}
-
-/* ── Dark Mode ── */
 .dark,
 [data-theme="dark"] {
-  --color-bg-rgb: 16 17 22;
-  --color-surface-rgb: 22 24 30;
-  --color-surface-hover-rgb: 30 33 40;
-  --color-fg-rgb: 230 232 238;
-  --color-muted-rgb: 148 152 164;
-  --color-border-rgb: 255 255 255;
-  --color-accent-rgb: 59 130 246;
-  --color-accent-hover-rgb: 96 165 250;
-  --color-ai-rgb: 52 211 153;
-  --color-tag-bg: rgba(255, 255, 255, 0.05);
-  --color-header-bg: #000000;
+  /* Warm charcoal */
+  --background: #262624;
+  --foreground: #f0eee6;
 
-  /* shadcn dark — neutral cool tones */
-  --background: 0.09 0.005 260;
-  --foreground: 0.92 0.004 260;
-  --card: 0.11 0.006 260;
-  --card-foreground: 0.92 0.004 260;
-  --popover: 0.11 0.006 260;
-  --popover-foreground: 0.92 0.004 260;
-  --primary: 0.58 0.16 260;
-  --primary-foreground: 0.985 0 0;
-  --secondary: 0.13 0.008 260;
-  --secondary-foreground: 0.92 0.004 260;
-  --muted: 0.13 0.008 260;
-  --muted-foreground: 0.56 0.01 260;
-  --accent: 0.13 0.008 260;
-  --accent-foreground: 0.92 0.004 260;
-  --destructive: 0.58 0.22 25;
-  --border: 0.92 0 0 / 0.08;
-  --input: 0.92 0 0 / 0.10;
-  --ring: 0.58 0.16 260;
-  --sidebar: 0.07 0.004 260;
-  --sidebar-foreground: 0.92 0.004 260;
-  --sidebar-primary: 0.58 0.16 260;
-  --sidebar-primary-foreground: 0.985 0 0;
-  --sidebar-accent: 0.13 0.008 260;
-  --sidebar-accent-foreground: 0.92 0.004 260;
-  --sidebar-border: 0.92 0 0 / 0.04;
-  --sidebar-ring: 0.58 0.16 260;
+  --card: #30302e;
+  --card-foreground: #f0eee6;
+  --popover: #30302e;
+  --popover-foreground: #f0eee6;
 
-  /* @theme colour overrides */
-  --color-background: oklch(0.09 0.005 260);
-  --color-foreground: oklch(0.92 0.004 260);
-  --color-surface: oklch(0.11 0.006 260);
-  --color-surface-hover: oklch(0.16 0.008 260);
-  --color-muted: oklch(0.56 0.01 260);
-        --color-muted-foreground: oklch(0.56 0.01 260);
-        --color-card: oklch(0.11 0.006 260);
-        --color-card-foreground: oklch(0.92 0.004 260);
-        --color-popover: oklch(0.11 0.006 260);
-        --color-popover-foreground: oklch(0.92 0.004 260);
-        --color-secondary: oklch(0.13 0.008 260);
-        --color-secondary-foreground: oklch(0.92 0.004 260);
-        --color-destructive: oklch(0.58 0.22 25);
-        --color-destructive-foreground: oklch(0.985 0 0);
+  --primary: #d97757;
+  --primary-foreground: #1f1e1d;
 
-  --color-border: oklch(0.92 0 0 / 0.08);
-  --color-input: oklch(0.92 0 0 / 0.10);
-  --color-hairline: oklch(0.92 0 0 / 0.04);
-  --color-hairline-dark: oklch(0.92 0 0 / 0.03);
+  --secondary: #30302e;
+  --secondary-foreground: #ece9e1;
 
-  --color-accent: oklch(0.58 0.16 260);
-  --color-accent-hover: oklch(0.63 0.16 260);
-  --color-primary: oklch(0.58 0.16 260);
-  --color-primary-hover: oklch(0.63 0.16 260);
+  --muted: #30302e;
+  --muted-foreground: #a8a59c;
+  --subtle-foreground: #8d8b83;
 
-  --color-ai: oklch(0.58 0.14 175);
-  --color-ai-hover: oklch(0.63 0.14 175);
-  --color-ai-muted: oklch(0.58 0.14 175 / 0.15);
-  --color-ai-focus: oklch(0.63 0.14 175);
+  --accent: #3a3a37;
+  --accent-foreground: #f0eee6;
 
-  /* Legacy aliases */
-  --color-bg: oklch(0.09 0.005 260);
-  --color-bg-surface: oklch(0.11 0.006 260);
-  --color-bg-hover: oklch(0.16 0.008 260);
-  --color-white: oklch(0.92 0.004 260);
-  --color-black: oklch(0.09 0.005 260);
-  --color-canvas: oklch(0.09 0.005 260);
-  --color-canvas-parchment: oklch(0.11 0.006 260);
-  --color-surface-dark: oklch(0.11 0.006 260);
-  --color-surface-dark-2: oklch(0.16 0.008 260);
-  --color-surface-dark-3: oklch(0.09 0.005 260);
-  --color-ink: oklch(0.92 0.004 260);
-  --color-ink-muted: oklch(0.56 0.01 260);
-  --color-ink-dim: oklch(0.92 0.004 260 / 0.06);
+  --destructive: #e07a6e;
+  --destructive-foreground: #1f1e1d;
+  --success: #8fa870;
+  --success-foreground: #1f1e1d;
+  --warning: #d9a441;
+  --warning-foreground: #1f1e1d;
 
-  /* Codex chat palette — dark surfaces, light text */
-  --color-codex-bg: #0b0c0f;
-  --color-codex-inset: #141519;
-  --color-codex-panel: #191a1e;
-  --color-codex-panel-2: #212228;
-  --color-codex-panel-3: #2b2c33;
-  --color-codex-border: rgb(255 255 255 / 0.09);
-  --color-codex-border-strong: rgb(255 255 255 / 0.18);
-  --color-codex-text: #e9e9ec;
-  --color-codex-dim: #a1a1aa;
-  --color-codex-faint: #71717a;
-  --color-codex-green: #19b28d;
-  --color-codex-green-bright: #34d399;
-  --color-codex-amber: #fbbf24;
-  --color-codex-red: #f87171;
+  --border: rgb(240 238 230 / 0.12);
+  --hairline: rgb(240 238 230 / 0.06);
+  --input: rgb(240 238 230 / 0.16);
+  --ring: #d97757;
+
+  --sidebar: #1f1e1d;
+  --sidebar-foreground: #f0eee6;
+  --sidebar-primary: #d97757;
+  --sidebar-primary-foreground: #1f1e1d;
+  --sidebar-accent: #30302e;
+  --sidebar-accent-foreground: #f0eee6;
+  --sidebar-border: rgb(240 238 230 / 0.08);
+  --sidebar-ring: #d97757;
+
+  --selection: rgb(217 119 87 / 0.28);
+  --scrim: rgb(0 0 0 / 0.55);
+
+  --terminal-bg: #1f1e1d;
+  --terminal-fg: #f0eee6;
+  --terminal-cursor: #d97757;
+  --terminal-selection: rgb(217 119 87 / 0.25);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+
+  --color-border: var(--border);
+  --color-hairline: var(--hairline);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-heading: "Geist Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, monospace;
+
+  /* Warm shadows — neutral black shadows look muddy on ivory. */
+  --shadow-xs: 0 1px 2px rgb(20 20 19 / 0.05);
+  --shadow-sm: 0 1px 3px rgb(20 20 19 / 0.08);
+  --shadow-md: 0 4px 12px rgb(20 20 19 / 0.1);
+  --shadow-lg: 0 10px 24px rgb(20 20 19 / 0.12);
+  --shadow-xl: 0 16px 40px rgb(20 20 19 / 0.14);
 }

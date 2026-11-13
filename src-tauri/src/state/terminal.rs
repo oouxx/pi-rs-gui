@@ -111,7 +111,9 @@ impl Store {
         tokio::time::timeout(
             std::time::Duration::from_secs(5),
             spawn_blocking(move || {
-                let mut w = writer.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                let mut w = writer
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 w.write_all(&bytes)
             }),
         )
@@ -201,7 +203,11 @@ mod tests {
         let mut buf = [0u8; 256];
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while !String::from_utf8_lossy(&out).contains("pty-interactive-check") {
-            assert!(std::time::Instant::now() < deadline, "timed out; output so far: {:?}", String::from_utf8_lossy(&out));
+            assert!(
+                std::time::Instant::now() < deadline,
+                "timed out; output so far: {:?}",
+                String::from_utf8_lossy(&out)
+            );
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => out.extend_from_slice(&buf[..n]),
@@ -209,7 +215,10 @@ mod tests {
             }
         }
         let text = String::from_utf8_lossy(&out);
-        assert!(text.contains("pty-interactive-check"), "command output missing: {text:?}");
+        assert!(
+            text.contains("pty-interactive-check"),
+            "command output missing: {text:?}"
+        );
         let _ = child.kill();
     }
 }

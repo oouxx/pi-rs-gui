@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { MotionConfig, motion } from "motion/react"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ChatProvider } from "@/hooks/ChatProvider"
@@ -8,6 +9,7 @@ import SkillsView from "./SkillsView"
 import ExtensionsView from "./ExtensionsView"
 import SettingsView from "./SettingsView"
 import { matchesBinding, useKeybindings } from "@/lib/keybindings"
+import { enter, FAST_TRANSITION } from "@/lib/motion"
 
 export type AppView = "chat" | "skills" | "extensions" | "settings"
 
@@ -46,13 +48,24 @@ export default function AppShell() {
   }, [bindings.openSettings])
 
   return (
-    <TooltipProvider>
-      <ChatProvider>
-        <SidebarProvider defaultOpen>
-          <PiSidebar mode={mode} onModeChange={setMode} />
-          <SidebarInset className="overflow-hidden">{views[mode]}</SidebarInset>
-        </SidebarProvider>
-      </ChatProvider>
-    </TooltipProvider>
+    <MotionConfig reducedMotion="user">
+      <TooltipProvider>
+        <ChatProvider>
+          <SidebarProvider defaultOpen>
+            <PiSidebar mode={mode} onModeChange={setMode} />
+            <SidebarInset className="overflow-hidden">
+              <motion.div
+                key={mode}
+                className="h-full min-h-0 w-full"
+                {...enter}
+                transition={FAST_TRANSITION}
+              >
+                {views[mode]}
+              </motion.div>
+            </SidebarInset>
+          </SidebarProvider>
+        </ChatProvider>
+      </TooltipProvider>
+    </MotionConfig>
   )
 }

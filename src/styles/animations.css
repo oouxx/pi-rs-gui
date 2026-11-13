@@ -1,38 +1,6 @@
-/* animations.css — 所有 @keyframes 和动画相关样式 */
+/* animations.css — keyframes used by component-scoped classes */
 
 @layer base {
-  @keyframes skeleton-shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-  }
-
-  @keyframes reasoning-slide-down {
-    from {
-      height: 0;
-      opacity: 0;
-    }
-    to {
-      height: var(--radix-collapsible-content-height);
-      opacity: 1;
-    }
-  }
-
-  @keyframes reasoning-slide-up {
-    from {
-      height: var(--radix-collapsible-content-height);
-      opacity: 1;
-    }
-    to {
-      height: 0;
-      opacity: 0;
-    }
-  }
-
-  @keyframes reasoning-shimmer {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
-
   @keyframes group-slide-down {
     from {
       height: 0;
