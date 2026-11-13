@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Sidebar,
   SidebarContent,
@@ -15,6 +24,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
@@ -25,7 +35,6 @@ import {
 import {
   Search,
   Settings,
-  Puzzle,
   Code2,
   Plus,
   Trash2,
@@ -41,6 +50,7 @@ import {
   Square,
   MessageSquare,
   Archive,
+  AlertTriangle,
 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useChatContext } from "@/hooks/ChatProvider";
@@ -113,7 +123,10 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<SessionItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelRenameRef = useRef(false);
   const [collapsedGroups, setCollapsedGroups] =
     useState<Set<string>>(loadCollapsedGroups);
   const prevActiveIdRef = useRef<string | null>(null);
@@ -180,8 +193,15 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
         setProjectSwitcherOpen(false);
       }
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setProjectSwitcherOpen(false);
+    };
     document.addEventListener("mousedown", onDocMouseDown);
-    return () => document.removeEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [projectSwitcherOpen]);
 
   // Persist collapsed group state across reloads.
@@ -256,16 +276,15 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     toast,
   ]);
 
-  const matches = (s: { title: string }) =>
-    !search.trim() ||
-    s.title.toLowerCase().includes(search.trim().toLowerCase());
-
-  const filteredSessions = sessions.filter(matches);
-
-  // When a specific project is selected, show only its sessions.
-  const visibleSessions = currentProject
-    ? filteredSessions.filter((s) => s.cwd === currentProject)
-    : filteredSessions;
+  // Filter once: title search + optional project scope. Memoized so the
+  // grouping/sorting memos below don't recompute on every render.
+  const visibleSessions = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return sessions.filter((s) => {
+      if (currentProject && s.cwd !== currentProject) return false;
+      return !query || s.title.toLowerCase().includes(query);
+    });
+  }, [sessions, search, currentProject]);
 
   // Flat, most-recent-first list for the single-project view.
   const projectSessions = useMemo(
@@ -284,7 +303,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     const map = new Map<string, SessionGroup>();
     for (const s of visibleSessions) {
       const key = s.cwd || "";
-      const label = s.cwd ? cwdBasename(s.cwd) : "未设置目录";
+      const label = s.cwd ? cwdBasename(s.cwd) : t("sidebar.noFolder");
       let g = map.get(key);
       if (!g) {
         g = { key, label, path: s.cwd ?? undefined, sessions: [] };
@@ -305,7 +324,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
       return a.sessions[0].updatedAt < b.sessions[0].updatedAt ? 1 : -1;
     });
     return arr;
-  }, [visibleSessions]);
+  }, [visibleSessions, t]);
 
   // Project catalog for the switcher (one entry per distinct cwd), sorted by
   // the most recently active session in that project.
@@ -317,7 +336,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     for (const s of sessions) {
       const key = s.cwd || "";
       const e = map.get(key) ?? {
-        label: key ? cwdBasename(key) : "未设置目录",
+        label: key ? cwdBasename(key) : t("sidebar.noFolder"),
         path: key,
         count: 0,
         last: s.updatedAt,
@@ -327,7 +346,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
       map.set(key, e);
     }
     return [...map.values()].sort((a, b) => (a.last < b.last ? 1 : -1));
-  }, [sessions]);
+  }, [sessions, t]);
 
   const activeProject = currentProject
     ? projects.find((p) => p.path === currentProject) ?? {
@@ -338,18 +357,47 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     : null;
 
   const handleDelete = useCallback(
-    async (sessionId: string) => {
+    async (session: SessionItem) => {
+      setDeleting(true);
       try {
-        await deleteSession(sessionId);
+        await deleteSession(session.id);
+        setPendingDelete(null);
+        toast({
+          variant: "success",
+          title: t("sidebar.deleted"),
+          description: session.title,
+        });
       } catch (e) {
         toast({
           variant: "error",
           title: t("sidebar.deleteFailed"),
           description: e instanceof Error ? e.message : String(e),
         });
+      } finally {
+        setDeleting(false);
       }
     },
     [deleteSession, t, toast],
+  );
+
+  const handleArchive = useCallback(
+    async (session: SessionItem) => {
+      try {
+        await archiveSession(session.id);
+        toast({
+          variant: "success",
+          title: t("sidebar.archived"),
+          description: session.title,
+        });
+      } catch (e) {
+        toast({
+          variant: "error",
+          title: t("sidebar.archiveFailed"),
+          description: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
+    [archiveSession, t, toast],
   );
 
   const handleStop = useCallback(async (sessionId: string) => {
@@ -383,16 +431,30 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
   );
 
   const handleStartRename = useCallback((id: string, title: string) => {
+    cancelRenameRef.current = false;
     setRenamingId(id);
     setRenameValue(title);
   }, []);
 
-  const handleCopyId = useCallback((id: string) => {
-    navigator.clipboard?.writeText(id).catch(() => {});
-    setCopiedId(id);
-    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    copyTimerRef.current = setTimeout(() => setCopiedId(null), 1200);
-  }, []);
+  const handleCopyId = useCallback(
+    (id: string) => {
+      const write = navigator.clipboard?.writeText(id);
+      if (!write) {
+        toast({ variant: "error", title: t("sidebar.copyFailed") });
+        return;
+      }
+      write
+        .then(() => {
+          setCopiedId(id);
+          if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+          copyTimerRef.current = setTimeout(() => setCopiedId(null), 1200);
+        })
+        .catch(() =>
+          toast({ variant: "error", title: t("sidebar.copyFailed") }),
+        );
+    },
+    [t, toast],
+  );
 
   const handleExport = useCallback(
     async (session: SessionItem, format: "html" | "jsonl") => {
@@ -441,16 +503,24 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    commitRename(s.id, renameValue, s.title);
+                    e.currentTarget.blur();
                   }
                   if (e.key === "Escape") {
                     e.preventDefault();
-                    setRenamingId(null);
+                    cancelRenameRef.current = true;
+                    e.currentTarget.blur();
                   }
                 }}
-                onBlur={() => commitRename(s.id, renameValue, s.title)}
+                onBlur={() => {
+                  if (cancelRenameRef.current) {
+                    cancelRenameRef.current = false;
+                    setRenamingId(null);
+                    return;
+                  }
+                  commitRename(s.id, renameValue, s.title);
+                }}
                 onClick={(e) => e.stopPropagation()}
-                className="h-7 flex-1 rounded-sm bg-background px-1 text-sm outline-none ring-1 ring-accent"
+                className="h-7 flex-1 rounded-sm bg-background px-1 text-sm outline-none ring-1 ring-ring"
               />
             ) : (
               <SidebarMenuButton
@@ -470,7 +540,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                   });
                 }}
                 tooltip={s.title}
-                className="data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground hover:bg-muted hover:text-foreground"
+                className="data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground hover:bg-muted hover:text-foreground pr-12"
               >
                 <span
                   className={`size-1.5 shrink-0 rounded-full ${activeSessionId === s.id ? "bg-primary" : "bg-subtle-foreground"}`}
@@ -499,15 +569,17 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 </button>
               )}
               <button
-                className="text-muted-foreground hover:text-destructive rounded p-1 opacity-0 transition-opacity group-hover/item:opacity-100"
+                type="button"
+                className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive rounded-md p-1 opacity-0 transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100 focus-visible:opacity-100"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleDelete(s.id);
+                  setPendingDelete(s);
                 }}
-                title={t("sidebar.deletePermanently")} aria-label={t("sidebar.deletePermanently")}
+                title={t("sidebar.deletePermanently")}
+                aria-label={t("sidebar.deletePermanently")}
                 style={{ display: renamingId === s.id ? "none" : undefined }}
               >
-                <Trash2 className="size-3" />
+                <Trash2 className="size-3.5" />
               </button>
             </div>
           </div>
@@ -531,6 +603,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             )}
             {copiedId === s.id ? t("session.copied") : t("session.copyId")}
           </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem onSelect={() => handleExport(s, "html")}>
             <FileDown className="size-3.5" />
             {t("session.exportHtml")}
@@ -539,19 +612,17 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             <FileJson className="size-3.5" />
             {t("session.exportJsonl")}
           </ContextMenuItem>
-          <ContextMenuItem
-            onSelect={() =>
-              archiveSession(s.id).catch((e) =>
-                toast({
-                  variant: "error",
-                  title: t("sidebar.archiveFailed"),
-                  description: e instanceof Error ? e.message : String(e),
-                }),
-              )
-            }
-          >
+          <ContextMenuSeparator />
+          <ContextMenuItem onSelect={() => handleArchive(s)}>
             <Archive className="size-3.5" />
             {t("session.archive")}
+          </ContextMenuItem>
+          <ContextMenuItem
+            variant="destructive"
+            onSelect={() => setPendingDelete(s)}
+          >
+            <Trash2 className="size-3.5" />
+            {t("sidebar.deletePermanently")}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
@@ -585,6 +656,8 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 onClick={() => setProjectSwitcherOpen((o) => !o)}
                 className="text-foreground hover:bg-muted flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors"
                 title={activeProject?.path ?? t("sidebar.allConversations")}
+                aria-haspopup="menu"
+                aria-expanded={projectSwitcherOpen}
               >
                 <FolderOpen className="text-subtle-foreground size-3.5 shrink-0" />
                 <span className="min-w-0 flex-1 truncate text-left group-data-[collapsible=icon]:hidden">
@@ -597,16 +670,20 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 />
               </button>
               {projectSwitcherOpen && (
-                <div className="border-hairline bg-popover text-popover-foreground absolute top-full left-0 z-50 mt-1 max-h-80 w-64 overflow-y-auto rounded-lg border p-1 shadow-lg">
+                <div
+                  role="menu"
+                  className="border-hairline bg-popover text-popover-foreground absolute top-full left-0 z-50 mt-1 max-h-80 w-64 overflow-y-auto rounded-lg border p-1 shadow-lg"
+                >
                   <button
                     type="button"
+                    role="menuitem"
                     onClick={() => {
                       setCurrentProject(null);
                       setProjectSwitcherOpen(false);
                     }}
                     className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
                       !activeProject
-                        ? "bg-success/10 text-success"
+                        ? "bg-accent text-accent-foreground font-medium"
                         : "text-muted-foreground hover:bg-muted"
                     }`}
                   >
@@ -617,6 +694,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                   {projects.map((p) => (
                     <button
                       type="button"
+                      role="menuitem"
                       key={p.path}
                       onClick={() => {
                         setCurrentProject(p.path || null);
@@ -624,7 +702,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                       }}
                       className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
                         activeProject?.path === p.path
-                          ? "bg-success/10 text-success"
+                          ? "bg-accent text-accent-foreground font-medium"
                           : "text-muted-foreground hover:bg-muted"
                       }`}
                     >
@@ -648,8 +726,16 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             <SidebarMenuButton
               onClick={async () => {
                 // Bind the new conversation to the currently selected project.
-                await createSession(undefined, currentProject ?? undefined);
-                onModeChange("chat");
+                try {
+                  await createSession(undefined, currentProject ?? undefined);
+                  onModeChange("chat");
+                } catch (e) {
+                  toast({
+                    variant: "error",
+                    title: t("sidebar.createFailed"),
+                    description: e instanceof Error ? e.message : String(e),
+                  });
+                }
               }}
               tooltip={t("sidebar.newThread")}
               className="bg-primary/10 text-primary hover:bg-primary/15 data-[active=true]:bg-primary/15 data-[active=true]:text-primary"
@@ -673,18 +759,6 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
               >
                 <Code2 />
                 <span>{t("nav.skills")}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                onClick={() =>
-                  onModeChange(mode === "extensions" ? "chat" : "extensions")
-                }
-                isActive={mode === "extensions"}
-                tooltip={t("nav.extensions")}
-              >
-                <Puzzle />
-                <span>{t("nav.extensions")}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
@@ -721,7 +795,17 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                   <button
                     key={`${hit.sessionId}-${index}`}
                     type="button"
-                    onClick={() => selectSession(hit.sessionId)}
+                    onClick={() => {
+                      onModeChange("chat");
+                      selectSession(hit.sessionId).catch((e) =>
+                        toast({
+                          variant: "error",
+                          title: t("sidebar.openSessionFailed"),
+                          description:
+                            e instanceof Error ? e.message : String(e),
+                        }),
+                      );
+                    }}
                     className={`hover:bg-secondary w-full rounded-md px-2 py-1.5 text-left transition-colors ${
                       hit.sessionId === activeSessionId
                         ? "bg-secondary"
@@ -733,7 +817,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                         className={
                           hit.role === "user"
                             ? "text-muted-foreground"
-                            : "text-success"
+                            : "text-primary"
                         }
                       >
                         {hit.role === "user" ? t("sidebar.roleYou") : t("sidebar.roleAI")}
@@ -770,7 +854,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
               <SidebarMenu>
                 {loading ? (
                   <div className="text-muted-foreground py-8 text-center text-xs">
-                    Loading...
+                    {t("common.loading")}
                   </div>
                 ) : projectSessions.length === 0 ? (
                   <div className="text-muted-foreground py-8 text-center text-xs">
@@ -787,7 +871,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             <SidebarMenu>
               {loading ? (
                 <div className="text-muted-foreground py-8 text-center text-xs">
-                  Loading...
+                  {t("common.loading")}
                 </div>
               ) : visibleSessions.length === 0 ? (
                 <div className="text-muted-foreground py-8 text-center text-xs">
@@ -847,6 +931,50 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
+
+      <Dialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setPendingDelete(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("sidebar.deleteTitle")}</DialogTitle>
+            <DialogDescription>
+              {pendingDelete
+                ? t("sidebar.deleteDescription", {
+                    title: pendingDelete.title,
+                  })
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {pendingDelete?.status === "running" && (
+            <p className="text-warning flex items-start gap-1.5 text-xs">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              {t("sidebar.deleteRunningHint")}
+            </p>
+          )}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              autoFocus
+              onClick={() => setPendingDelete(null)}
+              disabled={deleting}
+            >
+              {t("sidebar.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => pendingDelete && handleDelete(pendingDelete)}
+              disabled={deleting}
+            >
+              {deleting && <Loader2 className="size-3.5 animate-spin" />}
+              {t("sidebar.deleteConfirm")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sidebar>
   );
 }

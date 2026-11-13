@@ -3,7 +3,8 @@ import { motion } from "motion/react";
 import { PANEL_TRANSITION } from "@/lib/motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { AlertCircle, FileText } from "lucide-react";
+import { AlertCircle, FileText, GitBranch } from "lucide-react";
+import { useI18n } from "@/i18n";
 import type { ContentBlock, DisplayMessage } from "@/hooks/message-reducer";
 import ToolCallCard from "@/components/ToolCallCard";
 import ThinkingBlock from "@/components/ThinkingBlock";
@@ -82,14 +83,41 @@ const BlockRenderer = memo(function BlockRenderer({
 /** A single transcript message. Memoized: during streaming only the last
  *  assistant message's props change (new blocks), so all other messages skip
  *  re-rendering entirely. */
+/** Fork-at-message action (hidden until hover, like the copy button). */
+function ForkButton({
+  msg,
+  onForkHere,
+  className,
+}: {
+  msg: DisplayMessage;
+  onForkHere?: (msg: DisplayMessage) => void;
+  className: string;
+}) {
+  const { t } = useI18n();
+  if (!onForkHere || msg.id.startsWith("msg-opt-")) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => onForkHere(msg)}
+      title={t("chat.forkFromHere")}
+      aria-label={t("chat.forkFromHere")}
+      className={className}
+    >
+      <GitBranch className="size-3.5" />
+    </button>
+  );
+}
+
 export const MessageItem = memo(function MessageItem({
   msg,
   streaming,
   isLast,
+  onForkHere,
 }: {
   msg: DisplayMessage;
   streaming: boolean;
   isLast: boolean;
+  onForkHere?: (msg: DisplayMessage) => void;
 }) {
   const isLastAi = msg.role === "assistant" && isLast;
   const userContent =
@@ -107,6 +135,11 @@ export const MessageItem = memo(function MessageItem({
       {msg.role === "user" ? (
         /* User prompt in a subtle neutral box, full width */
         <div className="border-border bg-card relative rounded-lg border px-4 py-3 text-[15px] leading-relaxed text-foreground">
+          <ForkButton
+            msg={msg}
+            onForkHere={onForkHere}
+            className="text-subtle-foreground hover:text-muted-foreground absolute top-2 right-9 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          />
           <CopyButton
             text={msg.content}
             className="text-subtle-foreground hover:text-muted-foreground absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
@@ -149,6 +182,11 @@ export const MessageItem = memo(function MessageItem({
       ) : (
         /* Assistant answers are plain markdown, no bubble */
         <div className="text-foreground relative text-[15px] leading-relaxed">
+          <ForkButton
+            msg={msg}
+            onForkHere={onForkHere}
+            className="text-subtle-foreground hover:text-muted-foreground absolute -top-1 right-8 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          />
           <CopyButton
             text={msg.content}
             className="text-subtle-foreground hover:text-muted-foreground absolute -top-1 right-1 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"

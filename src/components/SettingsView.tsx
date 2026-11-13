@@ -25,6 +25,9 @@ import {
   RefreshCw,
   Trash2,
   X,
+  Bot,
+  Globe,
+  Settings2,
 } from "lucide-react";
 import ModelsSettings from "./ModelsSettings";
 import McpSettings from "./McpSettings";
@@ -52,9 +55,14 @@ import {
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   getActiveSessionCwd,
+  getAgentDir,
+  getExtensionSettings,
   listExtensions,
   listSkills,
   openPath,
+  setExtensionEnabled,
+  setWebSearchConfig,
+  type WebSearchSettings,
 } from "@/api/commands";
 import { useSettingsStore } from "@/stores/settings";
 
@@ -832,26 +840,185 @@ function SkillsTab() {
   );
 }
 
+interface ExtensionInfo {
+  name: string;
+  location: string;
+  tools: string[];
+  commands: { name: string; description?: string }[];
+  enabled: boolean;
+}
+
+const EXTENSION_META: Record<
+  string,
+  { icon: ReactNode; titleKey: TranslationKey; descriptionKey: TranslationKey }
+> = {
+  subagent: {
+    icon: <Bot className="size-3.5" />,
+    titleKey: "extensions.subagentTitle",
+    descriptionKey: "extensions.subagentDescription",
+  },
+  web_search: {
+    icon: <Globe className="size-3.5" />,
+    titleKey: "extensions.webSearchTitle",
+    descriptionKey: "extensions.webSearchDescription",
+  },
+};
+
 function ExtensionsTab() {
   const { t } = useI18n();
   const { toast } = useToast();
-  const [extensions, setExtensions] = useState<
-    { name: string; location: string; tools: string[]; commands: { name: string }[] }[]
-  >([]);
+  const [extensions, setExtensions] = useState<ExtensionInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [webSearch, setWebSearch] = useState<WebSearchSettings | null>(null);
+  const [provider, setProvider] = useState("auto");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [clearKey, setClearKey] = useState(false);
+  const [ollamaHost, setOllamaHost] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [agentDir, setAgentDir] = useState("");
+  const [showWebSearchSettings, setShowWebSearchSettings] = useState(false);
+
+  const applyWebSearch = useCallback((settings: WebSearchSettings) => {
+    setWebSearch(settings);
+    setProvider(settings.provider || "auto");
+    setBaseUrl(settings.deepseekBaseUrl);
+    setOllamaHost(settings.ollamaHost);
+    setApiKey("");
+    setClearKey(false);
+  }, []);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [items, settings, dir] = await Promise.all([
+        listExtensions(),
+        getExtensionSettings(),
+        getAgentDir(),
+      ]);
+      setExtensions((items ?? []) as ExtensionInfo[]);
+      applyWebSearch(settings.webSearch);
+      setAgentDir(dir ?? "");
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [applyWebSearch]);
 
   useEffect(() => {
-    (async () => {
+    void refresh();
+  }, [refresh]);
+
+  const toggle = useCallback(
+    async (extension: ExtensionInfo, enabled: boolean) => {
+      setBusy(extension.name);
       try {
-        setExtensions(((await listExtensions()) ?? []) as typeof extensions);
+        const result = await setExtensionEnabled(extension.name, enabled);
+        if (result.applied === false && result.warning) {
+          toast({
+            variant: "error",
+            title: t("extensions.updateFailed"),
+            description: result.warning,
+          });
+        } else {
+          toast({
+            variant: "success",
+            title: `${extension.name} ${t(
+              enabled ? "extensions.enabled" : "extensions.disabled",
+            )}`,
+          });
+        }
+        await refresh();
       } catch (e) {
         toast({
           variant: "error",
-          title: t("settings.loadExtensionsFailed"),
+          title: t("extensions.updateFailed"),
           description: e instanceof Error ? e.message : String(e),
         });
+      } finally {
+        setBusy(null);
       }
-    })();
-  }, [t, toast]);
+    },
+    [refresh, t, toast],
+  );
+
+  const saveWebSearch = useCallback(async () => {
+    setSaving(true);
+    try {
+      const result = await setWebSearchConfig({
+        provider,
+        deepseekBaseUrl: baseUrl.trim() || null,
+        deepseekApiKey: apiKey.trim() || null,
+        clearDeepseekApiKey: clearKey,
+        ollamaHost: ollamaHost.trim() || null,
+      });
+      applyWebSearch(result.webSearch);
+      if (result.applied === false && result.warning) {
+        toast({
+          variant: "error",
+          title: t("extensions.saveFailed"),
+          description: result.warning,
+        });
+      } else {
+        toast({ variant: "success", title: t("extensions.saved") });
+      }
+    } catch (e) {
+      toast({
+        variant: "error",
+        title: t("extensions.saveFailed"),
+        description: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    provider,
+    baseUrl,
+    apiKey,
+    clearKey,
+    ollamaHost,
+    applyWebSearch,
+    t,
+    toast,
+  ]);
+
+  const openAgentsFolder = useCallback(async () => {
+    if (!agentDir) return;
+    try {
+      // Prefer the agents subfolder; fall back to the agent dir when it has
+      // not been created yet.
+      await openPath(`${agentDir}/agents`).catch(() => openPath(agentDir));
+    } catch (e) {
+      toast({
+        variant: "error",
+        title: t("common.openFailed"),
+        description: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }, [agentDir, t, toast]);
+
+  if (loading) {
+    return (
+      <div className="text-muted-foreground p-8 text-sm">
+        {t("common.loading")}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-start gap-2">
+        <p className="text-destructive text-xs">{error}</p>
+        <Button size="sm" variant="outline" onClick={refresh}>
+          {t("common.retry")}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -859,25 +1026,246 @@ function ExtensionsTab() {
         {t("settings.extensionsHint")}
       </p>
       {extensions.length === 0 ? (
-        <p className="text-muted-foreground text-xs">{t("settings.noExtensions")}</p>
+        <p className="text-muted-foreground text-xs">
+          {t("settings.noExtensions")}
+        </p>
       ) : (
         <div className="flex flex-col gap-2">
-          {extensions.map((e) => (
-            <div
-              key={e.name}
-              className="border-hairline bg-card flex items-center gap-2 rounded-md border px-3 py-2"
-            >
-              <Puzzle className="text-muted-foreground size-3.5 shrink-0" />
-              <span className="text-foreground font-mono text-sm">{e.name}</span>
-              <span className="bg-muted text-foreground/70 rounded-full px-2 py-0.5 text-[10px] uppercase">
-                {e.location}
-              </span>
-              <span className="text-muted-foreground ml-auto text-xs">
-                {e.tools.length} tool{e.tools.length === 1 ? "" : "s"} ·{" "}
-                {e.commands.length} command{e.commands.length === 1 ? "" : "s"}
-              </span>
-            </div>
-          ))}
+          {extensions.map((extension) => {
+            const meta = EXTENSION_META[extension.name];
+            const isWebSearch = extension.name === "web_search";
+            const backend =
+              provider === "auto"
+                ? webSearch?.hasDeepSeekKey
+                  ? "DeepSeek"
+                  : "Ollama"
+                : provider === "deepseek"
+                  ? "DeepSeek"
+                  : "Ollama";
+            return (
+              <div
+                key={extension.name}
+                className={`border-hairline bg-card flex flex-col gap-2 rounded-lg border p-3 ${
+                  extension.enabled ? "" : "opacity-70"
+                }`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <span className="bg-muted text-muted-foreground mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md">
+                    {meta?.icon ?? <Puzzle className="size-3.5" />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-foreground text-sm font-medium">
+                        {meta ? t(meta.titleKey) : extension.name}
+                      </span>
+                      {isWebSearch && webSearch && (
+                        <span className="bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 text-[10px]">
+                          {backend}
+                        </span>
+                      )}
+                    </div>
+                    {meta && (
+                      <p className="text-muted-foreground mt-0.5 text-[11px] leading-relaxed">
+                        {t(meta.descriptionKey)}
+                      </p>
+                    )}
+                  </div>
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={extension.enabled}
+                    disabled={busy === extension.name}
+                    onCheckedChange={(checked) =>
+                      toggle(extension, checked === true)
+                    }
+                    aria-label={t("extensions.enableAria", {
+                      name: extension.name,
+                    })}
+                  />
+                </div>
+
+                {extension.tools.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 pl-[2.125rem]">
+                    {extension.tools.map((tool) => (
+                      <span
+                        key={tool}
+                        className="bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[10px]"
+                      >
+                        {tool}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {extension.commands.map((command) => (
+                  <div
+                    key={command.name}
+                    className="flex items-baseline gap-2 pl-[2.125rem] text-[11px]"
+                  >
+                    <span className="text-foreground/90 font-mono">
+                      /{command.name}
+                    </span>
+                    {command.description && (
+                      <span className="text-muted-foreground">
+                        {command.description}
+                      </span>
+                    )}
+                  </div>
+                ))}
+
+                {extension.name === "subagent" && (
+                  <div className="flex flex-col gap-1 pl-[2.125rem]">
+                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                      <span
+                        className="text-muted-foreground truncate font-mono"
+                        title={agentDir ? `${agentDir}/agents` : ""}
+                      >
+                        {agentDir ? `${agentDir}/agents` : "—"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={openAgentsFolder}
+                        disabled={!agentDir}
+                        className="text-primary hover:underline disabled:opacity-50"
+                      >
+                        {t("extensions.openAgentsFolder")}
+                      </button>
+                    </div>
+                    <p className="text-subtle-foreground text-[10px] leading-relaxed">
+                      {t("extensions.subagentHint")}
+                    </p>
+                  </div>
+                )}
+
+                {isWebSearch && webSearch && (
+                  <div className="flex flex-col gap-2 pl-[2.125rem]">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground text-[11px]">
+                        {t("extensions.backend", { name: backend })}
+                      </span>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        className="ml-auto"
+                        onClick={() =>
+                          setShowWebSearchSettings((value) => !value)
+                        }
+                      >
+                        <Settings2 className="size-3" />
+                        {showWebSearchSettings
+                          ? t("common.collapse")
+                          : t("extensions.configure")}
+                      </Button>
+                    </div>
+                    {provider === "deepseek" && !webSearch.hasDeepSeekKey && (
+                      <p className="text-warning text-[11px]">
+                        {t("extensions.missingKey")}
+                      </p>
+                    )}
+                    {showWebSearchSettings && (
+                      <div className="border-hairline flex flex-col gap-2 border-t pt-2">
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <label className="flex flex-col gap-1">
+                            <span className="text-muted-foreground text-[11px]">
+                              {t("extensions.provider")}
+                            </span>
+                            <Select value={provider} onValueChange={setProvider}>
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="auto">
+                                  {t("extensions.providerAuto")}
+                                </SelectItem>
+                                <SelectItem value="deepseek">
+                                  {t("extensions.providerDeepseek")}
+                                </SelectItem>
+                                <SelectItem value="ollama">
+                                  {t("extensions.providerOllama")}
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </label>
+                          {provider !== "ollama" && (
+                            <label className="flex flex-col gap-1">
+                              <span className="text-muted-foreground text-[11px]">
+                                {t("extensions.deepseekBaseUrl")}
+                              </span>
+                              <Input
+                                value={baseUrl}
+                                onChange={(e) => setBaseUrl(e.target.value)}
+                                placeholder="https://api.deepseek.com"
+                                className="h-8 text-xs"
+                              />
+                            </label>
+                          )}
+                        </div>
+                        {provider !== "ollama" && (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-muted-foreground text-[11px]">
+                              {t("extensions.deepseekApiKey")}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="password"
+                                value={apiKey}
+                                onChange={(e) => setApiKey(e.target.value)}
+                                placeholder={
+                                  webSearch.hasDeepSeekKey
+                                    ? t("extensions.deepseekKeySet")
+                                    : t("extensions.deepseekKeyPlaceholder")
+                                }
+                                className="h-8 flex-1 text-xs"
+                              />
+                              {webSearch.hasDeepSeekKey && (
+                                <label className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-[11px] select-none">
+                                  <Checkbox
+                                    checked={clearKey}
+                                    onCheckedChange={(checked) =>
+                                      setClearKey(checked === true)
+                                    }
+                                  />
+                                  {t("extensions.clearKey")}
+                                </label>
+                              )}
+                            </div>
+                            <span className="text-subtle-foreground text-[10px]">
+                              {t("extensions.deepseekKeyHint")}
+                            </span>
+                          </div>
+                        )}
+                        {provider !== "deepseek" && (
+                          <label className="flex flex-col gap-1">
+                            <span className="text-muted-foreground text-[11px]">
+                              {t("extensions.ollamaHost")}
+                            </span>
+                            <Input
+                              value={ollamaHost}
+                              onChange={(e) => setOllamaHost(e.target.value)}
+                              placeholder="http://localhost:11434"
+                              className="h-8 text-xs"
+                            />
+                          </label>
+                        )}
+                        <div className="flex justify-end">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={saveWebSearch}
+                            disabled={saving}
+                          >
+                            {saving && (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            )}
+                            {t("extensions.saveSettings")}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

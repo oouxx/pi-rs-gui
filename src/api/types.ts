@@ -185,6 +185,21 @@ export interface ExtensionInfo {
   enabled: boolean;
 }
 
+export interface WebSearchSettings {
+  /** "auto" picks DeepSeek when a key is configured, otherwise Ollama. */
+  provider: "auto" | "deepseek" | "ollama" | string;
+  deepseekBaseUrl: string;
+  /** The key itself never crosses IPC; only whether one is stored. */
+  hasDeepSeekKey: boolean;
+  ollamaHost: string;
+}
+
+export interface ExtensionSettings {
+  webSearch: WebSearchSettings;
+  applied?: boolean;
+  warning?: string;
+}
+
 export interface SlashCommandInfo {
   name: string;
   description?: string;
@@ -209,7 +224,10 @@ export interface SessionTreeNode {
   id: string;
   parentId?: string | null;
   kind: string;
-  label: string;
+  /** Message role for `kind: "message"` nodes. */
+  role?: string | null;
+  /** Raw preview text (localized labels are built in the UI). */
+  detail: string;
   timestamp: string;
   current?: boolean;
   children: SessionTreeNode[];

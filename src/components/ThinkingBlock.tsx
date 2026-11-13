@@ -10,7 +10,7 @@ interface ThinkingBlockProps {
 
 /** Reasoning block: subtle recessed panel. */
 export default function ThinkingBlock({ thinking }: ThinkingBlockProps) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   const { t } = useI18n()
 
   return (

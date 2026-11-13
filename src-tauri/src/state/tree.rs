@@ -17,7 +17,7 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-/// Extract role + text label from a session message JSON value.
+/// Extract role + preview text from a session message JSON value.
 fn message_info(message: &Value) -> (Option<String>, String) {
     let role = message
         .get("role")
@@ -40,76 +40,72 @@ fn message_info(message: &Value) -> (Option<String>, String) {
             }
         }
     }
-    let label = match role.as_deref() {
-        Some("user") => format!("User: {}", truncate(&text, 80)),
-        Some("assistant") => format!("AI: {}", truncate(&text, 80)),
-        _ => truncate(&text, 80),
-    };
-    (role, label)
+    (role, truncate(&text, 200))
 }
 
-/// Map a session entry to (kind, display label).
-fn entry_info(entry: &SessionEntry) -> (String, String) {
+/// Map a session entry to (kind, detail, role). The frontend localizes the
+/// kind; `detail` stays raw so labels follow the UI language.
+fn entry_info(entry: &SessionEntry) -> (String, String, Option<String>) {
     match entry {
         SessionEntry::Message { message, .. } => {
-            let (_role, label) = message_info(message);
-            ("message".to_string(), label)
+            let (role, detail) = message_info(message);
+            ("message".to_string(), detail, role)
         }
-        SessionEntry::Usage { kind, .. } => ("usage".to_string(), format!("Usage: {kind}")),
-        SessionEntry::ContextEdit { target_id, .. } => (
-            "context_edit".to_string(),
-            format!("Context edit: {}", truncate(target_id, 80)),
-        ),
+        SessionEntry::Usage { kind, .. } => ("usage".to_string(), kind.clone(), None),
+        SessionEntry::ContextEdit { target_id, .. } => {
+            ("context_edit".to_string(), truncate(target_id, 120), None)
+        }
         SessionEntry::ThinkingLevelChange { thinking_level, .. } => (
             "thinking_level_change".to_string(),
-            format!("Thinking: {thinking_level}"),
+            thinking_level.clone(),
+            None,
         ),
         SessionEntry::ModelChange {
             provider, model_id, ..
         } => (
             "model_change".to_string(),
-            format!("Model: {provider}/{model_id}"),
+            format!("{provider}/{model_id}"),
+            None,
         ),
-        SessionEntry::Compaction { summary, .. } => (
-            "compaction".to_string(),
-            format!("Compaction: {}", truncate(summary, 80)),
-        ),
-        SessionEntry::BranchSummary { summary, .. } => (
-            "branch_summary".to_string(),
-            format!("Branch: {}", truncate(summary, 80)),
-        ),
+        SessionEntry::Compaction { summary, .. } => {
+            ("compaction".to_string(), truncate(summary, 200), None)
+        }
+        SessionEntry::BranchSummary { summary, .. } => {
+            ("branch_summary".to_string(), truncate(summary, 200), None)
+        }
         SessionEntry::Custom { custom_type, .. } => {
-            ("custom".to_string(), format!("Event: {custom_type}"))
+            ("custom".to_string(), custom_type.clone(), None)
         }
         SessionEntry::CustomMessage {
             custom_type,
             content,
             ..
         } => {
-            let label = content
+            let detail = content
                 .as_str()
-                .map(|s| truncate(s, 80))
-                .unwrap_or_else(|| format!("Event: {custom_type}"));
-            ("custom_message".to_string(), label)
+                .map(|s| truncate(s, 200))
+                .unwrap_or_else(|| custom_type.clone());
+            ("custom_message".to_string(), detail, None)
         }
-        SessionEntry::Label { label, .. } => (
-            "label".to_string(),
-            label.clone().unwrap_or_else(|| "Label".to_string()),
-        ),
+        SessionEntry::Label { label, .. } => {
+            ("label".to_string(), label.clone().unwrap_or_default(), None)
+        }
         SessionEntry::SessionInfo { name, .. } => (
             "session_info".to_string(),
-            format!("Session: {}", name.clone().unwrap_or_default()),
+            name.clone().unwrap_or_default(),
+            None,
         ),
     }
 }
 
 fn node_json(node: &SessionTreeNode, leaf_id: Option<&str>) -> Value {
-    let (kind, label) = entry_info(&node.entry);
+    let (kind, detail, role) = entry_info(&node.entry);
     json!({
         "id": node.entry.id(),
         "parentId": node.entry.parent_id(),
         "kind": kind,
-        "label": label,
+        "role": role,
+        "detail": detail,
         "timestamp": node.entry.timestamp(),
         "current": leaf_id.is_some_and(|l| l == node.entry.id()),
         "children": node

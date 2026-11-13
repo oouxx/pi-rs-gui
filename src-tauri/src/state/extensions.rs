@@ -82,6 +82,89 @@ pub fn set_extension_enabled(name: &str, enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// Settings the Extensions tab can edit. Secrets are reduced to a presence
+/// flag so the key never crosses the IPC boundary.
+pub fn get_extension_settings() -> Value {
+    let agent_dir = config::get_agent_dir();
+    let mgr = SettingsManager::create(
+        agent_dir.to_string_lossy().as_ref(),
+        Some(agent_dir.to_string_lossy().as_ref()),
+    );
+    let config = mgr.get_web_search_config();
+    let deepseek = config.deepseek.unwrap_or_default();
+    let ollama = config.ollama.unwrap_or_default();
+    json!({
+        "webSearch": {
+            "provider": config.provider.unwrap_or_else(|| "auto".to_string()),
+            "deepseekBaseUrl": deepseek.base_url.unwrap_or_default(),
+            "hasDeepSeekKey": deepseek
+                .api_key
+                .as_deref()
+                .is_some_and(|key| !key.trim().is_empty()),
+            "ollamaHost": ollama.host.unwrap_or_default(),
+        }
+    })
+}
+
+/// Persist `webSearch`. An empty API key preserves the existing one unless
+/// `clear_deepseek_api_key` is set; empty base URL/host fall back to defaults.
+pub fn set_web_search_config(
+    provider: &str,
+    deepseek_base_url: Option<String>,
+    deepseek_api_key: Option<String>,
+    clear_deepseek_api_key: bool,
+    ollama_host: Option<String>,
+) -> Result<Value, String> {
+    let provider = provider.trim();
+    if !matches!(provider, "auto" | "deepseek" | "ollama") {
+        return Err(format!("unknown web search provider '{provider}'"));
+    }
+
+    let agent_dir = config::get_agent_dir();
+    let mut mgr = SettingsManager::create(
+        agent_dir.to_string_lossy().as_ref(),
+        Some(agent_dir.to_string_lossy().as_ref()),
+    );
+    let existing_key = mgr
+        .get_web_search_config()
+        .deepseek
+        .and_then(|deepseek| deepseek.api_key);
+
+    let key = if clear_deepseek_api_key {
+        None
+    } else {
+        deepseek_api_key
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .or(existing_key)
+    };
+    let base_url = deepseek_base_url
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let host = ollama_host
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let mut web_search = serde_json::Map::new();
+    web_search.insert("provider".to_string(), json!(provider));
+    if base_url.is_some() || key.is_some() {
+        let mut deepseek = serde_json::Map::new();
+        if let Some(base_url) = base_url {
+            deepseek.insert("baseUrl".to_string(), json!(base_url));
+        }
+        if let Some(key) = key {
+            deepseek.insert("apiKey".to_string(), json!(key));
+        }
+        web_search.insert("deepseek".to_string(), Value::Object(deepseek));
+    }
+    if let Some(host) = host {
+        web_search.insert("ollama".to_string(), json!({ "host": host }));
+    }
+
+    mgr.set_global("webSearch", Value::Object(web_search));
+    Ok(get_extension_settings())
+}
+
 /// One entry per registered extension, with the tools and slash commands it
 /// contributes.
 fn summarize(reg: &ExtensionRegistry) -> Vec<Value> {

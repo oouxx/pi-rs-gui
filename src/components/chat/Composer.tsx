@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Send, Folder, X, Paperclip, Square, FileText } from "lucide-react";
+import {
+  Send,
+  Folder,
+  X,
+  Paperclip,
+  Square,
+  FileText,
+  TerminalSquare,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,6 +66,8 @@ interface ComposerProps {
   onStop: () => void;
   /** Returns true when a builtin slash command was handled locally. */
   onSlashCommand: (text: string) => Promise<boolean>;
+  terminalOpen: boolean;
+  onToggleTerminal: () => void;
 }
 
 /**
@@ -74,6 +84,8 @@ export default function Composer({
   onSend,
   onStop,
   onSlashCommand,
+  terminalOpen,
+  onToggleTerminal,
 }: ComposerProps) {
   const { toast } = useToast();
   const { bindings } = useKeybindings();
@@ -826,7 +838,7 @@ export default function Composer({
             onPaste={handlePaste}
             placeholder={t("composer.placeholder")}
             disabled={loading}
-            className="border-border focus:border-ring bg-card text-foreground placeholder:text-subtle-foreground max-h-[120px] min-h-[44px] resize-none rounded-xl border pl-10 pr-14 text-[15px] shadow-sm"
+            className="border-border focus:border-ring bg-card text-foreground placeholder:text-subtle-foreground max-h-[120px] min-h-[44px] resize-none rounded-xl border pl-[4.5rem] pr-14 text-[15px] shadow-sm"
             rows={1}
           />
           <input
@@ -846,6 +858,20 @@ export default function Composer({
             title={t("composer.attach")} aria-label={t("composer.attach")}
           >
             <Paperclip className="size-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className={`absolute bottom-1.5 left-10 size-8 ${
+              terminalOpen
+                ? "bg-primary/10 text-primary hover:bg-primary/15"
+                : "text-subtle-foreground hover:text-muted-foreground"
+            }`}
+            onClick={onToggleTerminal}
+            title={t("chat.toggleTerminal")}
+            aria-label={t("chat.toggleTerminal")}
+          >
+            <TerminalSquare className="size-4" />
           </Button>
           {streaming ? (
             <>

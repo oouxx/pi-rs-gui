@@ -6,12 +6,11 @@ import { ChatProvider } from "@/hooks/ChatProvider"
 import PiSidebar from "./PiSidebar"
 import ChatView from "./ChatView"
 import SkillsView from "./SkillsView"
-import ExtensionsView from "./ExtensionsView"
 import SettingsView from "./SettingsView"
 import { matchesBinding, useKeybindings } from "@/lib/keybindings"
 import { enter, FAST_TRANSITION } from "@/lib/motion"
 
-export type AppView = "chat" | "skills" | "extensions" | "settings"
+export type AppView = "chat" | "skills" | "settings"
 
 export default function AppShell() {
   const [mode, setMode] = useState<AppView>("chat")
@@ -29,7 +28,6 @@ export default function AppShell() {
   const views: Record<AppView, React.ReactNode> = {
     chat: <ChatView onOpenSettings={openSettings} />,
     skills: <SkillsView />,
-    extensions: <ExtensionsView />,
     settings: (
       <SettingsView key={settingsTab.nonce} initialTab={settingsTab.tab} />
     ),

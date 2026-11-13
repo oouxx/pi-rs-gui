@@ -459,6 +459,36 @@ pub async fn get_extension(name: String) -> Result<serde_json::Value, String> {
         .ok_or_else(|| format!("extension '{name}' not found"))
 }
 
+#[tauri::command]
+pub async fn get_extension_settings() -> Result<serde_json::Value, String> {
+    Ok(crate::state::extensions::get_extension_settings())
+}
+
+#[tauri::command]
+pub async fn set_web_search_config(
+    app: AppHandle,
+    store: State<'_, Arc<Store>>,
+    provider: String,
+    deepseek_base_url: Option<String>,
+    deepseek_api_key: Option<String>,
+    clear_deepseek_api_key: bool,
+    ollama_host: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let mut out = crate::state::extensions::set_web_search_config(
+        &provider,
+        deepseek_base_url,
+        deepseek_api_key,
+        clear_deepseek_api_key,
+        ollama_host,
+    )?;
+    let restart = store.restart_selected_actor(&app).await;
+    out["applied"] = serde_json::json!(restart.is_ok());
+    if let Err(error) = restart {
+        out["warning"] = serde_json::json!(error);
+    }
+    Ok(out)
+}
+
 // ── General settings ──
 
 #[tauri::command]

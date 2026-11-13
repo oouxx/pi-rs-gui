@@ -7,11 +7,20 @@ import {
   Info,
   ShieldCheck,
   ShieldX,
-  TerminalSquare,
   Loader2,
   Folder,
+  FolderOpen,
+  ChevronDown,
+  Copy,
+  ExternalLink,
   GitBranch,
 } from "lucide-react";
+import {
+  Group,
+  Panel,
+  Separator,
+  useDefaultLayout,
+} from "react-resizable-panels";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -70,6 +79,7 @@ import {
   cycleScopedModel,
   renameSession,
   setSessionCwd,
+  openPath,
   cloneSession,
   shareSession,
   type SessionInfo,
@@ -115,6 +125,11 @@ export default function ChatView({
   const { t } = useI18n();
   const [showTimeline, setShowTimeline] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [folderOpen, setFolderOpen] = useState(false);
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: "chat-terminal",
+    panelIds: ["messages", "terminal"],
+  });
   const [timelineTree, setTimelineTree] = useState<SessionTreeNode[]>([]);
   const [modelList, setModelList] = useState<ModelOption[]>([]);
   const [providerList, setProviderList] = useState<ProviderInfo[]>([]);
@@ -276,6 +291,7 @@ export default function ChatView({
       try {
         await forkSessionAt(entryId);
         setShowTimeline(false);
+        toast({ variant: "success", title: t("timeline.forked") });
       } catch (e) {
         console.error("[fork]", e);
         toast({
@@ -286,6 +302,57 @@ export default function ChatView({
       }
     },
     [toast, t],
+  );
+
+  /** Fork at the session-tree node matching a displayed message. Message
+   *  ids carry the source timestamp (`msg-<ms>`), so the tree node is the
+   *  same-role message closest to it. */
+  const forkFromMessage = useCallback(
+    async (message: { id: string; role: string }) => {
+      if (!activeSessionId) return;
+      const match = /^msg-(\d+)$/.exec(message.id);
+      if (!match) {
+        toast({ variant: "error", title: t("chat.forkPending") });
+        return;
+      }
+      const timestamp = Number(match[1]);
+      try {
+        const tree = await getSessionTree(activeSessionId);
+        const flat: SessionTreeNode[] = [];
+        const walk = (nodes: SessionTreeNode[]) => {
+          for (const node of nodes) {
+            flat.push(node);
+            walk(node.children);
+          }
+        };
+        walk(tree ?? []);
+        let best: SessionTreeNode | null = null;
+        let bestDiff = Number.POSITIVE_INFINITY;
+        for (const node of flat) {
+          if (node.kind !== "message" || node.role !== message.role) continue;
+          const diff = Math.abs(Date.parse(node.timestamp) - timestamp);
+          if (diff < bestDiff) {
+            best = node;
+            bestDiff = diff;
+          }
+        }
+        if (!best || bestDiff > 5000) {
+          toast({ variant: "error", title: t("chat.forkNotFound") });
+          return;
+        }
+        await forkSessionAt(best.id);
+        setShowTimeline(false);
+        toast({ variant: "success", title: t("chat.forked") });
+      } catch (e) {
+        console.error("[fork message]", e);
+        toast({
+          variant: "error",
+          title: t("chat.forkFailed"),
+          description: e instanceof Error ? e.message : String(e),
+        });
+      }
+    },
+    [activeSessionId, t, toast],
   );
 
   const exportActiveSession = useCallback(async () => {
@@ -544,6 +611,12 @@ export default function ChatView({
     if (typeof selected !== "string" || !selected) return;
     try {
       await setSessionCwd(activeSessionId, selected);
+      toast({
+        variant: "success",
+        title: t("chat.cwdChanged", {
+          path: selected.split("/").filter(Boolean).pop() ?? selected,
+        }),
+      });
     } catch (e) {
       console.error("[setSessionCwd]", e);
       toast({
@@ -553,6 +626,18 @@ export default function ChatView({
       });
     }
   }, [activeSessionId, toast, t]);
+
+  const copyCwd = useCallback(() => {
+    if (!activeSessionCwd) return;
+    navigator.clipboard
+      ?.writeText(activeSessionCwd)
+      .then(() => toast({ variant: "success", title: t("chat.pathCopied") }))
+      .catch(() => {});
+  }, [activeSessionCwd, t, toast]);
+
+  const revealCwd = useCallback(() => {
+    if (activeSessionCwd) void openPath(activeSessionCwd);
+  }, [activeSessionCwd]);
 
   // ── Scrolling ──────────────────────────────────────────────
   // Auto-scroll to the bottom while streaming, unless the user scrolled up.
@@ -658,12 +743,63 @@ export default function ChatView({
           {streaming && (
             <Loader2 className="text-success size-3.5 shrink-0 animate-spin" />
           )}
-          {activeSessionCwd && (
-            <span className="text-subtle-foreground hidden truncate text-xs md:inline">
-              · {activeSessionCwd.split("/").filter(Boolean).pop()}
-            </span>
-          )}
         </div>
+        <Popover open={folderOpen} onOpenChange={setFolderOpen}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              disabled={!activeSessionId}
+              className="text-subtle-foreground hover:text-muted-foreground inline-flex min-w-0 max-w-[180px] shrink items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-40"
+              title={activeSessionCwd ?? t("chat.selectCwd")}
+              aria-label={t("chat.workspace")}
+            >
+              <Folder className="size-3.5 shrink-0" />
+              <span className="hidden truncate sm:inline">
+                {activeSessionCwd
+                  ? (activeSessionCwd.split("/").filter(Boolean).pop() ??
+                    activeSessionCwd)
+                  : t("chat.selectCwd")}
+              </span>
+              <ChevronDown className="size-3 shrink-0" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-80 p-1">
+            <div className="text-muted-foreground px-2 py-1.5 font-mono text-[11px] break-all">
+              {activeSessionCwd ?? t("chat.selectCwd")}
+            </div>
+            <p className="text-subtle-foreground px-2 pb-1.5 text-[11px] leading-relaxed">
+              {t("chat.changeCwdHint")}
+            </p>
+            <button
+              type="button"
+              onClick={copyCwd}
+              className="text-foreground hover:bg-accent flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors"
+            >
+              <Copy className="size-3.5" />
+              {t("chat.copyPath")}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFolderOpen(false);
+                void handlePickFolder();
+              }}
+              className="text-foreground hover:bg-accent flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors"
+            >
+              <FolderOpen className="size-3.5" />
+              {t("chat.chooseFolder")}
+            </button>
+            <button
+              type="button"
+              onClick={revealCwd}
+              disabled={!activeSessionCwd}
+              className="text-foreground hover:bg-accent flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors disabled:opacity-40"
+            >
+              <ExternalLink className="size-3.5" />
+              {t("chat.revealInFinder")}
+            </button>
+          </PopoverContent>
+        </Popover>
         <Popover open={modelOpen} onOpenChange={setModelOpen}>
           <PopoverTrigger asChild>
             <button
@@ -807,18 +943,27 @@ export default function ChatView({
           title={t("chat.toggleTimeline")}
         >
           <GitBranch className="size-3.5" />
-          Timeline
+          {t("timeline.title")}
         </button>
       </div>
 
-      {/* Messages or empty state */}
+      {/* Messages + terminal dock (resizable) */}
       <div className="bg-background flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div
-            key={activeSessionId}
-            ref={timelineRef}
-            className="timeline custom-scroll bg-background relative flex flex-1 flex-col gap-5 overflow-y-auto px-6 py-6"
-          >
+          <div className="relative min-h-0 flex-1">
+            <Group
+              orientation="vertical"
+              id="chat-terminal"
+              defaultLayout={defaultLayout}
+              onLayoutChanged={onLayoutChanged}
+              className="h-full"
+            >
+              <Panel id="messages" minSize="25%" className="min-h-0">
+                <div
+                  key={activeSessionId}
+                  ref={timelineRef}
+                  className="timeline custom-scroll bg-background relative flex h-full flex-col gap-5 overflow-y-auto px-6 py-6"
+                >
             {threadSearch.isOpen && (
               <div className="border-border bg-background absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-lg">
                 <Search className="text-subtle-foreground size-3.5" />
@@ -897,49 +1042,32 @@ export default function ChatView({
                   msg={msg}
                   streaming={streaming}
                   isLast={idx === messages.length - 1}
+                  onForkHere={forkFromMessage}
                 />
               ))
             )}
-          </div>
-
-          {/* Terminal dock — between the messages and the composer */}
-          {terminalOpen && (
-            <TerminalDock
-              cwd={activeSessionCwd}
-              onClose={() => setTerminalOpen(false)}
-            />
-          )}
-
-          {/* Working directory picker + terminal toggle */}
-          <div className="border-border bg-background flex shrink-0 items-center gap-1 border-t px-4 pt-2">
-            <button
-              type="button"
-              onClick={handlePickFolder}
-              disabled={!activeSessionId}
-              className="text-subtle-foreground hover:text-muted-foreground inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-50"
-              title={activeSessionCwd ?? t("chat.selectCwd")}
-            >
-              <Folder className="size-3.5" />
-              <span className="max-w-[260px] truncate">
-                {activeSessionCwd
-                  ? (activeSessionCwd.split("/").filter(Boolean).pop() ??
-                    activeSessionCwd)
-                  : t("chat.selectCwd")}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setTerminalOpen((o) => !o)}
-              className={`inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors ${
-                terminalOpen
-                  ? "bg-success/10 text-success"
-                  : "text-subtle-foreground hover:text-muted-foreground"
-              }`}
-              title={t("chat.toggleTerminal")}
-            >
-              <TerminalSquare className="size-3.5" />
-              {t("chat.terminal")}
-            </button>
+                </div>
+              </Panel>
+              {terminalOpen && (
+                <>
+                  <Separator className="group/sep relative h-1.5 shrink-0 bg-transparent transition-colors hover:bg-primary/10 active:bg-primary/25">
+                    <span className="bg-border group-hover/sep:bg-primary/50 pointer-events-none absolute top-1/2 left-1/2 h-px w-full -translate-x-1/2 -translate-y-1/2 transition-colors" />
+                  </Separator>
+                  <Panel
+                    id="terminal"
+                    defaultSize="35%"
+                    minSize="15%"
+                    maxSize="70%"
+                    className="min-h-0"
+                  >
+                    <TerminalDock
+                      cwd={activeSessionCwd}
+                      onClose={() => setTerminalOpen(false)}
+                    />
+                  </Panel>
+                </>
+              )}
+            </Group>
           </div>
 
           <Composer
@@ -953,6 +1081,8 @@ export default function ChatView({
             }
             onStop={stop}
             onSlashCommand={tryHandleSlash}
+            terminalOpen={terminalOpen}
+            onToggleTerminal={() => setTerminalOpen((o) => !o)}
           />
         </div>
 

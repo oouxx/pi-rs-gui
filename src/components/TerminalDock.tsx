@@ -277,7 +277,14 @@ export default function TerminalDock({
   const addTab = useCallback(async () => {
     try {
       const id = await terminalStart(cwd ?? undefined);
-      setTabs((prev) => [...prev, { id, title: `bash ${prev.length + 1}` }]);
+      const base = cwd?.split("/").filter(Boolean).pop() ?? "terminal";
+      setTabs((prev) => [
+        ...prev,
+        {
+          id,
+          title: prev.length === 0 ? base : `${base} ${prev.length + 1}`,
+        },
+      ]);
       setActiveId(id);
     } catch (e) {
       console.error("[terminal start]", e);
@@ -314,7 +321,7 @@ export default function TerminalDock({
   );
 
   return (
-    <div className="border-border bg-background flex h-56 shrink-0 flex-col border-t">
+    <div className="bg-background flex h-full min-h-0 flex-col">
       {/* Tab bar */}
       <div className="border-border/60 flex items-center border-b px-1.5 pt-1">
         <TerminalSquare className="text-subtle-foreground mx-1.5 size-3.5 shrink-0" />

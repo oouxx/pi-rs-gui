@@ -4,6 +4,7 @@ import type {
   DefaultModelDto,
   DesktopStateDto,
   ExtensionInfo,
+  ExtensionSettings,
   GeneralSettings,
   McpConfigView,
   McpResourceContents,
@@ -70,8 +71,10 @@ export type {
   DefaultModelDto,
   DesktopStateDto,
   ExtensionInfo,
+  ExtensionSettings,
   GeneralSettings,
   GlobalModelSettingsDto,
+  WebSearchSettings,
   McpConfigView,
   McpResourceContents,
   McpResourcesResult,
@@ -218,6 +221,18 @@ export function listExtensions() {
 }
 export function getExtension(name: string) {
   return tauriInvoke<ExtensionInfo>("get_extension", { name });
+}
+export function getExtensionSettings() {
+  return tauriInvoke<ExtensionSettings>("get_extension_settings");
+}
+export function setWebSearchConfig(input: {
+  provider: string;
+  deepseekBaseUrl?: string | null;
+  deepseekApiKey?: string | null;
+  clearDeepseekApiKey?: boolean;
+  ollamaHost?: string | null;
+}) {
+  return tauriInvoke<ExtensionSettings>("set_web_search_config", input);
 }
 export function setExtensionEnabled(name: string, enabled: boolean) {
   return tauriInvoke<{ applied: boolean; warning?: string }>(

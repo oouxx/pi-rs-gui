@@ -14,8 +14,12 @@ import {
   XCircle,
   Loader2,
   ExternalLink,
+  Globe,
+  Bot,
+  ArrowUpRight,
+  Copy,
 } from "lucide-react";
-import { getActiveSessionCwd, openFile } from "@/api/commands";
+import { getActiveSessionCwd, openFile, openPath } from "@/api/commands";
 import { useToast } from "@/components/ui/toast";
 import { useI18n, type TranslationKey } from "@/i18n";
 
@@ -39,6 +43,9 @@ const TOOL_META: Record<string, { icon: ReactNode }> = {
   grep: { icon: <Search className="size-3.5" /> },
   find: { icon: <FolderSearch className="size-3.5" /> },
   ls: { icon: <FolderOpen className="size-3.5" /> },
+  web_search: { icon: <Globe className="size-3.5" /> },
+  web_fetch: { icon: <Globe className="size-3.5" /> },
+  subagent: { icon: <Bot className="size-3.5" /> },
 };
 
 const DEFAULT_META = { icon: <Wrench className="size-3.5" /> };
@@ -146,14 +153,22 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function DiffView({
   text,
   truncated,
+  embedded = false,
 }: {
   text: string;
   truncated?: boolean;
+  embedded?: boolean;
 }) {
   const { t } = useI18n();
   const lines = text.split("\n").slice(0, 600);
   return (
-    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+    <div
+      className={
+        embedded
+          ? "overflow-hidden"
+          : "border-border bg-muted mt-1 overflow-hidden rounded-lg border"
+      }
+    >
       <div className="max-h-80 overflow-auto font-mono text-[12px] leading-relaxed">
         {lines.map((line, index) => {
           const marker = line[0];
@@ -224,6 +239,905 @@ function diffFor(
   return { text: "", truncated: false };
 }
 
+// ── Extension tool rendering (web_search / web_fetch / subagent) ──
+
+function textOf(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+interface WebSearchItem {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+function webSearchItems(details: unknown): WebSearchItem[] {
+  const record = asRecord(details);
+  const results = Array.isArray(record?.results) ? record.results : [];
+  return results.slice(0, 20).flatMap((item, index) => {
+    const result = asRecord(item);
+    if (!result) return [];
+    const url = textOf(result.url) || textOf(result.link);
+    return [
+      {
+        title:
+          textOf(result.title) ||
+          textOf(result.name) ||
+          url ||
+          `#${index + 1}`,
+        url,
+        snippet:
+          textOf(result.content) ||
+          textOf(result.summary) ||
+          textOf(result.snippet) ||
+          textOf(result.description),
+      },
+    ];
+  });
+}
+
+function webFetchInfo(details: unknown): {
+  title: string;
+  content: string;
+  links: string[];
+} {
+  const record = asRecord(details);
+  return {
+    title: textOf(record?.title),
+    content: textOf(record?.content),
+    links: Array.isArray(record?.links)
+      ? record.links.filter((link): link is string => typeof link === "string")
+      : [],
+  };
+}
+
+function finalAssistantText(messages: unknown): string {
+  if (!Array.isArray(messages)) return "";
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = asRecord(messages[index]);
+    if (!message || message.role !== "assistant") continue;
+    if (typeof message.content === "string") return message.content;
+    if (Array.isArray(message.content)) {
+      const text = message.content
+        .map((block) => {
+          const record = asRecord(block);
+          return record && record.type === "text" ? textOf(record.text) : "";
+        })
+        .join("");
+      if (text) return text;
+    }
+  }
+  return "";
+}
+
+interface SubagentUsage {
+  turns?: number;
+  input?: number;
+  output?: number;
+  cost?: number;
+}
+
+interface SubagentItem {
+  agent: string;
+  task: string;
+  finalOutput: string;
+  error: string;
+  failed: boolean;
+  step?: number;
+  usage?: SubagentUsage;
+}
+
+function subagentItems(
+  args: unknown,
+  details: unknown,
+): { mode: string; items: SubagentItem[] } {
+  const argsRecord = asRecord(args) ?? {};
+  const detailsRecord = asRecord(details) ?? {};
+  const mode =
+    textOf(detailsRecord.mode) ||
+    (Array.isArray(argsRecord.tasks)
+      ? "parallel"
+      : Array.isArray(argsRecord.chain)
+        ? "chain"
+        : "single");
+
+  const items: SubagentItem[] = [];
+  if (Array.isArray(detailsRecord.results)) {
+    for (const raw of detailsRecord.results) {
+      const result = asRecord(raw);
+      if (!result) continue;
+      const stop = textOf(result.stopReason);
+      const exitCode =
+        typeof result.exitCode === "number" ? result.exitCode : 0;
+      const error = textOf(result.errorMessage);
+      const usage = asRecord(result.usage);
+      items.push({
+        agent: textOf(result.agent),
+        task: textOf(result.task),
+        finalOutput: finalAssistantText(result.messages),
+        error,
+        failed: exitCode !== 0 || !!error || stop === "error" || stop === "aborted",
+        step: typeof result.step === "number" ? result.step : undefined,
+        usage: usage
+          ? {
+              turns:
+                typeof usage.turns === "number" ? usage.turns : undefined,
+              input:
+                typeof usage.input === "number" ? usage.input : undefined,
+              output:
+                typeof usage.output === "number" ? usage.output : undefined,
+              cost: typeof usage.cost === "number" ? usage.cost : undefined,
+            }
+          : undefined,
+      });
+    }
+  }
+
+  if (items.length === 0) {
+    const steps =
+      mode === "single"
+        ? [argsRecord]
+        : Array.isArray(argsRecord.tasks)
+          ? argsRecord.tasks
+          : Array.isArray(argsRecord.chain)
+            ? argsRecord.chain
+            : [];
+    for (const raw of steps) {
+      const step = asRecord(raw) ?? {};
+      items.push({
+        agent: textOf(step.agent),
+        task: textOf(step.task),
+        finalOutput: "",
+        error: "",
+        failed: false,
+      });
+    }
+  }
+
+  return { mode, items };
+}
+
+function subagentTitleKey(mode: string): TranslationKey {
+  if (mode === "parallel") return "tool.subagents";
+  if (mode === "chain") return "tool.subagentChain";
+  return "tool.subagent";
+}
+
+function formatUsage(usage: SubagentUsage, t: (key: TranslationKey, params?: Record<string, string | number>) => string): string {
+  const parts: string[] = [];
+  if (usage.turns) parts.push(t("tool.turns", { count: usage.turns }));
+  if (usage.input != null || usage.output != null) {
+    parts.push(`↑${usage.input ?? 0} ↓${usage.output ?? 0}`);
+  }
+  if (usage.cost != null) parts.push(`$${usage.cost.toFixed(2)}`);
+  return parts.join(" · ");
+}
+
+function DetailsToggle({
+  showDetails,
+  onToggle,
+}: {
+  showDetails: boolean;
+  onToggle: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="hover:text-muted-foreground flex w-full items-center gap-1 border-t border-border px-3 py-1.5 text-left text-xs text-subtle-foreground transition-colors"
+    >
+      <motion.span
+        className="inline-flex"
+        animate={{ rotate: showDetails ? 90 : 0 }}
+        transition={FAST_TRANSITION}
+      >
+        <ChevronRight className="size-3" />
+      </motion.span>
+      {t("tool.details")}
+    </button>
+  );
+}
+
+function RawDetails({
+  argsStr,
+  result,
+  effError,
+  showDetails,
+}: {
+  argsStr: string;
+  result?: string;
+  effError: boolean;
+  showDetails: boolean;
+}) {
+  return (
+    <AnimatePresence initial={false}>
+      {showDetails && (
+        <motion.div
+          {...expand}
+          transition={PANEL_TRANSITION}
+          className="border-t border-border overflow-hidden"
+        >
+          {argsStr && (
+            <pre className="text-muted-foreground bg-background max-h-80 overflow-auto px-3 py-2 font-mono text-xs leading-relaxed">
+              {argsStr}
+            </pre>
+          )}
+          {result && (
+            <pre
+              className={`bg-background max-h-80 overflow-auto px-3 py-2 font-mono text-xs leading-relaxed ${
+                effError ? "text-destructive" : "text-muted-foreground"
+              }`}
+            >
+              {result}
+            </pre>
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+function WebSearchBlock({
+  query,
+  items,
+  resultPreview,
+  effError,
+  showDetails,
+  onToggle,
+  argsStr,
+  result,
+}: {
+  query: string;
+  items: WebSearchItem[];
+  resultPreview: string;
+  effError: boolean;
+  showDetails: boolean;
+  onToggle: () => void;
+  argsStr: string;
+  result?: string;
+}) {
+  const { t } = useI18n();
+  const { toast } = useToast();
+  const open = async (url: string) => {
+    if (!url) return;
+    try {
+      await openPath(url);
+    } catch (error) {
+      toast({
+        variant: "error",
+        title: t("common.openFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  return (
+    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+      <div className="px-3 py-2">
+        {query && (
+          <div className="flex items-baseline gap-2 text-xs">
+            <span className="text-subtle-foreground shrink-0">
+              {t("tool.query")}
+            </span>
+            <span className="text-foreground min-w-0 font-medium break-words">
+              {query}
+            </span>
+            {items.length > 0 && (
+              <span className="text-subtle-foreground ml-auto shrink-0 text-[10px]">
+                {t("tool.results", { count: items.length })}
+              </span>
+            )}
+          </div>
+        )}
+        {!showDetails && items.length > 0 && (
+          <div className="mt-1.5 flex flex-col">
+            {items.slice(0, 3).map((item, index) => (
+              <button
+                key={`${item.url}-${index}`}
+                type="button"
+                disabled={!item.url}
+                onClick={() => open(item.url)}
+                className="hover:bg-accent/60 -mx-1 flex flex-col items-start gap-0.5 rounded-md px-1 py-1 text-left transition-colors disabled:cursor-default disabled:hover:bg-transparent"
+              >
+                <span className="text-foreground line-clamp-1 text-[11px] font-medium">
+                  {item.title}
+                  {item.url && (
+                    <ArrowUpRight className="text-subtle-foreground ml-1 inline size-3" />
+                  )}
+                </span>
+                {item.url && (
+                  <span className="text-subtle-foreground line-clamp-1 font-mono text-[10px]">
+                    {item.url}
+                  </span>
+                )}
+                {item.snippet && (
+                  <span className="text-muted-foreground line-clamp-2 text-[11px]">
+                    {item.snippet}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+        {!showDetails && items.length === 0 && resultPreview && (
+          <div
+            className={`mt-1 break-words whitespace-pre-wrap text-[11px] ${
+              effError ? "text-destructive" : "text-subtle-foreground"
+            }`}
+          >
+            {effError ? "✗ " : ""}
+            {resultPreview}
+          </div>
+        )}
+      </div>
+      {(argsStr || result) && (
+        <DetailsToggle showDetails={showDetails} onToggle={onToggle} />
+      )}
+      <RawDetails
+        argsStr={argsStr}
+        result={result}
+        effError={effError}
+        showDetails={showDetails}
+      />
+    </div>
+  );
+}
+
+function WebFetchBlock({
+  url,
+  info,
+  resultPreview,
+  effError,
+  showDetails,
+  onToggle,
+  argsStr,
+  result,
+}: {
+  url: string;
+  info: { title: string; content: string; links: string[] };
+  resultPreview: string;
+  effError: boolean;
+  showDetails: boolean;
+  onToggle: () => void;
+  argsStr: string;
+  result?: string;
+}) {
+  const { t } = useI18n();
+  const { toast } = useToast();
+  const open = async () => {
+    if (!url) return;
+    try {
+      await openPath(url);
+    } catch (error) {
+      toast({
+        variant: "error",
+        title: t("common.openFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  return (
+    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+      <div className="px-3 py-2">
+        <div className="flex items-baseline gap-2 text-[11px]">
+          <span className="text-subtle-foreground shrink-0">
+            {t("tool.url")}
+          </span>
+          <button
+            type="button"
+            onClick={open}
+            disabled={!url}
+            className="text-primary min-w-0 truncate text-left font-mono hover:underline disabled:text-foreground disabled:no-underline"
+          >
+            {url || "—"}
+          </button>
+        </div>
+        {info.title && (
+          <div className="text-foreground mt-1 text-xs font-medium">
+            {info.title}
+          </div>
+        )}
+        {!showDetails && info.content && (
+          <p className="text-muted-foreground mt-1 line-clamp-3 text-[11px] whitespace-pre-wrap">
+            {info.content}
+          </p>
+        )}
+        {!showDetails && info.links.length > 0 && (
+          <p className="text-subtle-foreground mt-1 text-[10px]">
+            {t("tool.linksFound", { count: info.links.length })}
+          </p>
+        )}
+        {!showDetails && !info.content && resultPreview && (
+          <p
+            className={`mt-1 break-words whitespace-pre-wrap text-[11px] ${
+              effError ? "text-destructive" : "text-subtle-foreground"
+            }`}
+          >
+            {effError ? "✗ " : ""}
+            {resultPreview}
+          </p>
+        )}
+      </div>
+      {(argsStr || result) && (
+        <DetailsToggle showDetails={showDetails} onToggle={onToggle} />
+      )}
+      <RawDetails
+        argsStr={argsStr}
+        result={result}
+        effError={effError}
+        showDetails={showDetails}
+      />
+    </div>
+  );
+}
+
+function SubagentBlock({
+  items,
+  status,
+  effError,
+  showDetails,
+  onToggle,
+  argsStr,
+  result,
+}: {
+  items: SubagentItem[];
+  status?: "running" | "success" | "error";
+  effError: boolean;
+  showDetails: boolean;
+  onToggle: () => void;
+  argsStr: string;
+  result?: string;
+}) {
+  const { t } = useI18n();
+  const running = status === "running";
+
+  return (
+    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+      <div className="flex flex-col gap-1.5 px-3 py-2">
+        {items.length === 0 && (
+          <p className="text-subtle-foreground text-[11px]">
+            {t("tool.noDetails")}
+          </p>
+        )}
+        {items.map((item, index) => {
+          const failed = item.failed || (effError && index === items.length - 1);
+          return (
+            <div key={index} className="flex items-start gap-2">
+              <span className="mt-0.5 shrink-0">
+                {running ? (
+                  <Loader2 className="text-warning size-3 animate-spin" />
+                ) : failed ? (
+                  <XCircle className="text-destructive size-3" />
+                ) : (
+                  <CheckCircle2 className="text-success size-3" />
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="bg-primary/10 text-primary rounded px-1.5 py-0.5 font-mono text-[10px]">
+                    {item.agent || t("tool.agent")}
+                  </span>
+                  {item.step != null && (
+                    <span className="text-subtle-foreground text-[10px]">
+                      {t("tool.step", { n: item.step })}
+                    </span>
+                  )}
+                </div>
+                {item.task && (
+                  <p className="text-muted-foreground mt-0.5 line-clamp-2 text-[11px]">
+                    {item.task}
+                  </p>
+                )}
+                {item.error && (
+                  <p className="text-destructive mt-0.5 text-[11px] break-words">
+                    {item.error}
+                  </p>
+                )}
+                {!showDetails && item.finalOutput && (
+                  <p className="text-subtle-foreground mt-1 line-clamp-3 text-[11px] whitespace-pre-wrap">
+                    {item.finalOutput}
+                  </p>
+                )}
+                {showDetails && item.finalOutput && (
+                  <pre className="text-muted-foreground bg-background mt-1 max-h-64 overflow-auto rounded-md px-2 py-1.5 font-mono text-[11px] whitespace-pre-wrap">
+                    {item.finalOutput}
+                  </pre>
+                )}
+                {showDetails && item.usage && (
+                  <p className="text-subtle-foreground mt-1 text-[10px]">
+                    {formatUsage(item.usage, t)}
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {(argsStr || result) && (
+        <DetailsToggle showDetails={showDetails} onToggle={onToggle} />
+      )}
+      <RawDetails
+        argsStr={argsStr}
+        result={result}
+        effError={effError}
+        showDetails={showDetails}
+      />
+    </div>
+  );
+}
+
+// ── Built-in tool rendering (read / grep / find / ls / edit / write) ──
+
+const BUILTIN_TITLE_KEYS: Record<string, TranslationKey> = {
+  bash: "tool.runCommand",
+  read: "tool.readFile",
+  edit: "tool.editFile",
+  edit_diff: "tool.editFile",
+  write: "tool.writeFile",
+  grep: "tool.searchFiles",
+  find: "tool.findFiles",
+  ls: "tool.listDirectory",
+};
+
+const FILE_TOOLS = new Set(["read", "edit", "edit_diff", "write"]);
+
+interface GrepMatch {
+  file: string;
+  line: string;
+  text: string;
+  context: boolean;
+}
+
+function grepMatches(result?: string): GrepMatch[] {
+  if (!result) return [];
+  return result.split("\n").flatMap((line) => {
+    const match = /^(.*?)([:-])(\d+)\2 (.*)$/.exec(line);
+    if (!match) return [];
+    return [
+      {
+        file: match[1],
+        line: match[3],
+        text: match[4],
+        context: match[2] === "-",
+      },
+    ];
+  });
+}
+
+function listEntries(result?: string): string[] {
+  if (!result) return [];
+  return result
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line && !/^\[.*\]$/.test(line));
+}
+
+function diffStats(text: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("+")) additions += 1;
+    else if (line.startsWith("-")) deletions += 1;
+  }
+  return { additions, deletions };
+}
+
+function PathRow({
+  path,
+  onOpen,
+  meta,
+}: {
+  path: string;
+  onOpen?: () => void;
+  meta?: ReactNode;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="border-border flex items-center gap-2 border-b px-3 py-1.5">
+      <span
+        className="text-muted-foreground min-w-0 truncate font-mono text-[11px]"
+        title={path}
+      >
+        {path || "—"}
+      </span>
+      {meta}
+      {onOpen && (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="text-subtle-foreground hover:text-muted-foreground ml-auto shrink-0 rounded p-0.5 transition-colors"
+          title={t("common.openInEditor")}
+          aria-label={t("common.openInEditor")}
+        >
+          <ExternalLink className="size-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ReadBlock({
+  path,
+  result,
+  resultPreview,
+  effError,
+  showDetails,
+  onToggle,
+  argsStr,
+  onOpen,
+}: {
+  path: string;
+  result?: string;
+  resultPreview: string;
+  effError: boolean;
+  showDetails: boolean;
+  onToggle: () => void;
+  argsStr: string;
+  onOpen?: () => void;
+}) {
+  const lines = result ? result.split("\n") : [];
+  const preview = result ? lines.slice(0, 8).join("\n") : resultPreview;
+  const more = lines.length > 8;
+  return (
+    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+      <PathRow path={path} onOpen={onOpen} />
+      {!showDetails && preview && (
+        <pre
+          className={`max-h-40 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed ${
+            effError ? "text-destructive" : "text-muted-foreground"
+          }`}
+        >
+          {preview}
+          {more ? "\n…" : ""}
+        </pre>
+      )}
+      {(argsStr || result) && (
+        <DetailsToggle showDetails={showDetails} onToggle={onToggle} />
+      )}
+      <RawDetails
+        argsStr={argsStr}
+        result={result}
+        effError={effError}
+        showDetails={showDetails}
+      />
+    </div>
+  );
+}
+
+function GrepBlock({
+  pattern,
+  scope,
+  result,
+  resultPreview,
+  effError,
+  showDetails,
+  onToggle,
+  argsStr,
+  onOpenFile,
+}: {
+  pattern: string;
+  scope: string;
+  result?: string;
+  resultPreview: string;
+  effError: boolean;
+  showDetails: boolean;
+  onToggle: () => void;
+  argsStr: string;
+  onOpenFile: (path: string) => void;
+}) {
+  const { t } = useI18n();
+  const matches = grepMatches(result);
+  const matchCount = matches.filter((match) => !match.context).length;
+  return (
+    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+      <div className="border-border flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b px-3 py-1.5 text-[11px]">
+        {pattern && (
+          <>
+            <span className="text-subtle-foreground">
+              {t("tool.pattern")}
+            </span>
+            <span className="text-foreground font-mono">{pattern}</span>
+          </>
+        )}
+        {scope && (
+          <span
+            className="text-subtle-foreground min-w-0 truncate font-mono"
+            title={scope}
+          >
+            {scope}
+          </span>
+        )}
+        {matchCount > 0 && (
+          <span className="text-subtle-foreground ml-auto shrink-0 text-[10px]">
+            {t("tool.matches", { count: matchCount })}
+          </span>
+        )}
+      </div>
+      {!showDetails && matches.length > 0 ? (
+        <div className="flex flex-col py-1">
+          {matches.slice(0, 6).map((match, index) => (
+            <button
+              key={`${match.file}-${match.line}-${index}`}
+              type="button"
+              onClick={() => onOpenFile(match.file)}
+              className={`hover:bg-accent/60 flex items-baseline gap-2 px-3 py-0.5 text-left transition-colors ${
+                match.context ? "opacity-60" : ""
+              }`}
+            >
+              <span className="text-muted-foreground w-40 shrink-0 truncate font-mono text-[10px]">
+                {match.file}
+              </span>
+              <span className="text-subtle-foreground w-8 shrink-0 text-right font-mono text-[10px] tabular-nums">
+                {match.line}
+              </span>
+              <span className="text-foreground min-w-0 flex-1 truncate font-mono text-[11px]">
+                {match.text}
+              </span>
+            </button>
+          ))}
+          {matches.length > 6 && (
+            <span className="text-subtle-foreground px-3 text-[10px]">…</span>
+          )}
+        </div>
+      ) : (
+        !showDetails &&
+        resultPreview && (
+          <pre
+            className={`max-h-40 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed ${
+              effError ? "text-destructive" : "text-subtle-foreground"
+            }`}
+          >
+            {resultPreview}
+          </pre>
+        )
+      )}
+      {(argsStr || result) && (
+        <DetailsToggle showDetails={showDetails} onToggle={onToggle} />
+      )}
+      <RawDetails
+        argsStr={argsStr}
+        result={result}
+        effError={effError}
+        showDetails={showDetails}
+      />
+    </div>
+  );
+}
+
+function ListBlock({
+  path,
+  hint,
+  result,
+  resultPreview,
+  effError,
+  showDetails,
+  onToggle,
+  argsStr,
+}: {
+  path: string;
+  hint?: string;
+  result?: string;
+  resultPreview: string;
+  effError: boolean;
+  showDetails: boolean;
+  onToggle: () => void;
+  argsStr: string;
+}) {
+  const { t } = useI18n();
+  const entries = listEntries(result);
+  return (
+    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+      <div className="border-border flex items-center gap-2 border-b px-3 py-1.5">
+        <span
+          className="text-muted-foreground min-w-0 truncate font-mono text-[11px]"
+          title={path}
+        >
+          {path || "—"}
+        </span>
+        {hint && (
+          <span
+            className="text-subtle-foreground min-w-0 truncate font-mono text-[10px]"
+            title={hint}
+          >
+            {hint}
+          </span>
+        )}
+        {entries.length > 0 && (
+          <span className="text-subtle-foreground ml-auto shrink-0 text-[10px]">
+            {t("tool.entries", { count: entries.length })}
+          </span>
+        )}
+      </div>
+      {!showDetails && entries.length > 0 ? (
+        <div className="flex flex-col py-1">
+          {entries.slice(0, 10).map((entry, index) => (
+            <span
+              key={`${entry}-${index}`}
+              className="text-muted-foreground truncate px-3 py-0.5 font-mono text-[11px]"
+              title={entry}
+            >
+              {entry}
+            </span>
+          ))}
+          {entries.length > 10 && (
+            <span className="text-subtle-foreground px-3 text-[10px]">…</span>
+          )}
+        </div>
+      ) : (
+        !showDetails &&
+        resultPreview && (
+          <pre
+            className={`max-h-40 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed ${
+              effError ? "text-destructive" : "text-subtle-foreground"
+            }`}
+          >
+            {resultPreview}
+          </pre>
+        )
+      )}
+      {(argsStr || result) && (
+        <DetailsToggle showDetails={showDetails} onToggle={onToggle} />
+      )}
+      <RawDetails
+        argsStr={argsStr}
+        result={result}
+        effError={effError}
+        showDetails={showDetails}
+      />
+    </div>
+  );
+}
+
+function DiffBlock({
+  path,
+  diffText,
+  truncated,
+  showDetails,
+  onToggle,
+  argsStr,
+  result,
+  effError,
+  onOpen,
+}: {
+  path: string;
+  diffText: string;
+  truncated: boolean;
+  showDetails: boolean;
+  onToggle: () => void;
+  argsStr: string;
+  result?: string;
+  effError: boolean;
+  onOpen?: () => void;
+}) {
+  const stats = diffStats(diffText);
+  return (
+    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+      <PathRow
+        path={path}
+        onOpen={onOpen}
+        meta={
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-[10px]">
+            <span className="text-success">+{stats.additions}</span>
+            <span className="text-destructive">−{stats.deletions}</span>
+          </span>
+        }
+      />
+      <DiffView text={diffText} truncated={truncated} embedded />
+      {(argsStr || result) && (
+        <DetailsToggle showDetails={showDetails} onToggle={onToggle} />
+      )}
+      <RawDetails
+        argsStr={argsStr}
+        result={result}
+        effError={effError}
+        showDetails={showDetails}
+      />
+    </div>
+  );
+}
+
 export default function ToolCallCard({
   name,
   args,
@@ -283,13 +1197,27 @@ export default function ToolCallCard({
         ? argsRecord.file_path
         : "";
 
-  const handleOpenFile = useCallback(
-    async (event: React.MouseEvent) => {
-      event.stopPropagation();
-      if (!filePath) return;
+  const webItems = name === "web_search" ? webSearchItems(details) : [];
+  const webFetch = name === "web_fetch" ? webFetchInfo(details) : null;
+  const subagent = name === "subagent" ? subagentItems(args, details) : null;
+  const title =
+    name === "web_search"
+      ? t("tool.webSearch")
+      : name === "web_fetch"
+        ? t("tool.webFetch")
+        : subagent
+          ? t(subagentTitleKey(subagent.mode))
+          : BUILTIN_TITLE_KEYS[name]
+            ? t(BUILTIN_TITLE_KEYS[name])
+            : name;
+  const isFileTool = FILE_TOOLS.has(name);
+
+  const openWorkspaceFile = useCallback(
+    async (target: string) => {
+      if (!target) return;
       try {
         const cwd = await getActiveSessionCwd();
-        await openFile(filePath, cwd);
+        await openFile(target, cwd);
       } catch (error) {
         toast({
           variant: "error",
@@ -298,7 +1226,7 @@ export default function ToolCallCard({
         });
       }
     },
-    [filePath, t, toast],
+    [t, toast],
   );
 
   return (
@@ -306,11 +1234,16 @@ export default function ToolCallCard({
       {/* Header: icon + tool name + status */}
       <div className="flex items-center gap-2 text-sm">
         <span className={`shrink-0 ${st.color}`}>{meta.icon}</span>
-        <span className="text-muted-foreground font-medium">{name}</span>
-        {filePath && (
+        <span
+          className="text-muted-foreground font-medium"
+          title={title === name ? undefined : name}
+        >
+          {title}
+        </span>
+        {isFileTool && filePath && (
           <button
             type="button"
-            onClick={handleOpenFile}
+            onClick={() => openWorkspaceFile(filePath)}
             className="text-subtle-foreground hover:text-muted-foreground shrink-0"
             title={t("common.openInEditor")} aria-label={t("common.openInEditor")}
           >
@@ -330,14 +1263,59 @@ export default function ToolCallCard({
         </span>
       </div>
 
-      {name === "bash" ? (
+      {name === "web_search" ? (
+        <WebSearchBlock
+          query={textOf(argsRecord?.query)}
+          items={webItems}
+          resultPreview={resultPreview}
+          effError={effError}
+          showDetails={showDetails}
+          onToggle={() => setShowDetails((value) => !value)}
+          argsStr={argsStr}
+          result={result}
+        />
+      ) : name === "web_fetch" ? (
+        <WebFetchBlock
+          url={textOf(argsRecord?.url)}
+          info={webFetch ?? { title: "", content: "", links: [] }}
+          resultPreview={resultPreview}
+          effError={effError}
+          showDetails={showDetails}
+          onToggle={() => setShowDetails((value) => !value)}
+          argsStr={argsStr}
+          result={result}
+        />
+      ) : name === "subagent" && subagent ? (
+        <SubagentBlock
+          items={subagent.items}
+          status={status}
+          effError={effError}
+          showDetails={showDetails}
+          onToggle={() => setShowDetails((value) => !value)}
+          argsStr={argsStr}
+          result={result}
+        />
+      ) : name === "bash" ? (
         /* bash: terminal-style block with `$` prompt */
         <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
           <div className="px-3 py-2 font-mono text-[13px] leading-relaxed">
             {summary && (
-              <div className="text-foreground break-words whitespace-pre-wrap">
-                <span className="text-success select-none">$ </span>
-                {summary}
+              <div className="group/cmd flex items-start gap-1">
+                <div className="text-foreground min-w-0 flex-1 break-words whitespace-pre-wrap">
+                  <span className="text-success select-none">$ </span>
+                  {summary}
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigator.clipboard?.writeText(summary).catch(() => {})
+                  }
+                  title={t("tool.copyCommand")}
+                  aria-label={t("tool.copyCommand")}
+                  className="text-subtle-foreground hover:text-muted-foreground shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover/cmd:opacity-100 focus-visible:opacity-100"
+                >
+                  <Copy className="size-3" />
+                </button>
               </div>
             )}
             {resultPreview && !showDetails && (
@@ -392,9 +1370,56 @@ export default function ToolCallCard({
             )}
           </AnimatePresence>
         </div>
+      ) : name === "read" ? (
+        <ReadBlock
+          path={filePath}
+          result={result}
+          resultPreview={resultPreview}
+          effError={effError}
+          showDetails={showDetails}
+          onToggle={() => setShowDetails((value) => !value)}
+          argsStr={argsStr}
+          onOpen={filePath ? () => openWorkspaceFile(filePath) : undefined}
+        />
+      ) : name === "grep" ? (
+        <GrepBlock
+          pattern={textOf(argsRecord?.pattern)}
+          scope={filePath}
+          result={result}
+          resultPreview={resultPreview}
+          effError={effError}
+          showDetails={showDetails}
+          onToggle={() => setShowDetails((value) => !value)}
+          argsStr={argsStr}
+          onOpenFile={openWorkspaceFile}
+        />
+      ) : name === "find" || name === "ls" ? (
+        <ListBlock
+          path={filePath}
+          hint={name === "find" ? textOf(argsRecord?.pattern) : undefined}
+          result={result}
+          resultPreview={resultPreview}
+          effError={effError}
+          showDetails={showDetails}
+          onToggle={() => setShowDetails((value) => !value)}
+          argsStr={argsStr}
+        />
+      ) : (name === "edit" || name === "edit_diff" || name === "write") &&
+        diff.text ? (
+        <DiffBlock
+          path={filePath}
+          diffText={diff.text}
+          truncated={diff.truncated}
+          showDetails={showDetails}
+          onToggle={() => setShowDetails((value) => !value)}
+          argsStr={argsStr}
+          result={result}
+          effError={effError}
+          onOpen={filePath ? () => openWorkspaceFile(filePath) : undefined}
+        />
       ) : (
         <>
-          {/* Non-bash tools: dimmed one-line summary */}
+          {/* Other tools: dimmed one-line summary */}
           {summary && (
             <div
               className="text-muted-foreground mt-1 truncate text-xs"
