@@ -126,6 +126,36 @@ impl Store {
                         (!models.is_empty()).then_some(models)
                     };
 
+                    // `create_agent_session_from_services` hardcodes
+                    // `enable_extensions: false`, so it never auto-discovers
+                    // the built-in Rust extensions. Build the registry here
+                    // from settings (the same way the SDK does) and inject it
+                    // explicitly — otherwise web_search/subagent disappear
+                    // from resumed sessions even when enabled.
+                    let extension_registry = {
+                        let mut web_search = services.settings_manager.get_web_search_config();
+                        let configured_key = web_search
+                            .deepseek
+                            .as_ref()
+                            .and_then(|deepseek| deepseek.api_key.as_deref())
+                            .and_then(
+                                pi_coding_agent::core::resolve_config_value::resolve_config_value,
+                            );
+                        let api_key = configured_key.or_else(|| {
+                            services.model_registry.get_api_key_for_provider("deepseek")
+                        });
+                        web_search
+                            .deepseek
+                            .get_or_insert_with(Default::default)
+                            .api_key = api_key;
+                        pi_coding_agent::core::extensions::builtin_extension_registry(
+                            true,
+                            &services.settings_manager.get_extensions_enabled(),
+                            &web_search,
+                        )
+                        .unwrap_or_default()
+                    };
+
                     let (session, _services, result) =
                         create_agent_session_from_services(CreateAgentSessionFromServicesOptions {
                             services,
@@ -138,10 +168,9 @@ impl Store {
                             exclude_tools: None,
                             custom_tools: None,
                             tools_options: None,
-                            // `None` = let pi-rs build the registry from settings
-                            // (`extensionsEnabled` opt-in + `webSearch` backend and
-                            // MCP extension), matching every other front end.
-                            extension_registry: None,
+                            // Injected explicitly above: the from-services
+                            // helper disables extension auto-discovery.
+                            extension_registry: Some(extension_registry),
                             fallback_message: None,
                             session_start_event: params.session_start_event,
                             ui_context: None,
