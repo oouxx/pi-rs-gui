@@ -48,6 +48,11 @@ import { useChatContext } from "@/hooks/ChatProvider";
 import { useThreadSearch } from "@/hooks/use-thread-search";
 import { setThemePreference } from "@/hooks/useTheme";
 import { matchesBinding, useKeybindings } from "@/lib/keybindings";
+import {
+  bottomScrollTop,
+  nextStickState,
+  type ScrollSource,
+} from "@/lib/scroll-stick";
 import { useI18n } from "@/i18n";
 import { motion } from "motion/react";
 import { enter, PANEL_TRANSITION } from "@/lib/motion";
@@ -149,6 +154,7 @@ export default function ChatView({
 
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
+  const autoScrollTopRef = useRef<number | null>(null);
   const threadSearch = useThreadSearch(timelineRef);
 
   // ── Header data ────────────────────────────────────────────
@@ -640,57 +646,50 @@ export default function ChatView({
   }, [activeSessionCwd]);
 
   // ── Scrolling ──────────────────────────────────────────────
-  // Auto-scroll to the bottom while streaming, unless the user scrolled up.
-  // Also resets stick-to-bottom on session switch so the newly loaded
-  // transcript lands at the bottom.
-  useEffect(() => {
+  const markAutoScroll = useCallback((el: HTMLElement) => {
+    const target = bottomScrollTop(el);
+    if (Math.abs(el.scrollTop - target) < 1) return;
+    autoScrollTopRef.current = target;
+    el.scrollTop = target;
+  }, []);
+
+  useLayoutEffect(() => {
     const el = timelineRef.current;
     if (!el) return;
     stickToBottomRef.current = true;
+    autoScrollTopRef.current = null;
+
     const onScroll = () => {
-      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-      stickToBottomRef.current = nearBottom;
+      const expected = autoScrollTopRef.current;
+      autoScrollTopRef.current = null;
+      const source: ScrollSource =
+        expected !== null && Math.abs(el.scrollTop - expected) < 1
+          ? "auto"
+          : "user";
+      stickToBottomRef.current = nextStickState(
+        stickToBottomRef.current,
+        el,
+        source,
+      );
     };
-    el.addEventListener("scroll", onScroll);
-    return () => el.removeEventListener("scroll", onScroll);
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) stickToBottomRef.current = false;
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("wheel", onWheel, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("wheel", onWheel);
+    };
   }, [activeSessionId]);
 
-  // Scroll to the bottom whenever content changes (streaming deltas, or a
-  // transcript that finished loading after a session switch) while the user
-  // hasn't scrolled up.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!stickToBottomRef.current) return;
     const el = timelineRef.current;
     if (!el) return;
-    const raf = requestAnimationFrame(() => {
-      const last = el.querySelector('[data-msg-last="true"]');
-      if (last instanceof HTMLElement) {
-        last.scrollIntoView({ block: "end" });
-      } else {
-        el.scrollTop = el.scrollHeight;
-      }
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [messages, activeSessionId, streaming]);
-
-  // Belt-and-suspenders: scroll synchronously before paint when a transcript
-  // finishes loading (empty → non-empty).
-  const prevEmptyRef = useRef(true);
-  useLayoutEffect(() => {
-    const isEmpty = messages.length === 0;
-    if (prevEmptyRef.current && !isEmpty) {
-      const el = timelineRef.current;
-      if (el) {
-        const last = el.querySelector('[data-msg-last="true"]');
-        if (last instanceof HTMLElement) {
-          last.scrollIntoView({ block: "end" });
-        } else {
-          el.scrollTop = el.scrollHeight;
-        }
-      }
-    }
-    prevEmptyRef.current = isEmpty;
-  }, [messages, activeSessionId]);
+    markAutoScroll(el);
+  }, [messages, activeSessionId, streaming, markAutoScroll]);
 
   // Find-in-chat / terminal / model cycling (bindings are customizable).
   useEffect(() => {

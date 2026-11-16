@@ -124,7 +124,6 @@ export const MessageItem = memo(function MessageItem({
     msg.role === "user" ? parseAttachedFiles(msg.content) : null;
   return (
     <motion.div
-      {...(isLast ? { "data-msg-last": "true" } : {})}
       className="group mx-auto w-full max-w-[820px]"
       // Only the newest message animates in; replayed transcripts mount all
       // messages at once and should not fade in as a block.
