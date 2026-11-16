@@ -8,7 +8,7 @@
 //! The walk uses the same `ignore` crate as pi-rs's find tool; the agent's
 //! own file search still lives in pi-rs — this is UI-support discovery.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde_json::{json, Value};
 
@@ -243,26 +243,45 @@ pub fn open_in_editor(path: &str, cwd: &str) -> Result<(), String> {
 /// set here keeps the command from becoming an arbitrary-file reader for the
 /// webview.
 fn allowed_read_roots(cwd: &str) -> Vec<PathBuf> {
-    let mut roots: Vec<PathBuf> = Vec::new();
-    let mut push = |path: PathBuf| {
-        if let Ok(canonical) = path.canonicalize() {
-            if !roots.contains(&canonical) {
-                roots.push(canonical);
-            }
-        }
-    };
-    push(PathBuf::from(cwd));
-    push(pi_coding_agent::config::get_agent_dir());
+    let mut roots: Vec<PathBuf> = vec![PathBuf::from(cwd)];
     let agent_dir = pi_coding_agent::config::get_agent_dir();
+    roots.push(agent_dir.clone());
     let agent_dir = agent_dir.to_string_lossy();
     let mgr = pi_coding_agent::core::settings_manager::SettingsManager::create(
         agent_dir.as_ref(),
         Some(agent_dir.as_ref()),
     );
-    for path in mgr.get_skills().into_iter().chain(mgr.get_prompts()) {
-        push(PathBuf::from(path));
-    }
+    roots.extend(
+        mgr.get_skills()
+            .into_iter()
+            .chain(mgr.get_prompts())
+            .map(PathBuf::from),
+    );
     roots
+}
+
+fn normalize(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+fn is_inside_allowed_root(canonical: &Path, requested: &Path, cwd: &str) -> bool {
+    let requested = normalize(requested);
+    allowed_read_roots(cwd).into_iter().any(|root| {
+        requested.starts_with(normalize(&root))
+            || root
+                .canonicalize()
+                .is_ok_and(|root| canonical.starts_with(root))
+    })
 }
 
 /// Read a UTF-8 text file for the in-app skill/prompt preview.
@@ -284,10 +303,7 @@ pub fn read_text_file(path: &str, cwd: &str) -> Result<String, String> {
     let canonical = resolved
         .canonicalize()
         .map_err(|error| format!("Cannot resolve {}: {error}", resolved.display()))?;
-    if !allowed_read_roots(cwd)
-        .iter()
-        .any(|root| canonical.starts_with(root))
-    {
+    if !is_inside_allowed_root(&canonical, &resolved, cwd) {
         return Err(
             "File is outside the workspace and configured skill/prompt directories".to_string(),
         );
