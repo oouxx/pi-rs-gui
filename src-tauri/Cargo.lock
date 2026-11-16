@@ -3719,12 +3719,13 @@ dependencies = [
 
 [[package]]
 name = "pi-agent-core"
-version = "1.87.14"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.14#abd08ef205063da7150171572ed0942402828cc3"
+version = "1.87.16"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.16#2b6379f3fd1086605fee0e7c35629d2670570f13"
 dependencies = [
  "async-trait",
  "chrono",
  "futures",
+ "ignore",
  "indexmap 2.14.0",
  "pi-ai",
  "regex",
@@ -3743,8 +3744,8 @@ dependencies = [
 
 [[package]]
 name = "pi-ai"
-version = "1.87.14"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.14#abd08ef205063da7150171572ed0942402828cc3"
+version = "1.87.16"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.16#2b6379f3fd1086605fee0e7c35629d2670570f13"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3762,8 +3763,8 @@ dependencies = [
 
 [[package]]
 name = "pi-coding-agent"
-version = "1.87.14"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.14#abd08ef205063da7150171572ed0942402828cc3"
+version = "1.87.16"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.16#2b6379f3fd1086605fee0e7c35629d2670570f13"
 dependencies = [
  "agent-client-protocol",
  "async-trait",
@@ -3802,8 +3803,8 @@ dependencies = [
 
 [[package]]
 name = "pi-extension-api"
-version = "1.87.14"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.14#abd08ef205063da7150171572ed0942402828cc3"
+version = "1.87.16"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.16#2b6379f3fd1086605fee0e7c35629d2670570f13"
 dependencies = [
  "async-trait",
  "futures",
@@ -3815,8 +3816,8 @@ dependencies = [
 
 [[package]]
 name = "pi-extensions"
-version = "1.87.14"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.14#abd08ef205063da7150171572ed0942402828cc3"
+version = "1.87.16"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.16#2b6379f3fd1086605fee0e7c35629d2670570f13"
 dependencies = [
  "async-trait",
  "pi-extension-api",
@@ -3829,8 +3830,8 @@ dependencies = [
 
 [[package]]
 name = "pi-mcp"
-version = "1.87.14"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.14#abd08ef205063da7150171572ed0942402828cc3"
+version = "1.87.16"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.16#2b6379f3fd1086605fee0e7c35629d2670570f13"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -3877,8 +3878,8 @@ dependencies = [
 
 [[package]]
 name = "pi-tui"
-version = "1.87.14"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.14#abd08ef205063da7150171572ed0942402828cc3"
+version = "1.87.16"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.16#2b6379f3fd1086605fee0e7c35629d2670570f13"
 dependencies = [
  "anstyle",
  "arboard",
@@ -7456,7 +7457,7 @@ checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
 [[package]]
 name = "xai-grok-markdown"
 version = "0.1.0"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.14#abd08ef205063da7150171572ed0942402828cc3"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.16#2b6379f3fd1086605fee0e7c35629d2670570f13"
 dependencies = [
  "anstyle",
  "anstyle-lossy",
@@ -7478,7 +7479,7 @@ dependencies = [
 [[package]]
 name = "xai-grok-markdown-core"
 version = "0.1.0"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.14#abd08ef205063da7150171572ed0942402828cc3"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.16#2b6379f3fd1086605fee0e7c35629d2670570f13"
 dependencies = [
  "pulldown-cmark",
  "strum 0.27.2",
@@ -7487,7 +7488,7 @@ dependencies = [
 [[package]]
 name = "xai-ratatui-textarea"
 version = "0.1.0"
-source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.14#abd08ef205063da7150171572ed0942402828cc3"
+source = "git+https://github.com/oouxx/pi-rs?tag=v1.87.16#2b6379f3fd1086605fee0e7c35629d2670570f13"
 dependencies = [
  "crossterm",
  "ratatui",
