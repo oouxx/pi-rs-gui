@@ -14,6 +14,7 @@ export interface ModelOption {
   modelId: string
   label: string
   available: boolean
+  supportedThinkingLevels?: string[]
 }
 
 interface PickModelProps {

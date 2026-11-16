@@ -69,12 +69,11 @@ impl Store {
                         })
                         .await;
 
-                    let (provider, model_id, thinking_level) = {
+                    let (provider, model_id) = {
                         let settings = services.settings_manager.get_settings();
                         (
                             settings.default_provider.clone(),
                             settings.default_model.clone(),
-                            settings.default_thinking_level.clone(),
                         )
                     };
 
@@ -161,7 +160,7 @@ impl Store {
                             services,
                             session_manager: params.session_manager,
                             model: Some(model),
-                            thinking_level,
+                            thinking_level: None,
                             scoped_models,
                             tools: None,
                             no_tools: None,

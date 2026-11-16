@@ -36,14 +36,9 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import ThinkingLevelSelect from "@/components/ThinkingLevelSelect";
+import { canonicalThinkingLevel } from "@/lib/thinking-levels";
 import { useChatContext } from "@/hooks/ChatProvider";
 import { useThreadSearch } from "@/hooks/use-thread-search";
 import { setThemePreference } from "@/hooks/useTheme";
@@ -225,9 +220,10 @@ export default function ChatView({
 
   const handleThinkingSelect = useCallback(
     async (level: string) => {
+      const requested = canonicalThinkingLevel(level);
       try {
-        const state = await setSessionThinkingLevel(level);
-        setThinkingLevel(state.thinkingLevel ?? level);
+        const state = await setSessionThinkingLevel(requested);
+        setThinkingLevel(state.thinkingLevel ?? requested);
         setSupportedThinkingLevels(state.supportedThinkingLevels ?? []);
       } catch (e) {
         console.error("[setSessionThinkingLevel]", e);
@@ -824,22 +820,15 @@ export default function ChatView({
             />
             {supportedThinkingLevels.length > 0 && (
               <div className="border-border mt-2 flex items-center justify-between gap-2 border-t px-1 pt-2">
-                <span className="text-subtle-foreground text-xs">Thinking</span>
-                <Select
+                <span className="text-subtle-foreground text-xs">
+                  {t("models.thinking")}
+                </span>
+                <ThinkingLevelSelect
                   value={thinkingLevel || supportedThinkingLevels[0]}
-                  onValueChange={handleThinkingSelect}
-                >
-                  <SelectTrigger className="h-7 w-32 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {supportedThinkingLevels.map((level) => (
-                      <SelectItem key={level} value={level}>
-                        {level}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onChange={handleThinkingSelect}
+                  levels={supportedThinkingLevels}
+                  triggerClassName="h-7 w-32 text-xs"
+                />
               </div>
             )}
           </PopoverContent>

@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/components/ui/toast"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Key, CheckCircle, XCircle } from "lucide-react"
 import {
@@ -15,6 +14,7 @@ import {
 } from "../api/commands"
 import PickModel from "./PickModel"
 import type { ProviderInfo, ModelOption } from "./PickModel"
+import ThinkingLevelSelect from "./ThinkingLevelSelect"
 import { useI18n } from "@/i18n"
 
 export default function ModelsSettings() {
@@ -169,17 +169,18 @@ export default function ModelsSettings() {
           </div>
           <div className="w-32">
             <label className="text-muted-foreground mb-1 block text-xs">{t("models.thinking")}</label>
-            <Select value={thinkingLevel} onValueChange={setThinking}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">{t("models.none")}</SelectItem>
-                <SelectItem value="low">{t("models.low")}</SelectItem>
-                <SelectItem value="medium">{t("models.medium")}</SelectItem>
-                <SelectItem value="high">{t("models.high")}</SelectItem>
-              </SelectContent>
-            </Select>
+            <ThinkingLevelSelect
+              value={thinkingLevel}
+              onChange={setThinking}
+              levels={
+                models.find(
+                  (m) =>
+                    m.providerId === defaultProvider &&
+                    m.modelId === defaultModel,
+                )?.supportedThinkingLevels
+              }
+              triggerClassName="h-8 w-full text-xs"
+            />
           </div>
         </div>
         {defaultProvider && defaultModel && (

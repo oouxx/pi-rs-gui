@@ -28,13 +28,14 @@ pub fn set_default_model(state: &mut DesktopState, provider: &str, model_id: &st
 }
 
 pub fn set_default_thinking_level(state: &mut DesktopState, level: &str) {
+    let level = canonical_thinking_level(level);
     // Update in-memory state
-    state.global_model_settings.default_thinking_level = Some(level.to_string());
+    state.global_model_settings.default_thinking_level = Some(level.clone());
     // IMPORTANT: use pi-rs's dedicated setter. Writing the raw "thinkingLevel"
     // key only changes the runtime level, NOT the persisted default that new
     // sessions read (defaultThinkingLevel) — the setting would not stick.
     with_settings_mgr(|mgr| {
-        mgr.set_default_thinking_level(level);
+        mgr.set_default_thinking_level(&level);
     });
 }
 
@@ -42,8 +43,21 @@ pub fn get_default_model(state: &DesktopState) -> serde_json::Value {
     json!({
         "defaultProvider": state.global_model_settings.default_provider.as_deref().unwrap_or(""),
         "defaultModelId": state.global_model_settings.default_model_id.as_deref().unwrap_or(""),
-        "defaultThinkingLevel": state.global_model_settings.default_thinking_level.as_deref().unwrap_or("medium"),
+        "defaultThinkingLevel": canonical_thinking_level(
+            state
+                .global_model_settings
+                .default_thinking_level
+                .as_deref()
+                .unwrap_or(""),
+        ),
     })
+}
+
+pub fn canonical_thinking_level(level: &str) -> String {
+    match level.trim().to_ascii_lowercase().as_str() {
+        "" | "none" => "off".to_string(),
+        other => other.to_string(),
+    }
 }
 
 /// Populate the in-memory `global_model_settings` from pi-rs `SettingsManager`.
@@ -58,5 +72,8 @@ pub fn hydrate_global_settings(state: &mut DesktopState) {
     let settings = mgr.get_settings();
     state.global_model_settings.default_provider = settings.default_provider.clone();
     state.global_model_settings.default_model_id = settings.default_model.clone();
-    state.global_model_settings.default_thinking_level = settings.default_thinking_level.clone();
+    state.global_model_settings.default_thinking_level = settings
+        .default_thinking_level
+        .as_deref()
+        .map(canonical_thinking_level);
 }

@@ -134,6 +134,7 @@ export interface ModelOption {
   modelId: string;
   label: string;
   available: boolean;
+  supportedThinkingLevels?: string[];
 }
 
 export interface ProviderInfo {

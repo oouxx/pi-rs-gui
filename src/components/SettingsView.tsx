@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/components/ui/toast";
+import ThinkingLevelSelect from "@/components/ThinkingLevelSelect";
 import {
   BookOpen,
   Download,
@@ -348,19 +349,10 @@ function GeneralTab() {
         <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.model")}</h3>
         <Separator className="my-2" />
         <Row label={t("settings.defaultThinking")} hint={t("settings.defaultThinkingHint")}>
-          <Select
+          <ThinkingLevelSelect
             value={settings.defaultThinkingLevel}
-            onValueChange={(v) => apply("defaultThinkingLevel", v)}
-          >
-            <SelectTrigger className="h-8 w-32 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="low">Low</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-            </SelectContent>
-          </Select>
+            onChange={(v) => apply("defaultThinkingLevel", v)}
+          />
         </Row>
         <Row label={t("settings.agentTheme")} hint={t("settings.agentThemeHint")}>
           <Input

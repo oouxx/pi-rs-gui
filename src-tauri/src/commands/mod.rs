@@ -236,11 +236,18 @@ pub async fn get_models() -> Result<serde_json::Value, String> {
     for pid in &providers {
         let has_auth = authed.contains(pid);
         for m in registry.get_models_for_provider(pid) {
+            let label = if m.name.is_empty() {
+                m.id.clone()
+            } else {
+                m.name.clone()
+            };
             models.push(json!({
                 "providerId": pid,
                 "modelId": m.id,
-                "label": if m.name.is_empty() { m.id } else { m.name },
+                "label": label,
                 "available": has_auth,
+                "supportedThinkingLevels":
+                    pi_agent_core::pi_ai_types::get_supported_thinking_levels(&m),
             }));
         }
     }

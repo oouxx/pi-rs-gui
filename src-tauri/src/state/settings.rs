@@ -32,7 +32,9 @@ pub fn get_general_settings() -> Value {
     with_mgr(|mgr| {
         let s = mgr.get_settings();
         json!({
-            "defaultThinkingLevel": s.default_thinking_level.clone().unwrap_or_else(|| "medium".to_string()),
+            "defaultThinkingLevel": crate::state::model::canonical_thinking_level(
+                s.default_thinking_level.as_deref().unwrap_or("medium"),
+            ),
             "compactionEnabled": mgr.get_compaction_enabled(),
             "compactionReserveTokens": mgr.get_compaction_reserve_tokens(),
             "compactionKeepRecentTokens": mgr.get_compaction_keep_recent_tokens(),
@@ -72,7 +74,9 @@ pub fn set_general_setting(key: &str, value: Value) -> Result<(), String> {
                 let level = value
                     .as_str()
                     .ok_or("defaultThinkingLevel must be a string")?;
-                mgr.set_default_thinking_level(level);
+                mgr.set_default_thinking_level(&crate::state::model::canonical_thinking_level(
+                    level,
+                ));
             }
             "compactionEnabled" => {
                 mgr.set_compaction_enabled(
