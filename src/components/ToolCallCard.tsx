@@ -22,6 +22,7 @@ import {
 import { getActiveSessionCwd, openFile, openPath } from "@/api/commands";
 import { useToast } from "@/components/ui/toast";
 import { useI18n, type TranslationKey } from "@/i18n";
+import { errorText } from "@/lib/errors";
 
 interface ToolCallCardProps {
   name: string;
@@ -507,7 +508,7 @@ function WebSearchBlock({
       toast({
         variant: "error",
         title: t("common.openFailed"),
-        description: error instanceof Error ? error.message : String(error),
+        description: errorText(error),
       });
     }
   };
@@ -613,7 +614,7 @@ function WebFetchBlock({
       toast({
         variant: "error",
         title: t("common.openFailed"),
-        description: error instanceof Error ? error.message : String(error),
+        description: errorText(error),
       });
     }
   };
@@ -1222,7 +1223,7 @@ export default function ToolCallCard({
         toast({
           variant: "error",
           title: t("common.openFailed"),
-          description: error instanceof Error ? error.message : String(error),
+          description: errorText(error),
         });
       }
     },

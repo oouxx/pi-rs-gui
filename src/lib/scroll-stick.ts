@@ -20,9 +20,11 @@ export function nextStickState(
   current: boolean,
   m: ScrollMetrics,
   source: ScrollSource,
+  contentGrew: boolean,
 ): boolean {
   if (isAtBottom(m)) return true;
-  return source === "auto" ? current : false;
+  if (source === "auto" || contentGrew) return current;
+  return false;
 }
 
 export function bottomScrollTop(m: ScrollMetrics): number {

@@ -66,6 +66,7 @@ import {
   type WebSearchSettings,
 } from "@/api/commands";
 import { useSettingsStore } from "@/stores/settings";
+import { errorText } from "@/lib/errors";
 
 const settingsTabs = [
   { id: "general", labelKey: "settings.general" },
@@ -546,7 +547,7 @@ function AboutTab() {
         toast({ title: t("updates.upToDate"), variant: "success" });
       }
     } catch (e) {
-      setUpdateError(e instanceof Error ? e.message : String(e));
+      setUpdateError(errorText(e));
     } finally {
       setChecking(false);
     }
@@ -559,7 +560,7 @@ function AboutTab() {
     try {
       await downloadAndInstall(update, setProgress);
     } catch (e) {
-      setUpdateError(e instanceof Error ? e.message : String(e));
+      setUpdateError(errorText(e));
       setInstalling(false);
     }
   }, [update]);
@@ -895,7 +896,7 @@ function ExtensionsTab() {
       setAgentDir(dir ?? "");
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setLoading(false);
     }
@@ -929,7 +930,7 @@ function ExtensionsTab() {
         toast({
           variant: "error",
           title: t("extensions.updateFailed"),
-          description: e instanceof Error ? e.message : String(e),
+          description: errorText(e),
         });
       } finally {
         setBusy(null);
@@ -962,7 +963,7 @@ function ExtensionsTab() {
       toast({
         variant: "error",
         title: t("extensions.saveFailed"),
-        description: e instanceof Error ? e.message : String(e),
+        description: errorText(e),
       });
     } finally {
       setSaving(false);
@@ -988,7 +989,7 @@ function ExtensionsTab() {
       toast({
         variant: "error",
         title: t("common.openFailed"),
-        description: e instanceof Error ? e.message : String(e),
+        description: errorText(e),
       });
     }
   }, [agentDir, t, toast]);

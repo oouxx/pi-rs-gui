@@ -2,13 +2,15 @@ import { memo } from "react";
 import { motion } from "motion/react";
 import { PANEL_TRANSITION } from "@/lib/motion";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { AlertCircle, FileText, GitBranch } from "lucide-react";
 import { useI18n } from "@/i18n";
+import { useThrottledText } from "@/hooks/use-throttled-text";
 import type { ContentBlock, DisplayMessage } from "@/hooks/message-reducer";
 import ToolCallCard from "@/components/ToolCallCard";
 import ThinkingBlock from "@/components/ThinkingBlock";
-import { CopyButton, mdComponents } from "./markdown";
+import { CopyButton, mdComponents, rehypePlugins, remarkPlugins } from "./markdown";
+import VersionSwitcher from "./VersionSwitcher";
+import type { MessageBox } from "@/lib/session-versions";
 
 function imageDataUrl(block: ContentBlock): string {
   if (block.data) {
@@ -38,19 +40,30 @@ function parseAttachedFiles(content: string): { text: string; files: string[] } 
  *  Text is rendered progressively (real-time markdown, like ChatGPT/Claude). */
 const BlockRenderer = memo(function BlockRenderer({
   block,
+  streaming,
 }: {
   block: ContentBlock;
+  streaming: boolean;
 }) {
+  const text = useThrottledText(
+    block.type === "text" ? (block.text ?? "") : "",
+    streaming && block.type === "text",
+  );
+
   switch (block.type) {
     case "text":
-      return block.text ? (
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-          {block.text}
+      return text ? (
+        <ReactMarkdown
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={rehypePlugins}
+          components={mdComponents}
+        >
+          {text}
         </ReactMarkdown>
       ) : null;
 
     case "thinking":
-      return <ThinkingBlock thinking={block.thinking} />;
+      return <ThinkingBlock thinking={block.thinking} streaming={streaming} />;
 
     case "toolCall":
       return (
@@ -113,11 +126,19 @@ export const MessageItem = memo(function MessageItem({
   streaming,
   isLast,
   onForkHere,
+  versions,
+  onSelectVersion,
 }: {
   msg: DisplayMessage;
   streaming: boolean;
   isLast: boolean;
   onForkHere?: (msg: DisplayMessage) => void;
+  versions?: MessageBox;
+  onSelectVersion?: (
+    entryId: string,
+    parentKey: string,
+    anchorTop: number,
+  ) => void;
 }) {
   const isLastAi = msg.role === "assistant" && isLast;
   const userContent =
@@ -131,6 +152,13 @@ export const MessageItem = memo(function MessageItem({
       animate={{ opacity: 1, y: 0 }}
       transition={PANEL_TRANSITION}
     >
+      {versions && onSelectVersion && (
+        <VersionSwitcher
+          versions={versions}
+          disabled={streaming}
+          onSelect={onSelectVersion}
+        />
+      )}
       {msg.role === "user" ? (
         /* User prompt in a subtle neutral box, full width */
         <div className="border-border bg-card relative rounded-lg border px-4 py-3 text-[15px] leading-relaxed text-foreground">
@@ -192,7 +220,11 @@ export const MessageItem = memo(function MessageItem({
           />
           {msg.blocks.length > 0 ? (
             msg.blocks.map((block, bi) => (
-              <BlockRenderer key={`${msg.id}-b${bi}`} block={block} />
+              <BlockRenderer
+                key={`${msg.id}-b${bi}`}
+                block={block}
+                streaming={streaming && isLastAi && bi === msg.blocks.length - 1}
+              />
             ))
           ) : streaming && isLastAi ? (
             <span className="text-subtle-foreground inline-block animate-pulse">▍</span>

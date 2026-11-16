@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   ArrowUp,
@@ -39,6 +39,7 @@ import {
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import ThinkingLevelSelect from "@/components/ThinkingLevelSelect";
 import { canonicalThinkingLevel } from "@/lib/thinking-levels";
+import { buildVersions, type MessageBox } from "@/lib/session-versions";
 import { useChatContext } from "@/hooks/ChatProvider";
 import { useThreadSearch } from "@/hooks/use-thread-search";
 import { setThemePreference } from "@/hooks/useTheme";
@@ -74,6 +75,7 @@ import {
   getSessionModel,
   getSessionUsage,
   getSessionTree,
+  navigateSessionTree,
   setSessionModel,
   setSessionThinkingLevel,
   cycleScopedModel,
@@ -86,6 +88,7 @@ import {
   type SessionTreeNode,
   type SessionUsage,
 } from "@/api/commands";
+import { errorText } from "@/lib/errors";
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -148,8 +151,10 @@ export default function ChatView({
   } | null>(null);
 
   const timelineRef = useRef<HTMLDivElement | null>(null);
+  const timelineContentRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
   const autoScrollTopRef = useRef<number | null>(null);
+  const lastScrollHeightRef = useRef(0);
   const threadSearch = useThreadSearch(timelineRef);
 
   // ── Header data ────────────────────────────────────────────
@@ -211,7 +216,7 @@ export default function ChatView({
         toast({
           variant: "error",
           title: t("chat.setModelFailed"),
-          description: e instanceof Error ? e.message : String(e),
+          description: errorText(e),
         });
       }
     },
@@ -230,7 +235,7 @@ export default function ChatView({
         toast({
           variant: "error",
           title: t("chat.setThinkingFailed"),
-          description: e instanceof Error ? e.message : String(e),
+          description: errorText(e),
         });
       }
     },
@@ -257,7 +262,7 @@ export default function ChatView({
         toast({
           variant: "error",
           title: t("chat.cycleFailed"),
-          description: e instanceof Error ? e.message : String(e),
+          description: errorText(e),
         });
       }
     },
@@ -281,12 +286,47 @@ export default function ChatView({
   }, []);
 
   useEffect(() => {
-    if (showTimeline && activeSessionId) {
-      getSessionTree(activeSessionId)
-        .then((t) => setTimelineTree(t ?? []))
-        .catch(() => setTimelineTree([]));
-    }
-  }, [showTimeline, activeSessionId]);
+    if (!activeSessionId || streaming) return;
+    let alive = true;
+    getSessionTree(activeSessionId)
+      .then((tree) => {
+        if (alive) setTimelineTree(tree ?? []);
+      })
+      .catch(() => {
+        if (alive) setTimelineTree([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [activeSessionId, streaming, showTimeline]);
+
+  const cachedVersionsRef = useRef<Map<string, MessageBox>>(new Map());
+  const versionsByMessage = useMemo(() => {
+    if (streaming) return cachedVersionsRef.current;
+    const next = buildVersions(messages, timelineTree);
+    cachedVersionsRef.current = next;
+    return next;
+  }, [messages, timelineTree, streaming]);
+
+  const versionAnchorRef = useRef<{ key: string; top: number } | null>(null);
+
+  const handleSelectVersion = useCallback(
+    async (entryId: string, parentKey: string, anchorTop: number) => {
+      if (!activeSessionId) return;
+      versionAnchorRef.current = { key: parentKey, top: anchorTop };
+      try {
+        await navigateSessionTree(activeSessionId, entryId);
+      } catch (e) {
+        versionAnchorRef.current = null;
+        toast({
+          variant: "error",
+          title: t("timeline.navigateFailed"),
+          description: errorText(e),
+        });
+      }
+    },
+    [activeSessionId, t, toast],
+  );
 
   const handleForkAt = useCallback(
     async (entryId: string) => {
@@ -299,7 +339,7 @@ export default function ChatView({
         toast({
           variant: "error",
           title: t("chat.forkFailed"),
-          description: e instanceof Error ? e.message : String(e),
+          description: errorText(e),
         });
       }
     },
@@ -350,7 +390,7 @@ export default function ChatView({
         toast({
           variant: "error",
           title: t("chat.forkFailed"),
-          description: e instanceof Error ? e.message : String(e),
+          description: errorText(e),
         });
       }
     },
@@ -374,7 +414,7 @@ export default function ChatView({
       toast({
         variant: "error",
         title: t("chat.exportFailed"),
-        description: e instanceof Error ? e.message : String(e),
+        description: errorText(e),
       });
     }
     return true;
@@ -397,7 +437,7 @@ export default function ChatView({
               toast({
                 variant: "error",
                 title: t("chat.renameFailed"),
-                description: e instanceof Error ? e.message : String(e),
+                description: errorText(e),
               });
             });
           }
@@ -408,7 +448,7 @@ export default function ChatView({
             toast({
               variant: "error",
               title: t("chat.compactFailed"),
-              description: e instanceof Error ? e.message : String(e),
+              description: errorText(e),
             });
           });
           return true;
@@ -421,7 +461,7 @@ export default function ChatView({
             toast({
               variant: "error",
               title: t("chat.cloneFailed"),
-              description: e instanceof Error ? e.message : String(e),
+              description: errorText(e),
             });
           }
           return true;
@@ -438,7 +478,7 @@ export default function ChatView({
             toast({
               variant: "error",
               title: t("chat.shareFailed"),
-              description: e instanceof Error ? e.message : String(e),
+              description: errorText(e),
             });
           }
           return true;
@@ -458,7 +498,7 @@ export default function ChatView({
                 toast({
                   variant: "error",
                   title: t("chat.sessionInfoFailed"),
-                  description: e instanceof Error ? e.message : String(e),
+                  description: errorText(e),
                 });
               });
             setInfoOpen(true);
@@ -537,7 +577,7 @@ export default function ChatView({
               toast({
                 variant: "error",
                 title: t("chat.importFailed"),
-                description: e instanceof Error ? e.message : String(e),
+                description: errorText(e),
               });
             });
           }
@@ -548,7 +588,7 @@ export default function ChatView({
             toast({
               variant: "error",
               title: t("chat.reloadFailed"),
-              description: e instanceof Error ? e.message : String(e),
+              description: errorText(e),
             });
           });
           return true;
@@ -564,7 +604,7 @@ export default function ChatView({
             toast({
               variant: "error",
               title: t("chat.trustLoadFailed"),
-              description: e instanceof Error ? e.message : String(e),
+              description: errorText(e),
             });
           }
           return true;
@@ -624,7 +664,7 @@ export default function ChatView({
       toast({
         variant: "error",
         title: t("chat.setCwdFailed"),
-        description: e instanceof Error ? e.message : String(e),
+        description: errorText(e),
       });
     }
   }, [activeSessionId, toast, t]);
@@ -642,18 +682,26 @@ export default function ChatView({
   }, [activeSessionCwd]);
 
   // ── Scrolling ──────────────────────────────────────────────
-  const markAutoScroll = useCallback((el: HTMLElement) => {
+  const markAutoScroll = useCallback((el: HTMLElement | null) => {
+    if (!el) return;
     const target = bottomScrollTop(el);
     if (Math.abs(el.scrollTop - target) < 1) return;
     autoScrollTopRef.current = target;
     el.scrollTop = target;
   }, []);
 
+  const pinToBottom = useCallback(() => {
+    if (!stickToBottomRef.current) return;
+    markAutoScroll(timelineRef.current);
+  }, [markAutoScroll]);
+
   useLayoutEffect(() => {
     const el = timelineRef.current;
+    const content = timelineContentRef.current;
     if (!el) return;
     stickToBottomRef.current = true;
     autoScrollTopRef.current = null;
+    lastScrollHeightRef.current = el.scrollHeight;
 
     const onScroll = () => {
       const expected = autoScrollTopRef.current;
@@ -662,10 +710,13 @@ export default function ChatView({
         expected !== null && Math.abs(el.scrollTop - expected) < 1
           ? "auto"
           : "user";
+      const contentGrew = el.scrollHeight > lastScrollHeightRef.current;
+      lastScrollHeightRef.current = el.scrollHeight;
       stickToBottomRef.current = nextStickState(
         stickToBottomRef.current,
         el,
         source,
+        contentGrew,
       );
     };
     const onWheel = (e: WheelEvent) => {
@@ -674,18 +725,34 @@ export default function ChatView({
 
     el.addEventListener("scroll", onScroll, { passive: true });
     el.addEventListener("wheel", onWheel, { passive: true });
+
+    const observer = new ResizeObserver(pinToBottom);
+    observer.observe(el);
+    if (content) observer.observe(content);
+
     return () => {
+      observer.disconnect();
       el.removeEventListener("scroll", onScroll);
       el.removeEventListener("wheel", onWheel);
     };
-  }, [activeSessionId]);
+  }, [activeSessionId, pinToBottom]);
 
   useLayoutEffect(() => {
-    if (!stickToBottomRef.current) return;
+    pinToBottom();
+  }, [messages, activeSessionId, streaming, pinToBottom]);
+
+  useLayoutEffect(() => {
+    const anchor = versionAnchorRef.current;
     const el = timelineRef.current;
-    if (!el) return;
-    markAutoScroll(el);
-  }, [messages, activeSessionId, streaming, markAutoScroll]);
+    if (!anchor || !el) return;
+    const target = el.querySelector<HTMLElement>(
+      `[data-version-anchor="${anchor.key}"]`,
+    );
+    if (target) {
+      el.scrollTop += target.getBoundingClientRect().top - anchor.top;
+    }
+    versionAnchorRef.current = null;
+  }, [messages]);
 
   // Find-in-chat / terminal / model cycling (bindings are customizable).
   useEffect(() => {
@@ -950,7 +1017,7 @@ export default function ChatView({
                 <div
                   key={activeSessionId}
                   ref={timelineRef}
-                  className="timeline custom-scroll bg-background relative flex h-full flex-col gap-5 overflow-y-auto px-6 py-6"
+                  className="timeline custom-scroll bg-background relative flex h-full flex-col overflow-y-auto px-6 py-6"
                 >
             {threadSearch.isOpen && (
               <div className="border-border bg-background absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-lg">
@@ -1003,37 +1070,41 @@ export default function ChatView({
                 </button>
               </div>
             )}
-            {isEmpty ? (
-              <div className="flex flex-1 items-center justify-center">
-                <motion.div
-                  className="max-w-[560px] px-6 text-center"
-                  {...enter}
-                  transition={PANEL_TRANSITION}
-                >
-                  <div className="mb-5 flex items-center justify-center">
-                    <span className="bg-primary font-serif flex size-10 items-center justify-center rounded-xl text-xl font-bold text-primary-foreground shadow-md">
-                      p
-                    </span>
-                  </div>
-                  <h1 className="font-serif bg-gradient-to-br from-foreground via-foreground to-muted-foreground bg-clip-text text-3xl font-semibold tracking-tight text-transparent">
-                    {t("chat.emptyTitle")}
-                  </h1>
-                  <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
-                    {t("chat.emptyHint")}
-                  </p>
-                </motion.div>
-              </div>
-            ) : (
-              messages.map((msg, idx) => (
-                <MessageItem
-                  key={msg.id}
-                  msg={msg}
-                  streaming={streaming}
-                  isLast={idx === messages.length - 1}
-                  onForkHere={forkFromMessage}
-                />
-              ))
-            )}
+            <div ref={timelineContentRef} className="flex flex-1 flex-col gap-5">
+              {isEmpty ? (
+                <div className="flex flex-1 items-center justify-center">
+                  <motion.div
+                    className="max-w-[560px] px-6 text-center"
+                    {...enter}
+                    transition={PANEL_TRANSITION}
+                  >
+                    <div className="mb-5 flex items-center justify-center">
+                      <span className="bg-primary font-serif flex size-10 items-center justify-center rounded-xl text-xl font-bold text-primary-foreground shadow-md">
+                        p
+                      </span>
+                    </div>
+                    <h1 className="font-serif bg-gradient-to-br from-foreground via-foreground to-muted-foreground bg-clip-text text-3xl font-semibold tracking-tight text-transparent">
+                      {t("chat.emptyTitle")}
+                    </h1>
+                    <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
+                      {t("chat.emptyHint")}
+                    </p>
+                  </motion.div>
+                </div>
+              ) : (
+                messages.map((msg, idx) => (
+                  <MessageItem
+                    key={msg.id}
+                    msg={msg}
+                    streaming={streaming}
+                    isLast={idx === messages.length - 1}
+                    onForkHere={forkFromMessage}
+                    versions={versionsByMessage.get(msg.id)}
+                    onSelectVersion={handleSelectVersion}
+                  />
+                ))
+              )}
+            </div>
                 </div>
               </Panel>
               {terminalOpen && (
@@ -1099,7 +1170,7 @@ export default function ChatView({
                       toast({
                         variant: "error",
                         title: t("chat.trustSaveFailed"),
-                        description: e instanceof Error ? e.message : String(e),
+                        description: errorText(e),
                       });
                     });
                     setTrustOpen(false);
@@ -1117,7 +1188,7 @@ export default function ChatView({
                       toast({
                         variant: "error",
                         title: t("chat.trustSaveFailed"),
-                        description: e instanceof Error ? e.message : String(e),
+                        description: errorText(e),
                       });
                     });
                     setTrustOpen(false);
@@ -1135,7 +1206,7 @@ export default function ChatView({
                       toast({
                         variant: "error",
                         title: t("chat.trustSaveFailed"),
-                        description: e instanceof Error ? e.message : String(e),
+                        description: errorText(e),
                       });
                     });
                     setTrustOpen(false);

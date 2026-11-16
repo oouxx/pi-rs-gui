@@ -66,6 +66,16 @@
   --selection: rgb(184 92 63 / 0.2);
   --scrim: rgb(20 20 19 / 0.35);
 
+  /* Syntax highlighting (Prism tokens) */
+  --code-comment: #8a8880;
+  --code-keyword: #b85c3f;
+  --code-string: #5c7a4a;
+  --code-number: #96601a;
+  --code-function: #3f6f6a;
+  --code-type: #7a4a8f;
+  --code-operator: #6b6a64;
+  --code-punct: #8a8880;
+
   /* Terminal (xterm needs literal colors, not theme tokens). */
   --terminal-bg: #faf9f5;
   --terminal-fg: #141413;
@@ -120,6 +130,15 @@
 
   --selection: rgb(217 119 87 / 0.28);
   --scrim: rgb(0 0 0 / 0.55);
+
+  --code-comment: #8d8b83;
+  --code-keyword: #e0896a;
+  --code-string: #9dbb84;
+  --code-number: #d9a441;
+  --code-function: #8fb3d9;
+  --code-type: #c2a3d8;
+  --code-operator: #b9b6ad;
+  --code-punct: #8d8b83;
 
   --terminal-bg: #1f1e1d;
   --terminal-fg: #f0eee6;

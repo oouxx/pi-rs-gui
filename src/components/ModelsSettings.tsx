@@ -1,3 +1,4 @@
+import { errorText } from "@/lib/errors";
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -49,7 +50,7 @@ export default function ModelsSettings() {
     } catch (e) {
       toast({
         title: t("models.loadFailed"),
-        description: e instanceof Error ? e.message : String(e),
+        description: errorText(e),
         variant: "error",
       })
     }
@@ -83,7 +84,7 @@ export default function ModelsSettings() {
       } catch (e) {
         toast({
           title: t("models.scopedSaveFailed"),
-          description: e instanceof Error ? e.message : String(e),
+          description: errorText(e),
           variant: "error",
         })
       }
@@ -109,7 +110,7 @@ export default function ModelsSettings() {
     } catch (e) {
       toast({
         title: t("models.keySaveFailed"),
-        description: e instanceof Error ? e.message : String(e),
+        description: errorText(e),
         variant: "error",
       })
     }
@@ -124,7 +125,7 @@ export default function ModelsSettings() {
     } catch (e) {
       toast({
         title: t("models.defaultSaveFailed"),
-        description: e instanceof Error ? e.message : String(e),
+        description: errorText(e),
         variant: "error",
       })
     }
@@ -139,7 +140,7 @@ export default function ModelsSettings() {
     } catch (e) {
       toast({
         title: t("models.thinkingSaveFailed"),
-        description: e instanceof Error ? e.message : String(e),
+        description: errorText(e),
         variant: "error",
       })
     }

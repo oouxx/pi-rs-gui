@@ -14,6 +14,7 @@ import { tauriListen } from "@/api/events";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/i18n";
 import { useToast } from "@/components/ui/toast";
+import { errorText } from "@/lib/errors";
 
 // ── terminal-output bus ──────────────────────────────────────────
 // Retains a capped raw-output log per session (so a re-mounted tab can
@@ -291,7 +292,7 @@ export default function TerminalDock({
       toast({
         variant: "error",
         title: t("terminal.startFailed"),
-        description: e instanceof Error ? e.message : String(e),
+        description: errorText(e),
       });
     }
   }, [cwd, t, toast]);

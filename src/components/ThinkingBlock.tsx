@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ChevronRight, Sparkles } from "lucide-react"
 import { AnimatePresence, motion } from "motion/react"
 import { useI18n } from "@/i18n"
@@ -6,12 +6,28 @@ import { expand, FAST_TRANSITION, PANEL_TRANSITION } from "@/lib/motion"
 
 interface ThinkingBlockProps {
   thinking?: string
+  streaming?: boolean
 }
 
-/** Reasoning block: subtle recessed panel. */
-export default function ThinkingBlock({ thinking }: ThinkingBlockProps) {
+export default function ThinkingBlock({ thinking, streaming = false }: ThinkingBlockProps) {
   const [expanded, setExpanded] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  const startedAtRef = useRef(0)
   const { t } = useI18n()
+
+  useEffect(() => {
+    if (!streaming) return
+    if (!startedAtRef.current) startedAtRef.current = performance.now()
+    const timer = setInterval(() => {
+      setElapsed(Math.round((performance.now() - startedAtRef.current) / 1000))
+    }, 500)
+    return () => clearInterval(timer)
+  }, [streaming])
+
+  useEffect(() => {
+    if (streaming || !startedAtRef.current) return
+    setElapsed(Math.round((performance.now() - startedAtRef.current) / 1000))
+  }, [streaming])
 
   return (
     <div className="border-border bg-muted my-2 overflow-hidden rounded-lg border">
@@ -27,7 +43,12 @@ export default function ThinkingBlock({ thinking }: ThinkingBlockProps) {
           <ChevronRight className="size-3.5" />
         </motion.span>
         <Sparkles className="size-3.5" />
-        <span className="font-medium">{t("thinking.reasoning")}</span>
+        <span className="font-medium">
+          {streaming ? t("thinking.thinking") : t("thinking.reasoning")}
+        </span>
+        {elapsed > 0 && (
+          <span className="tabular-nums opacity-70">{elapsed}s</span>
+        )}
         {!thinking && (
           <span className="ml-1 inline-flex gap-0.5">
             <span className="bg-subtle-foreground/70 size-1 animate-pulse rounded-full" />

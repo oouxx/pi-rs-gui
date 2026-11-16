@@ -26,6 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { errorText } from "@/lib/errors";
 
 const KIND_META: Record<string, { icon: ReactNode; color: string }> = {
   message: {
@@ -285,7 +286,7 @@ export function TimelinePanel({
       toast({
         variant: "error",
         title: t("timeline.rewindFailed"),
-        description: e instanceof Error ? e.message : String(e),
+        description: errorText(e),
       });
     } finally {
       setBusy(false);

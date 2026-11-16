@@ -5,6 +5,7 @@ import {
   type GeneralSettings,
 } from "../api/commands";
 import { showToast } from "../components/ui/toast";
+import { parseError } from "../lib/errors";
 
 interface SettingsState {
   settings: GeneralSettings | null;
@@ -15,7 +16,7 @@ interface SettingsState {
 }
 
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return parseError(error).message;
 }
 
 /** Shared general-settings state. One fetch/apply path for every settings tab

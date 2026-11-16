@@ -10,6 +10,8 @@
 
 use std::path::{Component, Path, PathBuf};
 
+use crate::state::error::AppError;
+
 use serde_json::{json, Value};
 
 const MAX_WALK_ENTRIES: usize = 5000;
@@ -285,32 +287,47 @@ fn is_inside_allowed_root(canonical: &Path, requested: &Path, cwd: &str) -> bool
 }
 
 /// Read a UTF-8 text file for the in-app skill/prompt preview.
-pub fn read_text_file(path: &str, cwd: &str) -> Result<String, String> {
+pub fn read_text_file(path: &str, cwd: &str) -> Result<String, AppError> {
     let raw = Path::new(path);
     let resolved = if raw.is_absolute() {
         raw.to_path_buf()
     } else {
         Path::new(cwd).join(raw)
     };
-    let meta = std::fs::metadata(&resolved)
-        .map_err(|error| format!("Cannot read {}: {error}", resolved.display()))?;
+    let meta = std::fs::metadata(&resolved).map_err(|error| {
+        AppError::new("io", format!("Cannot read {}: {error}", resolved.display()))
+    })?;
     if !meta.is_file() {
-        return Err(format!("Not a file: {}", resolved.display()));
+        return Err(AppError::new(
+            "not_a_file",
+            format!("Not a file: {}", resolved.display()),
+        ));
     }
     if meta.len() > 1024 * 1024 {
-        return Err("File is too large to preview (max 1 MB)".to_string());
+        return Err(AppError::new(
+            "too_large",
+            "File is too large to preview (max 1 MB)",
+        ));
     }
-    let canonical = resolved
-        .canonicalize()
-        .map_err(|error| format!("Cannot resolve {}: {error}", resolved.display()))?;
+    let canonical = resolved.canonicalize().map_err(|error| {
+        AppError::new(
+            "io",
+            format!("Cannot resolve {}: {error}", resolved.display()),
+        )
+    })?;
     if !is_inside_allowed_root(&canonical, &resolved, cwd) {
-        return Err(
-            "File is outside the workspace and configured skill/prompt directories".to_string(),
-        );
+        return Err(AppError::new(
+            "file_outside_roots",
+            "File is outside the workspace and configured skill/prompt directories",
+        ));
     }
-    let bytes = std::fs::read(&canonical)
-        .map_err(|error| format!("Cannot read {}: {error}", canonical.display()))?;
-    String::from_utf8(bytes).map_err(|_| "File is not valid UTF-8 text".to_string())
+    let bytes = std::fs::read(&canonical).map_err(|error| {
+        AppError::new(
+            "io",
+            format!("Cannot read {}: {error}", canonical.display()),
+        )
+    })?;
+    String::from_utf8(bytes).map_err(|_| AppError::new("not_utf8", "File is not valid UTF-8 text"))
 }
 
 #[cfg(test)]
@@ -330,6 +347,6 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("bin"), [0xff, 0xfe, 0x00]).expect("write");
         let error = read_text_file("bin", &dir.path().to_string_lossy()).unwrap_err();
-        assert!(error.contains("UTF-8"));
+        assert!(error.message.contains("UTF-8"));
     }
 }

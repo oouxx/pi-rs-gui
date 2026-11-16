@@ -1,7 +1,15 @@
 import { useState } from "react";
 import type { Components } from "react-markdown";
 import { Copy, Check } from "lucide-react";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { useI18n } from "@/i18n";
+import { useHighlightedCode } from "@/hooks/use-highlighted-code";
+import MermaidDiagram from "@/components/chat/MermaidDiagram";
+
+export const remarkPlugins = [remarkGfm, remarkMath];
+export const rehypePlugins = [rehypeKatex];
 
 /** Flatten a React node tree to its text (for code-block copy buttons). */
 export function nodeText(node: React.ReactNode): string {
@@ -46,6 +54,46 @@ export function CopyButton({
   );
 }
 
+function CodeBlock({
+  className,
+  code,
+  children: _children,
+  ...props
+}: {
+  className?: string;
+  code: string;
+} & React.HTMLAttributes<HTMLElement>) {
+  const language = className?.match(/language-([\w+#-]+)/)?.[1];
+  const html = useHighlightedCode(code, language);
+  if (!html) {
+    return (
+      <code className={className} {...props}>
+        {code}
+      </code>
+    );
+  }
+  return (
+    <code
+      className={`${className ?? ""} md-code`}
+      {...props}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
+function fencedCode(
+  node: React.ReactNode,
+): { code: string; language?: string } | null {
+  if (node == null || typeof node !== "object") return null;
+  const props = (node as { props?: { className?: string; code?: unknown } })
+    .props;
+  if (!props || typeof props.code !== "string") return null;
+  return {
+    code: props.code,
+    language: props.className?.match(/language-([\w+#-]+)/)?.[1],
+  };
+}
+
 export const mdComponents: Components = {
   code: ({ className, children, ...props }) => {
     // react-markdown v9 does not pass an `inline` prop. A fenced block without
@@ -65,22 +113,28 @@ export const mdComponents: Components = {
       );
     }
     return (
-      <code className={className} {...props}>
+      <CodeBlock className={className} code={text} {...props}>
         {children}
-      </code>
+      </CodeBlock>
     );
   },
-  pre: ({ children }) => (
-    <div className="group/code relative my-2">
-      <pre className="text-foreground border-border bg-muted overflow-x-auto rounded-lg border p-3 pr-10 font-mono text-xs leading-relaxed">
-        {children}
-      </pre>
-      <CopyButton
-        text={nodeText(children)}
-        className="text-subtle-foreground hover:text-muted-foreground absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover/code:opacity-100"
-      />
-    </div>
-  ),
+  pre: ({ children }) => {
+    const fenced = fencedCode(children);
+    if (fenced?.language === "mermaid" && fenced.code) {
+      return <MermaidDiagram code={fenced.code} />;
+    }
+    return (
+      <div className="group/code relative my-2">
+        <pre className="text-foreground border-border bg-muted overflow-x-auto rounded-lg border p-3 pr-10 font-mono text-xs leading-relaxed">
+          {children}
+        </pre>
+        <CopyButton
+          text={nodeText(children)}
+          className="text-subtle-foreground hover:text-muted-foreground absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover/code:opacity-100"
+        />
+      </div>
+    );
+  },
   table: ({ children }) => (
     <div className="my-2 overflow-x-auto">
       <table className="w-full border-collapse font-mono text-xs">{children}</table>

@@ -14,7 +14,10 @@ A Tauri v2 + React 19 desktop GUI for [pi-rs](https://github.com/oouxx/pi-rs) �
 
 ## Features
 
-- **Chat** — streaming assistant messages, thinking blocks, tool-call cards
+- **Chat** — streaming assistant messages with **render-cost throttled
+  markdown**, **syntax-highlighted code blocks** (languages loaded on demand),
+  **KaTeX math** and **Mermaid diagrams**, thinking blocks with elapsed time,
+  per-message **version switcher** for forks/edit variants, tool-call cards
   with **inline edit diffs** and **open-file-in-editor**, Stop button,
   **send while a turn is running** (Enter = steer, Alt+Enter = follow-up),
   context-usage indicator, per-session thinking level, in-chat search

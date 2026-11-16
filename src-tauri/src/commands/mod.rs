@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::state::actor::SessionCommand;
+use crate::state::error::AppError;
 use crate::state::*;
 use crate::state::{mcp, model, providers, session, settings};
 use pi_agent_core::pi_ai_types::ContentBlock;
@@ -10,7 +11,7 @@ use tauri::{AppHandle, State};
 // ── Core ──
 
 #[tauri::command]
-pub async fn get_state(store: State<'_, Arc<Store>>) -> Result<DesktopState, String> {
+pub async fn get_state(store: State<'_, Arc<Store>>) -> Result<DesktopState, AppError> {
     Ok(store.state.lock().await.clone())
 }
 
@@ -21,8 +22,11 @@ pub async fn select_session(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     session_id: String,
-) -> Result<DesktopState, String> {
-    store.select_session(&app, &session_id).await
+) -> Result<DesktopState, AppError> {
+    store
+        .select_session(&app, &session_id)
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -31,10 +35,11 @@ pub async fn create_session(
     store: State<'_, Arc<Store>>,
     title: Option<String>,
     cwd: Option<String>,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     store
         .create_session_with_runtime(&app, title.as_deref(), cwd.as_deref())
         .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -42,7 +47,7 @@ pub async fn archive_session(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     session_id: String,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     // Destroy the session's actor (abort + remove from the registry).
     store.shutdown_actor(&session_id).await;
     let mut failure: Option<String> = None;
@@ -54,7 +59,7 @@ pub async fn archive_session(
         })
         .await;
     if let Some(error) = failure {
-        return Err(error);
+        return Err(AppError::from(error));
     }
     // Ensure the newly selected session has an actor ready.
     store.ensure_selected_actor(&app).await.ok();
@@ -66,7 +71,7 @@ pub async fn delete_session(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     session_id: String,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     // Destroy the session's actor (abort + remove from the registry).
     store.shutdown_actor(&session_id).await;
     let mut failure: Option<String> = None;
@@ -78,7 +83,7 @@ pub async fn delete_session(
         })
         .await;
     if let Some(error) = failure {
-        return Err(error);
+        return Err(AppError::from(error));
     }
     // Ensure the newly selected session has an actor ready.
     store.ensure_selected_actor(&app).await.ok();
@@ -91,7 +96,7 @@ pub async fn rename_session(
     store: State<'_, Arc<Store>>,
     session_id: String,
     title: String,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     // Persist the name to the session file via pi-rs (append_session_info) so
     // renames survive restarts — the in-memory record alone is rebuilt from
     // the files on the next launch. If the session has a live actor, delegate
@@ -134,8 +139,11 @@ pub async fn set_session_cwd(
     store: State<'_, Arc<Store>>,
     session_id: String,
     path: String,
-) -> Result<DesktopState, String> {
-    store.set_session_cwd(&app, &session_id, &path).await
+) -> Result<DesktopState, AppError> {
+    store
+        .set_session_cwd(&app, &session_id, &path)
+        .await
+        .map_err(AppError::from)
 }
 
 // ── Agent-session flow ──
@@ -146,7 +154,7 @@ pub async fn submit_composer(
     store: State<'_, Arc<Store>>,
     text: String,
     options: Option<serde_json::Value>,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     // options: {
     //   images: [{ data: <raw base64>, mimeType: "image/png" }],
     //   streamingBehavior: "steer" | "followUp"
@@ -190,7 +198,7 @@ pub async fn submit_composer(
 pub async fn cancel_current_run(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     store.abort().await;
     Ok(store
         .mutate(&app, |s| {
@@ -206,7 +214,7 @@ pub async fn abort_session(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     session_id: String,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     store.abort_session(&session_id).await;
     Ok(store
         .mutate(&app, |s| {
@@ -218,13 +226,15 @@ pub async fn abort_session(
 // ── Model ──
 
 #[tauri::command]
-pub async fn get_default_model(store: State<'_, Arc<Store>>) -> Result<serde_json::Value, String> {
+pub async fn get_default_model(
+    store: State<'_, Arc<Store>>,
+) -> Result<serde_json::Value, AppError> {
     let state = store.state.lock().await;
     Ok(model::get_default_model(&state))
 }
 
 #[tauri::command]
-pub async fn get_models() -> Result<serde_json::Value, String> {
+pub async fn get_models() -> Result<serde_json::Value, AppError> {
     pi_ai::providers::register_builtins::register_built_in_api_providers();
     use pi_coding_agent::core::model_registry::ModelRegistry;
     let registry = ModelRegistry::new(ModelRegistry::builtin_models_list());
@@ -255,7 +265,7 @@ pub async fn get_models() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub async fn get_providers() -> Result<serde_json::Value, String> {
+pub async fn get_providers() -> Result<serde_json::Value, AppError> {
     pi_ai::providers::register_builtins::register_built_in_api_providers();
     use pi_coding_agent::core::model_registry::ModelRegistry;
     use pi_coding_agent::core::provider_display_names::BUILT_IN_PROVIDER_DISPLAY_NAMES;
@@ -281,7 +291,9 @@ pub async fn get_providers() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub async fn get_model_settings(store: State<'_, Arc<Store>>) -> Result<serde_json::Value, String> {
+pub async fn get_model_settings(
+    store: State<'_, Arc<Store>>,
+) -> Result<serde_json::Value, AppError> {
     let state = store.state.lock().await;
     Ok(json!({ "settings": state.global_model_settings }))
 }
@@ -292,7 +304,7 @@ pub async fn set_default_model(
     store: State<'_, Arc<Store>>,
     provider: String,
     model_id: String,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     Ok(store
         .mutate(&app, |s| model::set_default_model(s, &provider, &model_id))
         .await)
@@ -303,7 +315,7 @@ pub async fn set_default_thinking_level(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     thinking_level: String,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     Ok(store
         .mutate(&app, |s| {
             model::set_default_thinking_level(s, &thinking_level)
@@ -316,7 +328,7 @@ pub async fn set_provider_api_key(
     store: State<'_, Arc<Store>>,
     provider_id: String,
     api_key: String,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     providers::set_provider_api_key(&provider_id, &api_key)?;
     Ok(store.state.lock().await.clone())
 }
@@ -326,7 +338,7 @@ pub async fn logout_provider(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     provider_id: String,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     providers::clear_provider_auth(&provider_id);
     Ok(store
         .mutate(&app, |_s| {
@@ -340,7 +352,7 @@ pub async fn set_custom_provider(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     config: serde_json::Value,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     providers::set_custom_provider(&config)?;
     Ok(store
         .mutate(&app, |_s| {
@@ -354,7 +366,7 @@ pub async fn delete_custom_provider(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     provider_id: String,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     providers::delete_custom_provider(&provider_id)?;
     Ok(store
         .mutate(&app, |_s| {
@@ -368,7 +380,7 @@ pub async fn delete_custom_provider(
 #[tauri::command]
 pub async fn get_selected_transcript(
     store: State<'_, Arc<Store>>,
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<Option<serde_json::Value>, AppError> {
     let (sess_id, session_file) = {
         let state = store.state.lock().await;
         let sid = state.selected_session_id.clone();
@@ -415,25 +427,25 @@ pub async fn get_selected_transcript(
 // ── Providers CRUD ──
 
 #[tauri::command]
-pub async fn list_custom_providers() -> Result<Vec<serde_json::Value>, String> {
+pub async fn list_custom_providers() -> Result<Vec<serde_json::Value>, AppError> {
     Ok(providers::list_custom_providers())
 }
 
 #[tauri::command]
-pub async fn get_custom_provider(provider_id: String) -> Result<serde_json::Value, String> {
+pub async fn get_custom_provider(provider_id: String) -> Result<serde_json::Value, AppError> {
     providers::get_custom_provider(&provider_id)
-        .ok_or_else(|| format!("provider '{provider_id}' not found"))
+        .ok_or_else(|| AppError::not_found(format!("provider '{provider_id}' not found")))
 }
 
 #[tauri::command]
-pub async fn has_provider_auth(provider_id: String) -> Result<bool, String> {
+pub async fn has_provider_auth(provider_id: String) -> Result<bool, AppError> {
     Ok(providers::has_provider_auth(&provider_id))
 }
 
 // ── Resources dirs ──
 
 #[tauri::command]
-pub async fn get_agent_dir() -> Result<String, String> {
+pub async fn get_agent_dir() -> Result<String, AppError> {
     Ok(pi_coding_agent::config::get_agent_dir()
         .to_string_lossy()
         .to_string())
@@ -442,32 +454,33 @@ pub async fn get_agent_dir() -> Result<String, String> {
 // ── Skills ──
 
 #[tauri::command]
-pub async fn list_skills(cwd: Option<String>) -> Result<Vec<serde_json::Value>, String> {
+pub async fn list_skills(cwd: Option<String>) -> Result<Vec<serde_json::Value>, AppError> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
     Ok(crate::state::skills::list_skills(&cwd))
 }
 
 #[tauri::command]
-pub async fn get_skill(cwd: Option<String>, name: String) -> Result<serde_json::Value, String> {
+pub async fn get_skill(cwd: Option<String>, name: String) -> Result<serde_json::Value, AppError> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
-    crate::state::skills::get_skill(&cwd, &name).ok_or_else(|| format!("skill '{name}' not found"))
+    crate::state::skills::get_skill(&cwd, &name)
+        .ok_or_else(|| AppError::not_found(format!("skill '{name}' not found")))
 }
 
 // ── Extensions ──
 
 #[tauri::command]
-pub async fn list_extensions() -> Result<Vec<serde_json::Value>, String> {
+pub async fn list_extensions() -> Result<Vec<serde_json::Value>, AppError> {
     Ok(crate::state::extensions::list_extensions())
 }
 
 #[tauri::command]
-pub async fn get_extension(name: String) -> Result<serde_json::Value, String> {
+pub async fn get_extension(name: String) -> Result<serde_json::Value, AppError> {
     crate::state::extensions::get_extension(&name)
-        .ok_or_else(|| format!("extension '{name}' not found"))
+        .ok_or_else(|| AppError::not_found(format!("extension '{name}' not found")))
 }
 
 #[tauri::command]
-pub async fn get_extension_settings() -> Result<serde_json::Value, String> {
+pub async fn get_extension_settings() -> Result<serde_json::Value, AppError> {
     Ok(crate::state::extensions::get_extension_settings())
 }
 
@@ -480,7 +493,7 @@ pub async fn set_web_search_config(
     deepseek_api_key: Option<String>,
     clear_deepseek_api_key: bool,
     ollama_host: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     let mut out = crate::state::extensions::set_web_search_config(
         &provider,
         deepseek_base_url,
@@ -499,7 +512,7 @@ pub async fn set_web_search_config(
 // ── General settings ──
 
 #[tauri::command]
-pub async fn get_general_settings() -> Result<serde_json::Value, String> {
+pub async fn get_general_settings() -> Result<serde_json::Value, AppError> {
     Ok(settings::get_general_settings())
 }
 
@@ -507,7 +520,7 @@ pub async fn get_general_settings() -> Result<serde_json::Value, String> {
 pub async fn set_general_setting(
     key: String,
     value: serde_json::Value,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     settings::set_general_setting(&key, value)?;
     Ok(settings::get_general_settings())
 }
@@ -518,7 +531,7 @@ pub async fn set_general_setting(
 pub async fn list_slash_commands(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<Vec<serde_json::Value>, AppError> {
     // The selected session's actor may not exist yet (e.g. right after a
     // fresh launch). Spawn it so the command list isn't empty.
     store.ensure_selected_actor(&app).await.ok();
@@ -531,7 +544,7 @@ pub async fn list_slash_commands(
 pub async fn file_completions(
     cwd: Option<String>,
     query: String,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<Vec<serde_json::Value>, AppError> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
     Ok(crate::state::files::file_completions(&cwd, &query))
 }
@@ -544,7 +557,7 @@ pub async fn export_session(
     session_id: String,
     format: String,
     target_path: String,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let session_file = {
         let state = store.state.lock().await;
         state
@@ -557,6 +570,7 @@ pub async fn export_session(
             .ok_or_else(|| format!("session '{session_id}' has no session file"))?
     };
     crate::state::export::export_session(&session_file, &format, &target_path)
+        .map_err(AppError::from)
 }
 
 // ── Session share (/share via GitHub CLI) ──
@@ -565,7 +579,7 @@ pub async fn export_session(
 /// to be installed and logged in (`gh auth login`), mirroring TS `/share`.
 /// Returns the gist URL.
 #[tauri::command]
-pub async fn share_session(store: State<'_, Arc<Store>>) -> Result<String, String> {
+pub async fn share_session(store: State<'_, Arc<Store>>) -> Result<String, AppError> {
     use std::process::Stdio;
 
     // 1. gh must exist and be logged in.
@@ -576,16 +590,22 @@ pub async fn share_session(store: State<'_, Arc<Store>>) -> Result<String, Strin
         .status()
         .await
         .map_err(|_| {
-            "GitHub CLI (gh) is not installed. Install it from https://cli.github.com/".to_string()
+            AppError::new(
+                "gh_missing",
+                "GitHub CLI (gh) is not installed. Install it from https://cli.github.com/",
+            )
         })?;
     if !auth.success() {
-        return Err("GitHub CLI is not logged in. Run 'gh auth login' first.".to_string());
+        return Err(AppError::new(
+            "gh_not_logged_in",
+            "GitHub CLI is not logged in. Run 'gh auth login' first.",
+        ));
     }
 
     // 2. Resolve the selected session's file.
     let sid = store.state.lock().await.selected_session_id.clone();
     if sid.is_empty() {
-        return Err("No session selected".to_string());
+        return Err(AppError::not_found("No session selected"));
     }
     let session_file = {
         let state = store.state.lock().await;
@@ -596,7 +616,7 @@ pub async fn share_session(store: State<'_, Arc<Store>>) -> Result<String, Strin
             .and_then(|s| s.session_file.as_ref())
             .filter(|f| !f.is_empty())
             .cloned()
-            .ok_or_else(|| "session has no session file".to_string())?
+            .ok_or_else(|| AppError::not_found("session has no session file"))?
     };
 
     // 3. Export to a temp HTML file.
@@ -608,15 +628,18 @@ pub async fn share_session(store: State<'_, Arc<Store>>) -> Result<String, Strin
         .args(["gist", "create", "--public=false", &tmp.to_string_lossy()])
         .output()
         .await
-        .map_err(|e| format!("failed to run gh: {e}"))?;
+        .map_err(|e| AppError::from(format!("failed to run gh: {e}")))?;
     let _ = std::fs::remove_file(&tmp);
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-        return Err(if err.is_empty() {
-            "gh gist create failed".to_string()
-        } else {
-            err
-        });
+        return Err(AppError::new(
+            "gh_failed",
+            if err.is_empty() {
+                "gh gist create failed".to_string()
+            } else {
+                err
+            },
+        ));
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
     let url = stdout
@@ -639,8 +662,11 @@ pub async fn share_session(store: State<'_, Arc<Store>>) -> Result<String, Strin
 pub async fn get_session_tree(
     store: State<'_, Arc<Store>>,
     session_id: String,
-) -> Result<Vec<serde_json::Value>, String> {
-    store.get_session_tree_json(&session_id).await
+) -> Result<Vec<serde_json::Value>, AppError> {
+    store
+        .get_session_tree_json(&session_id)
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -649,12 +675,13 @@ pub async fn navigate_session_tree(
     store: State<'_, Arc<Store>>,
     session_id: String,
     entry_id: String,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<Vec<serde_json::Value>, AppError> {
     // `Store::navigate_session_tree` already emits the transcript update;
     // emitting here too sent every navigation twice.
     store
         .navigate_session_tree(&app, &session_id, &entry_id)
         .await
+        .map_err(AppError::from)
 }
 
 // ── Terminal ──
@@ -664,9 +691,12 @@ pub async fn terminal_start(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     cwd: Option<String>,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
-    store.terminal_start(&app, &cwd).await
+    store
+        .terminal_start(&app, &cwd)
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -674,8 +704,11 @@ pub async fn terminal_write(
     store: State<'_, Arc<Store>>,
     session_id: String,
     data: String,
-) -> Result<(), String> {
-    store.terminal_write(&session_id, &data).await
+) -> Result<(), AppError> {
+    store
+        .terminal_write(&session_id, &data)
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -684,18 +717,24 @@ pub async fn terminal_resize(
     session_id: String,
     cols: u16,
     rows: u16,
-) -> Result<(), String> {
-    store.terminal_resize(&session_id, cols, rows).await
+) -> Result<(), AppError> {
+    store
+        .terminal_resize(&session_id, cols, rows)
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
-pub async fn terminal_stop(store: State<'_, Arc<Store>>, session_id: String) -> Result<(), String> {
+pub async fn terminal_stop(
+    store: State<'_, Arc<Store>>,
+    session_id: String,
+) -> Result<(), AppError> {
     store.terminal_stop(&session_id).await;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn terminal_stop_all(store: State<'_, Arc<Store>>) -> Result<(), String> {
+pub async fn terminal_stop_all(store: State<'_, Arc<Store>>) -> Result<(), AppError> {
     store.terminal_stop_all().await;
     Ok(())
 }
@@ -708,12 +747,17 @@ pub async fn set_session_model(
     store: State<'_, Arc<Store>>,
     provider: String,
     model_id: String,
-) -> Result<DesktopState, String> {
-    store.set_session_model(&app, &provider, &model_id).await
+) -> Result<DesktopState, AppError> {
+    store
+        .set_session_model(&app, &provider, &model_id)
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
-pub async fn get_session_model(store: State<'_, Arc<Store>>) -> Result<serde_json::Value, String> {
+pub async fn get_session_model(
+    store: State<'_, Arc<Store>>,
+) -> Result<serde_json::Value, AppError> {
     Ok(store.get_session_model().await)
 }
 
@@ -722,14 +766,17 @@ pub async fn set_session_thinking_level(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     level: String,
-) -> Result<serde_json::Value, String> {
-    store.set_session_thinking_level(&app, &level).await
+) -> Result<serde_json::Value, AppError> {
+    store
+        .set_session_thinking_level(&app, &level)
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn get_session_usage(
     store: State<'_, Arc<Store>>,
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<Option<serde_json::Value>, AppError> {
     Ok(store.get_session_usage().await)
 }
 
@@ -739,7 +786,7 @@ pub async fn get_session_usage(
 pub async fn get_session_info(
     store: State<'_, Arc<Store>>,
     session_id: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     Ok(store.get_session_info(&session_id).await)
 }
 
@@ -750,10 +797,11 @@ pub async fn compact_session(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     custom_instructions: Option<String>,
-) -> Result<DesktopState, String> {
+) -> Result<DesktopState, AppError> {
     store
         .compact_session(&app, custom_instructions.as_deref())
         .await
+        .map_err(AppError::from)
 }
 
 // ── Fork / import / reload (/fork, /import, /reload) ──
@@ -763,16 +811,19 @@ pub async fn fork_session_at(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     entry_id: String,
-) -> Result<DesktopState, String> {
-    store.fork_session_at(&app, &entry_id).await
+) -> Result<DesktopState, AppError> {
+    store
+        .fork_session_at(&app, &entry_id)
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
 pub async fn clone_session(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
-) -> Result<DesktopState, String> {
-    store.clone_session(&app).await
+) -> Result<DesktopState, AppError> {
+    store.clone_session(&app).await.map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -780,19 +831,22 @@ pub async fn import_session(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     input_path: String,
-) -> Result<DesktopState, String> {
-    store.import_session(&app, &input_path).await
+) -> Result<DesktopState, AppError> {
+    store
+        .import_session(&app, &input_path)
+        .await
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
-pub async fn reload_session(store: State<'_, Arc<Store>>) -> Result<(), String> {
-    store.reload_session().await
+pub async fn reload_session(store: State<'_, Arc<Store>>) -> Result<(), AppError> {
+    store.reload_session().await.map_err(AppError::from)
 }
 
 // ── Project trust (/trust) ──
 
 #[tauri::command]
-pub async fn get_project_trust(cwd: Option<String>) -> Result<serde_json::Value, String> {
+pub async fn get_project_trust(cwd: Option<String>) -> Result<serde_json::Value, AppError> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
     Ok(crate::state::trust::get_project_trust(&cwd))
 }
@@ -801,7 +855,7 @@ pub async fn get_project_trust(cwd: Option<String>) -> Result<serde_json::Value,
 pub async fn set_project_trust(
     cwd: Option<String>,
     decision: Option<bool>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
     Ok(crate::state::trust::set_project_trust(&cwd, decision))
 }
@@ -814,7 +868,7 @@ pub async fn set_project_trust(
 pub async fn list_mcp_servers(
     store: State<'_, Arc<Store>>,
     cwd: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
     let runtime = store.mcp_snapshot().await;
     Ok(mcp::list_servers(&cwd, &runtime))
@@ -831,7 +885,7 @@ pub async fn save_mcp_server(
     config: serde_json::Value,
     scope: Option<String>,
     cwd: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
     mcp::save_server(&name, &config, scope.as_deref().unwrap_or("global"), &cwd)?;
     apply_mcp_change(&app, &store, &cwd).await
@@ -843,7 +897,7 @@ pub async fn delete_mcp_server(
     store: State<'_, Arc<Store>>,
     name: String,
     cwd: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
     mcp::delete_server(&name, &cwd)?;
     apply_mcp_change(&app, &store, &cwd).await
@@ -857,7 +911,7 @@ pub async fn update_mcp_server(
     enabled: Option<bool>,
     exposure: Option<String>,
     cwd: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
     mcp::update_server(&name, enabled, exposure.as_deref(), &cwd)?;
     apply_mcp_change(&app, &store, &cwd).await
@@ -869,9 +923,9 @@ pub async fn reconnect_mcp_server(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     name: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     store.ensure_selected_actor(&app).await?;
-    store.reconnect_mcp(&name).await
+    store.reconnect_mcp(&name).await.map_err(AppError::from)
 }
 
 /// Run the pi-rs OAuth sign-in flow, then reconnect the live connection.
@@ -881,7 +935,7 @@ pub async fn sign_in_mcp_server(
     store: State<'_, Arc<Store>>,
     name: String,
     cwd: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
     mcp::sign_in(&name, &cwd).await?;
     store.ensure_selected_actor(&app).await.ok();
@@ -892,7 +946,7 @@ pub async fn sign_in_mcp_server(
 
 /// Tail of `mcp.log` for one server.
 #[tauri::command]
-pub async fn get_mcp_log(name: String, limit: Option<usize>) -> Result<String, String> {
+pub async fn get_mcp_log(name: String, limit: Option<usize>) -> Result<String, AppError> {
     Ok(mcp::read_log(&name, limit.unwrap_or(200)))
 }
 
@@ -901,7 +955,7 @@ async fn apply_mcp_change(
     app: &AppHandle,
     store: &State<'_, Arc<Store>>,
     cwd: &str,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     let restart = store.restart_selected_actor(app).await;
     let runtime = store.mcp_snapshot().await;
     let mut payload = mcp::list_servers(cwd, &runtime);
@@ -916,7 +970,9 @@ async fn apply_mcp_change(
 
 /// `provider/modelId` patterns persisted in `ui-state.json`.
 #[tauri::command]
-pub async fn get_scoped_models(store: State<'_, Arc<Store>>) -> Result<serde_json::Value, String> {
+pub async fn get_scoped_models(
+    store: State<'_, Arc<Store>>,
+) -> Result<serde_json::Value, AppError> {
     let state = store.state.lock().await;
     Ok(serde_json::json!({
         "patterns": state.global_model_settings.enabled_model_patterns,
@@ -931,7 +987,7 @@ pub async fn set_scoped_models(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     patterns: Vec<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     store
         .mutate(&app, |state| {
             state.global_model_settings.enabled_model_patterns = patterns;
@@ -955,9 +1011,9 @@ pub async fn cycle_scoped_model(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     direction: String,
-) -> Result<Option<serde_json::Value>, String> {
+) -> Result<Option<serde_json::Value>, AppError> {
     store.ensure_selected_actor(&app).await?;
-    store.cycle_model(&direction).await
+    store.cycle_model(&direction).await.map_err(AppError::from)
 }
 
 // ── Full-text session search ──
@@ -969,7 +1025,7 @@ pub async fn search_sessions(
     store: State<'_, Arc<Store>>,
     query: String,
     limit: Option<usize>,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<Vec<serde_json::Value>, AppError> {
     if query.trim().is_empty() {
         return Ok(Vec::new());
     }
@@ -994,7 +1050,7 @@ pub async fn search_sessions(
         crate::state::session::search_session_texts(&sessions, &query, limit)
     })
     .await
-    .map_err(|error| error.to_string())
+    .map_err(|error| AppError::from(error.to_string()))
 }
 
 // ── Built-in extensions ──
@@ -1007,7 +1063,7 @@ pub async fn set_extension_enabled(
     store: State<'_, Arc<Store>>,
     name: String,
     enabled: bool,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     crate::state::extensions::set_extension_enabled(&name, enabled)?;
     let restart = store.restart_selected_actor(&app).await;
     let mut out = serde_json::json!({ "applied": restart.is_ok() });
@@ -1024,9 +1080,9 @@ pub async fn get_mcp_resources(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
     name: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     store.ensure_selected_actor(&app).await?;
-    store.mcp_resources(&name).await
+    store.mcp_resources(&name).await.map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -1035,17 +1091,20 @@ pub async fn read_mcp_resource(
     store: State<'_, Arc<Store>>,
     name: String,
     uri: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, AppError> {
     store.ensure_selected_actor(&app).await?;
-    store.read_mcp_resource(&name, &uri).await
+    store
+        .read_mcp_resource(&name, &uri)
+        .await
+        .map_err(AppError::from)
 }
 
 // ── Open files in the external editor ──
 
 #[tauri::command]
-pub async fn open_file(path: String, cwd: Option<String>) -> Result<(), String> {
+pub async fn open_file(path: String, cwd: Option<String>) -> Result<(), AppError> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
-    crate::state::files::open_in_editor(&path, &cwd)
+    crate::state::files::open_in_editor(&path, &cwd).map_err(AppError::from)
 }
 
 // ── Prompt templates ──
@@ -1054,7 +1113,7 @@ pub async fn open_file(path: String, cwd: Option<String>) -> Result<(), String> 
 pub async fn list_prompt_templates(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<Vec<serde_json::Value>, AppError> {
     // The selected session's actor may not exist yet (fresh launch).
     store.ensure_selected_actor(&app).await.ok();
     Ok(store.list_prompt_templates().await)
@@ -1063,7 +1122,7 @@ pub async fn list_prompt_templates(
 // ── In-app text preview ──
 
 #[tauri::command]
-pub async fn read_text_file(path: String, cwd: Option<String>) -> Result<String, String> {
+pub async fn read_text_file(path: String, cwd: Option<String>) -> Result<String, AppError> {
     let cwd = crate::state::cwd::resolve_session_cwd(cwd.as_deref());
     crate::state::files::read_text_file(&path, &cwd)
 }

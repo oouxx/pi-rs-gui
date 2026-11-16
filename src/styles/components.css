@@ -24,3 +24,63 @@
   opacity: 0.5;
   border-radius: 2px;
 }
+
+/* Syntax tokens (highlight.js) — colors live in src/styles/theme.css */
+.md-code .hljs-comment,
+.md-code .hljs-quote {
+  color: var(--code-comment);
+  font-style: italic;
+}
+.md-code .hljs-keyword,
+.md-code .hljs-selector-tag,
+.md-code .hljs-literal,
+.md-code .hljs-section,
+.md-code .hljs-link {
+  color: var(--code-keyword);
+}
+.md-code .hljs-string,
+.md-code .hljs-title.class_,
+.md-code .hljs-regexp,
+.md-code .hljs-addition,
+.md-code .hljs-attribute,
+.md-code .hljs-meta .hljs-string {
+  color: var(--code-string);
+}
+.md-code .hljs-number,
+.md-code .hljs-symbol,
+.md-code .hljs-bullet,
+.md-code .hljs-variable,
+.md-code .hljs-template-variable {
+  color: var(--code-number);
+}
+.md-code .hljs-title,
+.md-code .hljs-title.function_,
+.md-code .hljs-built_in,
+.md-code .hljs-name,
+.md-code .hljs-selector-id,
+.md-code .hljs-selector-class {
+  color: var(--code-function);
+}
+.md-code .hljs-type,
+.md-code .hljs-class .hljs-title,
+.md-code .hljs-params,
+.md-code .hljs-attr,
+.md-code .hljs-property,
+.md-code .hljs-tag {
+  color: var(--code-type);
+}
+.md-code .hljs-operator,
+.md-code .hljs-punctuation,
+.md-code .hljs-subst,
+.md-code .hljs-meta {
+  color: var(--code-operator);
+}
+.md-code .hljs-deletion {
+  color: var(--destructive);
+}
+.md-code .hljs-emphasis {
+  font-style: italic;
+}
+.md-code .hljs-strong {
+  font-weight: 600;
+}

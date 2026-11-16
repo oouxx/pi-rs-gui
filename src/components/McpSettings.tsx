@@ -53,6 +53,7 @@ import type {
   McpServerInfo,
 } from "@/api/types";
 import { useI18n, type TranslationKey } from "@/i18n";
+import { errorText } from "@/lib/errors";
 
 const EXPOSURES: { value: McpExposure; labelKey: TranslationKey }[] = [
   { value: "codemode", labelKey: "mcp.exposureCodemode" },
@@ -290,7 +291,7 @@ export default function McpSettings() {
       setData(view);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -329,7 +330,7 @@ export default function McpSettings() {
     (title: string, e: unknown) => {
       toast({
         title,
-        description: e instanceof Error ? e.message : String(e),
+        description: errorText(e),
         variant: "error",
       });
     },
@@ -459,7 +460,7 @@ export default function McpSettings() {
     try {
       setResourcesData(await getMcpResources(server.name));
     } catch (e) {
-      setResourcesError(e instanceof Error ? e.message : String(e));
+      setResourcesError(errorText(e));
     } finally {
       setResourcesLoading(false);
     }
@@ -479,7 +480,7 @@ export default function McpSettings() {
         );
         setResourceContents(result.contents ?? []);
       } catch (e) {
-        setResourcesError(e instanceof Error ? e.message : String(e));
+        setResourcesError(errorText(e));
       } finally {
         setResourceLoading(false);
       }

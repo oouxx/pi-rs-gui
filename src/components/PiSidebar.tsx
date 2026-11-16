@@ -59,6 +59,7 @@ import type { SessionSearchResult } from "@/api/types";
 import { matchesBinding, useKeybindings } from "@/lib/keybindings";
 import { useI18n } from "@/i18n";
 import type { AppView } from "./AppShell";
+import { errorText } from "@/lib/errors";
 
 interface PiSidebarProps {
   mode: AppView;
@@ -260,7 +261,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             toast({
               variant: "error",
               title: t("sidebar.createFailed"),
-              description: e instanceof Error ? e.message : String(e),
+              description: errorText(e),
             });
           });
       }
@@ -371,7 +372,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
         toast({
           variant: "error",
           title: t("sidebar.deleteFailed"),
-          description: e instanceof Error ? e.message : String(e),
+          description: errorText(e),
         });
       } finally {
         setDeleting(false);
@@ -393,7 +394,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
         toast({
           variant: "error",
           title: t("sidebar.archiveFailed"),
-          description: e instanceof Error ? e.message : String(e),
+          description: errorText(e),
         });
       }
     },
@@ -408,7 +409,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
       toast({
         variant: "error",
         title: t("sidebar.abortFailed"),
-        description: e instanceof Error ? e.message : String(e),
+        description: errorText(e),
       });
     }
   }, [t, toast]);
@@ -422,7 +423,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           toast({
             variant: "error",
             title: t("sidebar.renameFailed"),
-            description: e instanceof Error ? e.message : String(e),
+            description: errorText(e),
           });
         });
       }
@@ -482,7 +483,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
         toast({
           variant: "error",
           title: t("sidebar.exportFailed"),
-          description: e instanceof Error ? e.message : String(e),
+          description: errorText(e),
         });
       }
     },
@@ -535,7 +536,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                     toast({
                       variant: "error",
                       title: t("sidebar.openSessionFailed"),
-                      description: e instanceof Error ? e.message : String(e),
+                      description: errorText(e),
                     });
                   });
                 }}
@@ -733,7 +734,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                   toast({
                     variant: "error",
                     title: t("sidebar.createFailed"),
-                    description: e instanceof Error ? e.message : String(e),
+                    description: errorText(e),
                   });
                 }
               }}
@@ -802,7 +803,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                           variant: "error",
                           title: t("sidebar.openSessionFailed"),
                           description:
-                            e instanceof Error ? e.message : String(e),
+                            errorText(e),
                         }),
                       );
                     }}

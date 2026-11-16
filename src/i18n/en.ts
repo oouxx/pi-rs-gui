@@ -240,6 +240,7 @@ const en = {
   "terminal.closePanel": "Close terminal panel",
   "terminal.starting": "Starting shell…",
   "terminal.startFailed": "Failed to start terminal",
+  "thinking.thinking": "Thinking",
   "thinking.reasoning": "reasoning",
   "thinkingLevel.off": "Off",
   "thinkingLevel.minimal": "Minimal",
@@ -270,6 +271,7 @@ const en = {
   "timeline.rewindTitle": "Rewind to this checkpoint?",
   "timeline.rewindDescription": "The conversation continues from this point. Later messages stay in the session tree and can be restored.",
   "timeline.fork": "Fork",
+  "timeline.navigateFailed": "Could not switch version",
   "timeline.forked": "Session forked",
   "timeline.latest": "Latest",
   "timeline.showAll": "Show all events",
@@ -380,6 +382,8 @@ const en = {
   "chat.findInChat": "Find in chat…",
   "chat.prevMatch": "Previous match (Shift+Enter)",
   "chat.nextMatch": "Next match (Enter)",
+  "chat.mermaidDiagram": "Preview",
+  "chat.mermaidSource": "Show source",
   "chat.closeFind": "Close (Esc)",
   "chat.trustTitle": "Project trust",
   "chat.trustCurrent": "Current:",
@@ -504,6 +508,18 @@ const en = {
   "mcp.deleteFailed": "Delete failed",
   "mcp.logFailed": "Failed to read log",
   "mcp.saveFailed": "Failed to save server",
+  "error.fileOutsideRoots":
+    "File is outside the workspace and configured skill/prompt directories",
+  "error.tooLarge":
+    "File is too large to preview (max 1 MB)",
+  "error.notUtf8":
+    "File is not valid UTF-8 text",
+  "error.notAFile":
+    "Not a file",
+  "error.ghMissing":
+    "GitHub CLI (gh) is not installed",
+  "error.ghNotLoggedIn":
+    "GitHub CLI is not logged in. Run `gh auth login` first",
 } as const;
 
 export type TranslationKey = keyof typeof en;

@@ -36,6 +36,7 @@ import {
   type StreamDelta,
 } from "../hooks/message-reducer";
 import { showToast } from "../components/ui/toast";
+import { parseError } from "../lib/errors";
 
 export interface SessionItem {
   id: string;
@@ -124,7 +125,7 @@ async function notifyBackground(title: string, body: string) {
 }
 
 function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return parseError(error).message;
 }
 
 export interface ChatState {

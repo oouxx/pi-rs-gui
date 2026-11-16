@@ -240,6 +240,7 @@ const zh: Record<TranslationKey, string> = {
   "terminal.closePanel": "关闭终端面板",
   "terminal.starting": "正在启动 shell…",
   "terminal.startFailed": "启动终端失败",
+  "thinking.thinking": "正在思考",
   "thinking.reasoning": "思考过程",
   "thinkingLevel.off": "关闭",
   "thinkingLevel.minimal": "最小",
@@ -270,6 +271,7 @@ const zh: Record<TranslationKey, string> = {
   "timeline.rewindTitle": "回退到此检查点？",
   "timeline.rewindDescription": "对话将从这里继续；后续消息仍保留在会话树中，可以恢复。",
   "timeline.fork": "分叉",
+  "timeline.navigateFailed": "切换版本失败",
   "timeline.forked": "会话已分叉",
   "timeline.latest": "最新",
   "timeline.showAll": "显示全部事件",
@@ -379,6 +381,8 @@ const zh: Record<TranslationKey, string> = {
   "chat.findInChat": "在对话中查找…",
   "chat.prevMatch": "上一个匹配 (Shift+Enter)",
   "chat.nextMatch": "下一个匹配 (Enter)",
+  "chat.mermaidDiagram": "图形",
+  "chat.mermaidSource": "查看源码",
   "chat.closeFind": "关闭 (Esc)",
   "chat.trustTitle": "项目信任",
   "chat.trustCurrent": "当前：",
@@ -503,6 +507,18 @@ const zh: Record<TranslationKey, string> = {
   "mcp.deleteFailed": "删除失败",
   "mcp.logFailed": "读取日志失败",
   "mcp.saveFailed": "保存服务器失败",
+  "error.fileOutsideRoots":
+    "文件不在工作区或已配置的技能/提示词目录内",
+  "error.tooLarge":
+    "文件过大，无法预览（上限 1 MB）",
+  "error.notUtf8":
+    "文件不是合法的 UTF-8 文本",
+  "error.notAFile":
+    "不是文件",
+  "error.ghMissing":
+    "未安装 GitHub CLI（gh）",
+  "error.ghNotLoggedIn":
+    "GitHub CLI 未登录，请先运行 `gh auth login`",
 };
 
 export default zh;

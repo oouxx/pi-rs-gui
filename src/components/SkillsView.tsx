@@ -29,6 +29,7 @@ import {
   readTextFile,
 } from "@/api/commands";
 import type { PromptTemplateInfo } from "@/api/types";
+import { errorText } from "@/lib/errors";
 
 interface Skill {
   name: string;
@@ -83,7 +84,7 @@ export default function SkillsView() {
       setSkills((items ?? []) as Skill[]);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setLoading(false);
     }
@@ -121,7 +122,7 @@ export default function SkillsView() {
       setPrompts((await listPromptTemplates()) ?? []);
       setPromptsError(null);
     } catch (e) {
-      setPromptsError(e instanceof Error ? e.message : String(e));
+      setPromptsError(errorText(e));
     } finally {
       setPromptsLoading(false);
     }
@@ -152,7 +153,7 @@ export default function SkillsView() {
         const content = await readTextFile(path, cwd);
         setPreview((prev) => (prev ? { ...prev, content } : prev));
       } catch (e) {
-        setPreviewError(e instanceof Error ? e.message : String(e));
+        setPreviewError(errorText(e));
       } finally {
         setPreviewLoading(false);
       }
@@ -168,7 +169,7 @@ export default function SkillsView() {
         toast({
           variant: "error",
           title: t("skills.failedToOpen"),
-          description: e instanceof Error ? e.message : String(e),
+          description: errorText(e),
         });
       }
     },
