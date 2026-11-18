@@ -142,8 +142,8 @@ export default function PickModel({
     return (
       <button
         key={`${m.providerId}/${m.modelId}`}
-        className={`flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-xs transition-colors ${
-          isSelected ? "bg-primary/10 text-foreground" : "hover:bg-muted"
+        className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors ${
+          isSelected ? "bg-primary/10 text-foreground" : "hover:bg-muted/70"
         }`}
         onClick={() => handleSelect(m)}
         onMouseEnter={() => setSelIdx(results.indexOf(m))}
@@ -164,24 +164,24 @@ export default function PickModel({
   return (
     <div className="relative" ref={ref}>
       <div className="relative">
-        <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+        <Search className="text-subtle-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
         <Input
           value={query}
           onChange={handleChange}
           onFocus={() => setShow(true)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder ?? t("models.typeToSearch")}
-          className="h-8 pl-8 text-xs"
+          className="border-hairline placeholder:text-subtle-foreground h-8 rounded-lg pl-8 text-[12.5px] md:text-[12.5px]"
         />
       </div>
       {show && groups.length > 0 && (
-        <div className="border-hairline bg-popover absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border p-1 shadow-md">
+        <div className="border-hairline bg-popover absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border p-1 shadow-md">
           {groups.map(([pid, items]) => {
             const prov = providerMap.get(pid)
             return (
               <div key={pid}>
                 {!query.trim() && (
-                  <div className="text-muted-foreground px-3 pt-2 pb-1 text-[10px] font-semibold tracking-wide uppercase">
+                  <div className="text-subtle-foreground px-2.5 pt-2 pb-1 text-[9.5px] font-semibold tracking-[0.08em] uppercase">
                     {prov?.name ?? pid}
                   </div>
                 )}
@@ -192,12 +192,12 @@ export default function PickModel({
         </div>
       )}
       {show && query.trim() && results.length === 0 && (
-        <div className="bg-popover border-hairline absolute z-50 mt-1 w-full rounded-lg border p-3 text-center text-xs text-muted-foreground shadow-md">
+        <div className="bg-popover border-hairline text-subtle-foreground absolute z-50 mt-1 w-full rounded-xl border p-3 text-center text-[11.5px] shadow-md">
           {t("models.noMatchQuery", { query })}
         </div>
       )}
       {show && !query.trim() && models.length === 0 && (
-        <div className="bg-popover border-hairline absolute z-50 mt-1 w-full rounded-lg border p-3 text-center text-xs text-muted-foreground shadow-md">
+        <div className="bg-popover border-hairline text-subtle-foreground absolute z-50 mt-1 w-full rounded-xl border p-3 text-center text-[11.5px] shadow-md">
           {t("models.noModels")}
         </div>
       )}

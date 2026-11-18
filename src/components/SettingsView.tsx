@@ -21,9 +21,12 @@ import {
   FolderOpen,
   FolderPlus,
   Info,
+  Keyboard,
   Loader2,
   Puzzle,
   RefreshCw,
+  Server,
+  SlidersHorizontal,
   Trash2,
   X,
   Bot,
@@ -69,13 +72,13 @@ import { useSettingsStore } from "@/stores/settings";
 import { errorText } from "@/lib/errors";
 
 const settingsTabs = [
-  { id: "general", labelKey: "settings.general" },
-  { id: "models", labelKey: "settings.models" },
-  { id: "mcp", labelKey: "settings.mcp" },
-  { id: "skills", labelKey: "settings.skills" },
-  { id: "extensions", labelKey: "settings.extensions" },
-  { id: "keybindings", labelKey: "settings.keybindings" },
-  { id: "about", labelKey: "settings.about" },
+  { id: "general", labelKey: "settings.general", icon: SlidersHorizontal },
+  { id: "models", labelKey: "settings.models", icon: Bot },
+  { id: "mcp", labelKey: "settings.mcp", icon: Server },
+  { id: "skills", labelKey: "settings.skills", icon: BookOpen },
+  { id: "extensions", labelKey: "settings.extensions", icon: Puzzle },
+  { id: "keybindings", labelKey: "settings.keybindings", icon: Keyboard },
+  { id: "about", labelKey: "settings.about", icon: Info },
 ] as const;
 
 function Row({
@@ -88,10 +91,14 @@ function Row({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-6 py-3">
+    <div className="border-hairline flex items-center justify-between gap-6 border-b py-3.5 last:border-b-0">
       <div className="min-w-0">
-        <div className="text-sm font-medium text-foreground">{label}</div>
-        {hint && <div className="text-muted-foreground mt-0.5 text-xs">{hint}</div>}
+        <div className="text-foreground text-[13px] font-medium">{label}</div>
+        {hint && (
+          <div className="text-muted-foreground mt-1 max-w-[440px] text-[11.5px] leading-[1.6]">
+            {hint}
+          </div>
+        )}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -162,7 +169,7 @@ function PathList({
     <div className="space-y-1.5">
       {paths.map((path) => (
         <div key={path} className="flex items-center gap-2">
-          <span className="text-muted-foreground flex-1 truncate font-mono text-xs">
+          <span className="text-muted-foreground flex-1 truncate font-mono text-[11.5px]">
             {path}
           </span>
           <Button
@@ -177,7 +184,7 @@ function PathList({
       ))}
       <div className="flex items-center gap-1.5">
         <Input
-          className="h-8 flex-1 font-mono text-xs"
+          className="h-8 flex-1 font-mono text-[11.5px] md:text-[11.5px]"
           value={draft}
           placeholder={placeholder}
           onChange={(e) => setDraft(e.target.value)}
@@ -218,17 +225,17 @@ function GeneralTab() {
 
   if (!settings) {
     return (
-      <div className="text-muted-foreground p-8 text-sm">
+      <div className="text-subtle-foreground flex items-center gap-2 py-10 text-[12px]">
         {t("settings.loading")}
       </div>
     );
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.appearance")}</h3>
-        <Separator className="my-2" />
+        <h3 className="text-muted-foreground mb-2 text-[10.5px] font-semibold tracking-[0.1em] uppercase">{t("settings.appearance")}</h3>
+        <Separator className="bg-hairline my-3" />
         <Row label={t("settings.appTheme")} hint={t("settings.appThemeHint")}>
           <Select
             value={preference}
@@ -266,8 +273,8 @@ function GeneralTab() {
       </section>
 
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.behavior")}</h3>
-        <Separator className="my-2" />
+        <h3 className="text-muted-foreground mb-2 text-[10.5px] font-semibold tracking-[0.1em] uppercase">{t("settings.behavior")}</h3>
+        <Separator className="bg-hairline my-3" />
         <ToggleRow
           label={t("settings.autoCompact")}
           hint={t("settings.autoCompactHint")}
@@ -347,8 +354,8 @@ function GeneralTab() {
       </section>
 
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.model")}</h3>
-        <Separator className="my-2" />
+        <h3 className="text-muted-foreground mb-2 text-[10.5px] font-semibold tracking-[0.1em] uppercase">{t("settings.model")}</h3>
+        <Separator className="bg-hairline my-3" />
         <Row label={t("settings.defaultThinking")} hint={t("settings.defaultThinkingHint")}>
           <ThinkingLevelSelect
             value={settings.defaultThinkingLevel}
@@ -366,8 +373,8 @@ function GeneralTab() {
       </section>
 
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.shell")}</h3>
-        <Separator className="my-2" />
+        <h3 className="text-muted-foreground mb-2 text-[10.5px] font-semibold tracking-[0.1em] uppercase">{t("settings.shell")}</h3>
+        <Separator className="bg-hairline my-3" />
         <Row
           label={t("settings.shellPath")}
           hint={t("settings.shellPathHint")}
@@ -393,8 +400,8 @@ function GeneralTab() {
       </section>
 
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.advanced")}</h3>
-        <Separator className="my-2" />
+        <h3 className="text-muted-foreground mb-2 text-[10.5px] font-semibold tracking-[0.1em] uppercase">{t("settings.advanced")}</h3>
+        <Separator className="bg-hairline my-3" />
         <Row
           label={t("settings.transport")}
           hint={t("settings.transportHint")}
@@ -464,10 +471,10 @@ function GeneralTab() {
       </section>
 
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">
+        <h3 className="text-muted-foreground mb-2 text-[10.5px] font-semibold tracking-[0.1em] uppercase">
           {t("settings.skillsPrompts")}
         </h3>
-        <Separator className="my-2" />
+        <Separator className="bg-hairline my-3" />
         <ToggleRow
           label={t("settings.enableSkillCommands")}
           hint={t("settings.enableSkillCommandsHint")}
@@ -580,10 +587,10 @@ function AboutTab() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">pi-gui-rs</h3>
-        <Separator className="my-2" />
+        <h3 className="text-muted-foreground mb-2 text-[10.5px] font-semibold tracking-[0.1em] uppercase">pi-gui-rs</h3>
+        <Separator className="bg-hairline my-3" />
         <Row label={t("settings.appVersion")} hint={t("settings.appVersionHint")}>
           <span className="font-mono text-xs">{settings?.version ?? "—"}</span>
         </Row>
@@ -599,10 +606,10 @@ function AboutTab() {
       </section>
 
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">
+        <h3 className="text-muted-foreground mb-2 text-[10.5px] font-semibold tracking-[0.1em] uppercase">
           {t("updates.title")}
         </h3>
-        <Separator className="my-2" />
+        <Separator className="bg-hairline my-3" />
         <Row label={t("updates.currentVersion")} hint="pi-gui-rs">
           <span className="font-mono text-xs">{settings?.version ?? "—"}</span>
         </Row>
@@ -634,8 +641,8 @@ function AboutTab() {
         )}
 
         {updateInfo && (
-          <div className="border-hairline mt-2 rounded-lg border p-3">
-            <div className="text-foreground text-sm font-medium">
+          <div className="border-hairline mt-2 rounded-xl border p-4">
+            <div className="text-foreground text-[13px] font-medium">
               {t("updates.available", { version: updateInfo.version })}
             </div>
             {updateInfo.date && (
@@ -685,14 +692,14 @@ function AboutTab() {
       </section>
 
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.paths")}</h3>
-        <Separator className="my-2" />
+        <h3 className="text-muted-foreground mb-2 text-[10.5px] font-semibold tracking-[0.1em] uppercase">{t("settings.paths")}</h3>
+        <Separator className="bg-hairline my-3" />
         {rows.map((r) => (
           <Row key={r.label} label={r.label}>
             {r.value ? (
               <button
                 type="button"
-                className="text-muted-foreground hover:text-foreground flex max-w-[420px] items-center gap-1.5 rounded px-1.5 py-0.5 font-mono text-xs transition-colors"
+                className="text-muted-foreground hover:bg-muted hover:text-foreground flex max-w-[420px] items-center gap-1.5 rounded-md px-2 py-1 font-mono text-[11.5px] transition-colors"
                 onClick={() => showPath(r.value)}
                 title={t("settings.revealInFinder")}
               >
@@ -761,15 +768,15 @@ function SkillsTab() {
 
   if (!settings) {
     return (
-      <div className="text-muted-foreground p-8 text-sm">{t("settings.loading")}</div>
+      <div className="text-subtle-foreground flex items-center gap-2 py-10 text-[12px]">{t("settings.loading")}</div>
     );
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">{t("settings.discovery")}</h3>
-        <Separator className="my-2" />
+        <h3 className="text-muted-foreground mb-2 text-[10.5px] font-semibold tracking-[0.1em] uppercase">{t("settings.discovery")}</h3>
+        <Separator className="bg-hairline my-3" />
         <ToggleRow
           label={t("settings.skillSlashCommands")}
           hint={t("settings.skillSlashCommandsHint")}
@@ -788,28 +795,28 @@ function SkillsTab() {
       </section>
 
       <section>
-        <h3 className="mb-1 text-sm font-medium text-foreground">
+        <h3 className="text-muted-foreground mb-2 text-[10.5px] font-semibold tracking-[0.1em] uppercase">
           {t("settings.customSkillPaths")}
         </h3>
-        <Separator className="my-2" />
-        <p className="text-muted-foreground mb-3 text-xs leading-relaxed">
+        <Separator className="bg-hairline my-3" />
+        <p className="text-muted-foreground mb-3 text-[11.5px] leading-[1.6]">
           {t("settings.customSkillPathsHint")}
         </p>
         {settings.skillPaths.length === 0 ? (
-          <p className="text-muted-foreground text-xs">No custom paths configured.</p>
+          <p className="text-subtle-foreground text-[11.5px]">No custom paths configured.</p>
         ) : (
           <div className="flex flex-col gap-1.5">
             {settings.skillPaths.map((path) => (
               <div
                 key={path}
-                className="border-hairline bg-card flex items-center gap-2 rounded-md border px-3 py-2"
+                className="border-hairline bg-card hover:bg-muted/30 flex items-center gap-2 rounded-xl border px-3 py-2.5 transition-colors"
               >
-                <span className="text-foreground/80 min-w-0 flex-1 truncate font-mono text-xs">
+                <span className="text-foreground/80 min-w-0 flex-1 truncate font-mono text-[11.5px]">
                   {path}
                 </span>
                 <button
                   type="button"
-                  className="text-muted-foreground hover:text-destructive shrink-0 rounded p-1 transition-colors"
+                  className="text-subtle-foreground hover:bg-destructive/10 hover:text-destructive shrink-0 rounded-md p-1 transition-colors"
                   onClick={() => removePath(path)}
                   title={t("settings.removePath")} aria-label={t("settings.removePath")}
                 >
@@ -822,7 +829,7 @@ function SkillsTab() {
         <button
           type="button"
           disabled={adding}
-          className="text-primary hover:bg-primary/10 mt-3 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors disabled:opacity-50"
+          className="text-primary hover:bg-primary/10 mt-3 inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] transition-colors disabled:opacity-50"
           onClick={addPath}
         >
           <FolderPlus className="size-3.5" />
@@ -996,7 +1003,7 @@ function ExtensionsTab() {
 
   if (loading) {
     return (
-      <div className="text-muted-foreground p-8 text-sm">
+      <div className="text-subtle-foreground flex items-center gap-2 py-10 text-[12px]">
         {t("common.loading")}
       </div>
     );
@@ -1014,16 +1021,16 @@ function ExtensionsTab() {
   }
 
   return (
-    <div className="space-y-6">
-      <p className="text-muted-foreground text-xs leading-relaxed">
+    <div className="space-y-8">
+      <p className="text-muted-foreground text-[11.5px] leading-[1.6]">
         {t("settings.extensionsHint")}
       </p>
       {extensions.length === 0 ? (
-        <p className="text-muted-foreground text-xs">
+        <p className="text-subtle-foreground text-[11.5px]">
           {t("settings.noExtensions")}
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {extensions.map((extension) => {
             const meta = EXTENSION_META[extension.name];
             const isWebSearch = extension.name === "web_search";
@@ -1038,17 +1045,17 @@ function ExtensionsTab() {
             return (
               <div
                 key={extension.name}
-                className={`border-hairline bg-card flex flex-col gap-2 rounded-lg border p-3 ${
+                className={`border-hairline bg-card flex flex-col gap-2 rounded-xl border p-3.5 ${
                   extension.enabled ? "" : "opacity-70"
                 }`}
               >
                 <div className="flex items-start gap-2.5">
-                  <span className="bg-muted text-muted-foreground mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md">
+                  <span className="bg-muted text-muted-foreground mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg">
                     {meta?.icon ?? <Puzzle className="size-3.5" />}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-foreground text-sm font-medium">
+                      <span className="text-foreground text-[13px] font-medium">
                         {meta ? t(meta.titleKey) : extension.name}
                       </span>
                       {isWebSearch && webSearch && (
@@ -1058,7 +1065,7 @@ function ExtensionsTab() {
                       )}
                     </div>
                     {meta && (
-                      <p className="text-muted-foreground mt-0.5 text-[11px] leading-relaxed">
+                      <p className="text-muted-foreground mt-1 text-[11.5px] leading-[1.6]">
                         {t(meta.descriptionKey)}
                       </p>
                     )}
@@ -1081,7 +1088,7 @@ function ExtensionsTab() {
                     {extension.tools.map((tool) => (
                       <span
                         key={tool}
-                        className="bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono text-[10px]"
+                        className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 font-mono text-[10px]"
                       >
                         {tool}
                       </span>
@@ -1092,7 +1099,7 @@ function ExtensionsTab() {
                 {extension.commands.map((command) => (
                   <div
                     key={command.name}
-                    className="flex items-baseline gap-2 pl-[2.125rem] text-[11px]"
+                    className="flex items-baseline gap-2 pl-[2.375rem] text-[11.5px]"
                   >
                     <span className="text-foreground/90 font-mono">
                       /{command.name}
@@ -1106,8 +1113,8 @@ function ExtensionsTab() {
                 ))}
 
                 {extension.name === "subagent" && (
-                  <div className="flex flex-col gap-1 pl-[2.125rem]">
-                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <div className="flex flex-col gap-1 pl-[2.375rem]">
+                    <div className="flex flex-wrap items-center gap-2 text-[11.5px]">
                       <span
                         className="text-muted-foreground truncate font-mono"
                         title={agentDir ? `${agentDir}/agents` : ""}
@@ -1155,7 +1162,7 @@ function ExtensionsTab() {
                       </p>
                     )}
                     {showWebSearchSettings && (
-                      <div className="border-hairline flex flex-col gap-2 border-t pt-2">
+                      <div className="border-hairline flex flex-col gap-2 border-t pt-3">
                         <div className="grid gap-2 sm:grid-cols-2">
                           <label className="flex flex-col gap-1">
                             <span className="text-muted-foreground text-[11px]">
@@ -1326,7 +1333,7 @@ function KeybindingsTab() {
   }, [recording, setBinding, t]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-start justify-between gap-4">
         <p className="text-muted-foreground text-xs leading-relaxed">
           {t("keybindings.hint")}
@@ -1350,9 +1357,9 @@ function KeybindingsTab() {
         {KEYBINDING_DEFINITIONS.map((definition) => (
           <div
             key={definition.id}
-            className="flex items-center justify-between gap-6 py-1.5"
+            className="border-hairline flex items-center justify-between gap-6 border-b py-2.5 last:border-b-0"
           >
-            <span className="text-foreground text-sm">
+            <span className="text-foreground text-[13px]">
               {KEYBINDING_LABEL_KEYS[definition.id]
                 ? t(KEYBINDING_LABEL_KEYS[definition.id])
                 : definition.label}
@@ -1382,19 +1389,19 @@ function KeybindingsTab() {
         ))}
       </div>
 
-      <Separator />
+      <Separator className="bg-hairline" />
 
       <div>
-        <h3 className="text-foreground mb-2 text-sm font-medium">
+        <h3 className="text-muted-foreground mb-2 text-[10.5px] font-semibold tracking-[0.1em] uppercase">
           {t("keybindings.fixed")}
         </h3>
         <div className="flex flex-col gap-1">
           {FIXED_KEYBINDINGS.map((binding) => (
             <div
               key={binding.actionKey}
-              className="flex items-center justify-between gap-6 py-1.5"
+              className="border-hairline flex items-center justify-between gap-6 border-b py-2.5 last:border-b-0"
             >
-              <span className="text-foreground text-sm">
+              <span className="text-foreground text-[13px]">
                 {t(binding.actionKey)}
               </span>
               <span className="flex items-center gap-1">
@@ -1425,35 +1432,39 @@ export default function SettingsView({
   return (
     <div className="flex h-full max-h-screen min-w-0 flex-1 flex-col">
       {/* Top bar */}
-      <div className="border-hairline flex items-center gap-3 border-b px-4 py-1.5">
-        <SidebarTrigger className="shrink-0" />
-        <div className="text-foreground text-sm font-medium">{t("settings.title")}</div>
+      <div className="border-hairline flex h-12 shrink-0 items-center gap-1.5 border-b px-3">
+        <SidebarTrigger className="text-subtle-foreground hover:text-foreground -ml-1 size-7 shrink-0" />
+        <div className="text-foreground text-[13px] font-medium">{t("settings.title")}</div>
       </div>
 
       {/* Two-panel body */}
       <div className="flex min-h-0 flex-1">
         {/* Left — tabs list */}
-        <div className="border-hairline w-56 shrink-0 border-r p-3">
-          <nav className="flex flex-col gap-1">
-            {settingsTabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`rounded-md px-3 py-1.5 text-left text-sm transition-colors ${
-                  activeTab === tab.id
-                    ? "bg-accent text-accent-foreground font-medium"
-                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                }`}
-              >
-                {t(tab.labelKey)}
-              </button>
-            ))}
+        <div className="border-hairline w-52 shrink-0 border-r p-2">
+          <nav className="flex flex-col gap-0.5">
+            {settingsTabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex h-8 items-center gap-2.5 rounded-lg px-2 text-left text-[13px] transition-colors ${
+                    activeTab === tab.id
+                      ? "bg-accent text-accent-foreground font-medium"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="size-3.5 shrink-0" />
+                  <span className="truncate">{t(tab.labelKey)}</span>
+                </button>
+              );
+            })}
           </nav>
         </div>
 
         {/* Right — settings content */}
         <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-          <div className="mx-auto w-full max-w-2xl px-8 py-8">
+          <div className="mx-auto w-full max-w-[720px] px-8 py-8">
             <motion.div
               key={activeTab}
               {...enter}
@@ -1474,8 +1485,8 @@ export default function SettingsView({
                 ) : activeTab === "about" ? (
                   <AboutTab />
                 ) : (
-                  <div className="border-hairline flex items-center justify-center rounded-lg border p-16">
-                    <p className="text-muted-foreground text-xs">
+                  <div className="border-hairline flex items-center justify-center rounded-xl border p-16">
+                    <p className="text-muted-foreground text-[12px]">
                       {activeTab} settings — coming soon
                     </p>
                   </div>

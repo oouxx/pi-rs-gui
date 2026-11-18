@@ -213,7 +213,7 @@ function TerminalInstance({ sessionId }: { sessionId: string }) {
           blank screen doesn't look frozen. */}
       {!hasOutput && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span className="text-muted-foreground animate-pulse text-xs">
+          <span className="text-subtle-foreground animate-pulse text-[11.5px]">
             {t("terminal.starting")}
           </span>
         </div>
@@ -324,7 +324,7 @@ export default function TerminalDock({
   return (
     <div className="bg-background flex h-full min-h-0 flex-col">
       {/* Tab bar */}
-      <div className="border-border/60 flex items-center border-b px-1.5 pt-1">
+      <div className="border-hairline flex items-center border-b px-1.5 pt-1">
         <TerminalSquare className="text-subtle-foreground mx-1.5 size-3.5 shrink-0" />
         <div className="flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto">
           {tabs.map((tab) => {
@@ -333,10 +333,10 @@ export default function TerminalDock({
               <div
                 key={tab.id}
                 onClick={() => setActiveId(tab.id)}
-                className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md border border-b-0 px-3 py-1 text-[11px] transition-colors ${
+                className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-t-lg border border-b-0 px-3 py-1.5 text-[11.5px] transition-colors ${
                   active
-                    ? "border-border bg-muted text-foreground"
-                    : "text-subtle-foreground hover:text-muted-foreground border-transparent"
+                    ? "border-hairline bg-muted text-foreground"
+                    : "text-subtle-foreground hover:text-foreground border-transparent"
                 }`}
                 title={`${tab.title} — ${cwd ?? ""}`}
               >
@@ -347,7 +347,7 @@ export default function TerminalDock({
                     e.stopPropagation();
                     closeTab(tab.id);
                   }}
-                  className="hover:bg-accent rounded p-0.5"
+                  className="hover:bg-accent hover:text-foreground rounded-md p-0.5"
                   title={t("terminal.close")} aria-label={t("terminal.close")}
                 >
                   <X className="size-3" />
@@ -358,7 +358,7 @@ export default function TerminalDock({
           <button
             type="button"
             onClick={addTab}
-            className="text-subtle-foreground hover:text-muted-foreground mb-1 ml-1 rounded p-1"
+            className="text-subtle-foreground hover:bg-muted hover:text-foreground mb-1 ml-1 rounded-md p-1"
             title={t("terminal.new")} aria-label={t("terminal.new")}
           >
             <Plus className="size-3.5" />
@@ -367,7 +367,7 @@ export default function TerminalDock({
         <button
           type="button"
           onClick={onClose}
-          className="text-subtle-foreground hover:text-muted-foreground ml-1 rounded p-1.5"
+          className="text-subtle-foreground hover:bg-muted hover:text-foreground ml-1 rounded-md p-1.5"
           title={t("terminal.closePanel")} aria-label={t("terminal.closePanel")}
         >
           <ChevronDown className="size-3.5" />

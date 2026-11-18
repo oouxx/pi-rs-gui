@@ -90,7 +90,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.98 }}
                 transition={FAST_TRANSITION}
-                className={`pointer-events-auto flex items-start gap-2 rounded-lg border p-3 text-sm shadow-lg ${s.box}`}
+                className={`pointer-events-auto flex items-start gap-2.5 rounded-xl border p-3.5 text-[12.5px] shadow-md ${s.box}`}
                 role="status"
               >
                 {s.icon}
@@ -107,7 +107,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <button
                   type="button"
                   aria-label={t("common.close")}
-                  className="text-muted-foreground hover:text-foreground rounded p-0.5 transition-colors"
+                  className="text-subtle-foreground hover:bg-muted hover:text-foreground rounded-md p-0.5 transition-colors"
                   onClick={() =>
                     setToasts((prev) => prev.filter((x) => x.id !== item.id))
                   }

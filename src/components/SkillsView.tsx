@@ -179,12 +179,12 @@ export default function SkillsView() {
   return (
     <div className="flex h-full max-h-screen min-w-0 flex-1 flex-col">
       {/* Top bar */}
-      <div className="border-hairline flex items-center gap-3 border-b px-4 py-1.5">
-        <SidebarTrigger className="shrink-0" />
-        <div className="text-foreground text-sm font-medium">
+      <div className="border-hairline flex h-12 shrink-0 items-center gap-1.5 border-b px-3">
+        <SidebarTrigger className="text-subtle-foreground hover:text-foreground -ml-1 size-7 shrink-0" />
+        <div className="text-foreground text-[13px] font-medium">
           {t(view === "skills" ? "skills.title" : "skills.promptsTitle")}
         </div>
-        <div className="border-hairline ml-auto flex items-center gap-0.5 rounded-md border p-0.5">
+        <div className="bg-muted/60 ml-auto flex items-center gap-0.5 rounded-lg p-0.5">
           {(["skills", "prompts"] as const).map((item) => (
             <button
               key={item}
@@ -193,9 +193,9 @@ export default function SkillsView() {
                 setView(item);
                 setSearch("");
               }}
-              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+              className={`h-7 rounded-md px-2.5 text-[11.5px] transition-colors ${
                 view === item
-                  ? "bg-accent text-accent-foreground font-medium"
+                  ? "bg-card text-foreground shadow-xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -209,20 +209,20 @@ export default function SkillsView() {
       <div className="flex min-h-0 flex-1">
         {/* Left — categories */}
         {view === "skills" && (
-        <div className="border-hairline w-48 shrink-0 border-r p-3">
-          <nav className="flex flex-col gap-1">
+        <div className="border-hairline w-44 shrink-0 border-r p-2">
+          <nav className="flex flex-col gap-0.5">
             {CATEGORIES.map((cat) => (
               <button
                 key={cat.id}
                 onClick={() => setActiveCat(cat.id)}
-                className={`flex items-center justify-between rounded-md px-3 py-1.5 text-left text-sm transition-colors ${
+                className={`flex h-8 items-center justify-between rounded-lg px-2 text-left text-[13px] transition-colors ${
                   activeCat === cat.id
                     ? "bg-accent text-accent-foreground font-medium"
-                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                    : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                 }`}
               >
                 <span>{t(cat.labelKey)}</span>
-                <span className="text-muted-foreground text-xs">{counts[cat.id]}</span>
+                <span className="text-subtle-foreground text-[10.5px] tabular-nums">{counts[cat.id]}</span>
               </button>
             ))}
           </nav>
@@ -232,22 +232,23 @@ export default function SkillsView() {
         {/* Right — content */}
         <div className="flex min-w-0 flex-1 flex-col">
           {/* Toolbar */}
-          <div className="border-hairline flex items-center gap-3 border-b px-4 py-2">
+          <div className="border-hairline flex h-12 shrink-0 items-center gap-2 border-b px-4">
             <div className="relative max-w-sm flex-1">
-              <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+              <Search className="text-subtle-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
               <Input
                 placeholder={t(
                   view === "skills" ? "skills.search" : "skills.searchPrompts",
                 )}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-8 pl-8 text-xs"
+                className="border-hairline bg-background/70 placeholder:text-subtle-foreground h-8 rounded-lg pl-8 text-[12.5px] focus-visible:ring-2 md:text-[12.5px]"
               />
             </div>
             {view === "skills" ? (
               <Button
                 size="sm"
-                variant="outline"
+                variant="ghost"
+                className="text-muted-foreground hover:text-foreground h-8 rounded-lg px-2.5 text-[12px]"
                 onClick={refresh}
                 disabled={loading}
               >
@@ -257,7 +258,12 @@ export default function SkillsView() {
                 <span>{t("common.refresh")}</span>
               </Button>
             ) : (
-              <Button size="sm" variant="outline" onClick={refreshPrompts}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-muted-foreground hover:text-foreground h-8 rounded-lg px-2.5 text-[12px]"
+                onClick={refreshPrompts}
+              >
                 <RefreshCw className="size-3.5" />
                 <span>{t("common.refresh")}</span>
               </Button>
@@ -265,15 +271,15 @@ export default function SkillsView() {
           </div>
 
           {/* List / empty state */}
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 overflow-y-auto p-5">
             {view === "prompts" ? (
               promptsLoading ? (
-                <div className="text-muted-foreground flex h-full items-center justify-center text-xs">
+                <div className="text-subtle-foreground flex h-full items-center justify-center text-[12px]">
                   {t("skills.loadingPrompts")}
                 </div>
               ) : promptsError ? (
                 <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-                  <div className="text-destructive text-xs">{promptsError}</div>
+                  <div className="text-destructive text-[11.5px]">{promptsError}</div>
                   <Button size="sm" variant="outline" onClick={refreshPrompts}>
                     {t("common.retry")}
                   </Button>
@@ -281,36 +287,36 @@ export default function SkillsView() {
               ) : filteredPrompts.length === 0 ? (
                 <div className="flex h-full items-center justify-center">
                   <div className="max-w-sm text-center">
-                    <div className="bg-muted/30 mx-auto mb-4 flex size-16 items-center justify-center rounded-full">
-                      <FileCode className="text-muted-foreground size-8" />
+                    <div className="bg-muted/30 mx-auto mb-4 flex size-12 items-center justify-center rounded-xl border border-hairline">
+                      <FileCode className="text-subtle-foreground size-5" />
                     </div>
-                    <h3 className="text-foreground mb-1 text-sm font-medium">
+                    <h3 className="text-foreground mb-1 text-[13.5px] font-medium">
                       {t("skills.emptyPromptsTitle")}
                     </h3>
-                    <p className="text-muted-foreground text-xs leading-relaxed">
+                    <p className="text-muted-foreground text-[11.5px] leading-[1.6]">
                       {t("skills.emptyPromptsHint")}
                     </p>
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2.5">
                   {filteredPrompts.map((prompt) => (
                     <div
                       key={prompt.filePath}
                       onClick={() =>
                         openPreview(`/${prompt.name}`, prompt.filePath)
                       }
-                      className="border-hairline bg-card hover:bg-accent/5 flex cursor-pointer flex-col gap-1 rounded-lg border p-3"
+                      className="border-hairline bg-card hover:bg-muted/30 flex cursor-pointer flex-col gap-1.5 rounded-xl border p-3.5 transition-colors"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="text-foreground font-mono text-sm font-medium">
+                        <span className="text-foreground font-mono text-[13px] font-medium">
                           /{prompt.name}
                         </span>
-                        <span className="bg-muted text-foreground/70 rounded-full px-2 py-0.5 text-[10px] uppercase">
+                        <span className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-[9.5px] tracking-[0.04em] uppercase">
                           {prompt.source}
                         </span>
                         {prompt.append && (
-                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
+                          <span className="bg-primary/10 text-primary rounded-md px-1.5 py-0.5 text-[9.5px]">
                             {t("skills.append")}
                           </span>
                         )}
@@ -321,7 +327,7 @@ export default function SkillsView() {
                               e.stopPropagation();
                               openPreview(`/${prompt.name}`, prompt.filePath);
                             }}
-                            className="text-muted-foreground hover:text-foreground"
+                            className="text-subtle-foreground hover:bg-muted hover:text-foreground rounded-md p-1 transition-colors"
                             title={t("common.preview")} aria-label={t("common.preview")}
                           >
                             <Eye className="size-3.5" />
@@ -332,7 +338,7 @@ export default function SkillsView() {
                               e.stopPropagation();
                               openFileInEditor(prompt.filePath);
                             }}
-                            className="text-muted-foreground hover:text-foreground"
+                            className="text-subtle-foreground hover:bg-muted hover:text-foreground rounded-md p-1 transition-colors"
                             title={t("common.openInEditor")} aria-label={t("common.openInEditor")}
                           >
                             <ExternalLink className="size-3.5" />
@@ -340,14 +346,14 @@ export default function SkillsView() {
                         </div>
                       </div>
                       {prompt.argumentHint && (
-                        <span className="text-muted-foreground font-mono text-[10px]">
+                        <span className="text-subtle-foreground font-mono text-[10.5px]">
                           {prompt.argumentHint}
                         </span>
                       )}
-                      <p className="text-muted-foreground text-xs leading-relaxed">
+                      <p className="text-muted-foreground text-[11.5px] leading-[1.6]">
                         {prompt.description}
                       </p>
-                      <p className="text-muted-foreground/70 font-mono text-[10px]">
+                      <p className="text-subtle-foreground truncate font-mono text-[10.5px]" title={prompt.filePath}>
                         {prompt.filePath}
                       </p>
                     </div>
@@ -355,12 +361,12 @@ export default function SkillsView() {
                 </div>
               )
             ) : loading ? (
-              <div className="flex h-full items-center justify-center text-muted-foreground text-xs">
+              <div className="text-subtle-foreground flex h-full items-center justify-center text-[12px]">
                 {t("skills.loading")}
               </div>
             ) : error ? (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-                <div className="text-destructive text-xs">{error}</div>
+                <div className="text-destructive text-[11.5px]">{error}</div>
                 <Button size="sm" variant="outline" onClick={refresh}>
                   {t("common.retry")}
                 </Button>
@@ -368,34 +374,34 @@ export default function SkillsView() {
             ) : filtered.length === 0 ? (
               <div className="flex h-full items-center justify-center">
                 <div className="max-w-sm text-center">
-                  <div className="bg-muted/30 mx-auto mb-4 flex size-16 items-center justify-center rounded-full">
-                    <BookOpen className="text-muted-foreground size-8" />
+                  <div className="bg-muted/30 mx-auto mb-4 flex size-12 items-center justify-center rounded-xl border border-hairline">
+                    <BookOpen className="text-subtle-foreground size-5" />
                   </div>
-                  <h3 className="text-foreground mb-1 text-sm font-medium">
+                  <h3 className="text-foreground mb-1 text-[13.5px] font-medium">
                     {t("skills.emptyTitle")}
                   </h3>
-                  <p className="text-muted-foreground text-xs leading-relaxed">
+                  <p className="text-muted-foreground text-[11.5px] leading-[1.6]">
                     {t("skills.emptyHint")}
                   </p>
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2.5">
                 {filtered.map((s) => (
                   <div
                     key={s.filePath}
                     onClick={() => openPreview(s.name, s.filePath)}
-                    className="border-hairline bg-card hover:bg-accent/5 flex cursor-pointer flex-col gap-1 rounded-lg border p-3"
+                    className="border-hairline bg-card hover:bg-muted/30 flex cursor-pointer flex-col gap-1.5 rounded-xl border p-3.5 transition-colors"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-foreground font-mono text-sm font-medium">
+                      <span className="text-foreground font-mono text-[13px] font-medium">
                         {s.name}
                       </span>
-                      <span className="bg-muted text-foreground/70 rounded-full px-2 py-0.5 text-[10px] uppercase">
+                      <span className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-[9.5px] tracking-[0.04em] uppercase">
                         {SCOPE_LABEL_KEY[s.scope] ? t(SCOPE_LABEL_KEY[s.scope]) : s.scope}
                       </span>
                       {s.disableModelInvocation && (
-                        <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[10px] text-warning">
+                        <span className="bg-warning/10 text-warning rounded-md px-1.5 py-0.5 text-[9.5px]">
                           {t("skills.manualOnly")}
                         </span>
                       )}
@@ -406,7 +412,7 @@ export default function SkillsView() {
                             e.stopPropagation();
                             openPreview(s.name, s.filePath);
                           }}
-                          className="text-muted-foreground hover:text-foreground"
+                          className="text-subtle-foreground hover:bg-muted hover:text-foreground rounded-md p-1 transition-colors"
                           title={t("common.preview")} aria-label={t("common.preview")}
                         >
                           <Eye className="size-3.5" />
@@ -417,17 +423,17 @@ export default function SkillsView() {
                             e.stopPropagation();
                             openFileInEditor(s.filePath);
                           }}
-                          className="text-muted-foreground hover:text-foreground"
+                          className="text-subtle-foreground hover:bg-muted hover:text-foreground rounded-md p-1 transition-colors"
                           title={t("common.openInEditor")} aria-label={t("common.openInEditor")}
                         >
                           <ExternalLink className="size-3.5" />
                         </button>
                       </div>
                     </div>
-                    <p className="text-muted-foreground text-xs leading-relaxed">
+                    <p className="text-muted-foreground text-[11.5px] leading-[1.6]">
                       {s.description}
                     </p>
-                    <p className="text-muted-foreground/70 font-mono text-[10px]">
+                    <p className="text-subtle-foreground truncate font-mono text-[10.5px]" title={s.filePath}>
                       {s.filePath}
                     </p>
                   </div>
@@ -455,16 +461,16 @@ export default function SkillsView() {
             </DialogDescription>
           </DialogHeader>
           {previewLoading ? (
-            <div className="text-muted-foreground flex items-center gap-2 p-6 text-sm">
+            <div className="text-subtle-foreground flex items-center gap-2 p-6 text-[12px]">
               <Loader2 className="size-4 animate-spin" />
               {t("common.loading")}
             </div>
           ) : previewError ? (
-            <div className="text-destructive text-xs break-words">
+            <div className="text-destructive text-[11.5px] break-words">
               {previewError}
             </div>
           ) : (
-            <pre className="border-hairline bg-muted/30 max-h-[60vh] overflow-auto rounded-lg border p-3 font-mono text-[11px] whitespace-pre-wrap">
+            <pre className="border-hairline bg-muted/30 max-h-[60vh] overflow-auto rounded-xl border p-3.5 font-mono text-[11.5px] leading-[1.65] whitespace-pre-wrap">
               {preview?.content}
             </pre>
           )}

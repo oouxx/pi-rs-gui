@@ -243,10 +243,10 @@ function Field({
   children: ReactNode;
 }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-foreground text-xs font-medium">{label}</span>
+    <label className="flex flex-col gap-1.5">
+      <span className="text-foreground text-[12px] font-medium">{label}</span>
       {children}
-      {hint && <span className="text-muted-foreground text-[11px]">{hint}</span>}
+      {hint && <span className="text-subtle-foreground text-[11.5px] leading-[1.6]">{hint}</span>}
     </label>
   );
 }
@@ -536,7 +536,7 @@ export default function McpSettings() {
 
   if (loading) {
     return (
-      <div className="text-muted-foreground p-8 text-sm">{t("mcp.loading")}</div>
+      <div className="text-subtle-foreground py-10 text-[12px]">{t("mcp.loading")}</div>
     );
   }
 
@@ -545,7 +545,7 @@ export default function McpSettings() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-muted-foreground max-w-md text-xs leading-relaxed">
+        <p className="text-muted-foreground max-w-md text-[11.5px] leading-[1.6]">
           {t("mcp.description")}
         </p>
         <div className="flex shrink-0 items-center gap-2">
@@ -561,23 +561,23 @@ export default function McpSettings() {
       </div>
 
       {error && (
-        <div className="border-destructive/40 text-destructive rounded-lg border p-3 text-xs">
+        <div className="border-destructive/30 text-destructive rounded-xl border p-3 text-[11.5px]">
           {error}
         </div>
       )}
       {data?.errors?.map((item) => (
         <div
           key={item}
-          className="border-destructive/40 text-destructive rounded-lg border p-3 text-xs"
+          className="border-destructive/30 text-destructive rounded-xl border p-3 text-[11.5px]"
         >
           {item}
         </div>
       ))}
 
       {servers.length === 0 ? (
-        <div className="border-hairline flex flex-col items-center gap-2 rounded-lg border p-12 text-center">
-          <p className="text-foreground text-sm font-medium">{t("mcp.emptyTitle")}</p>
-          <p className="text-muted-foreground max-w-sm text-xs">
+        <div className="border-hairline flex flex-col items-center gap-2 rounded-xl border p-10 text-center">
+          <p className="text-foreground text-[13.5px] font-medium">{t("mcp.emptyTitle")}</p>
+          <p className="text-muted-foreground max-w-sm text-[11.5px] leading-[1.6]">
             {t("mcp.emptyHint")}
           </p>
           <Button className="mt-2" size="sm" onClick={openAdd}>
@@ -586,19 +586,19 @@ export default function McpSettings() {
           </Button>
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2.5">
           {servers.map((server) => {
             const meta = STATUS_META[server.status] ?? STATUS_META["not-loaded"];
             const isOpen = expanded.has(server.name);
             const isBusy = busy === server.name;
             const readOnly = server.scope === "extension";
             return (
-              <div key={server.name} className="border-hairline rounded-lg border">
+              <div key={server.name} className="border-hairline rounded-xl border">
                 {/* Header */}
-                <div className="flex items-center gap-2 px-3 py-2">
+                <div className="flex items-center gap-2 px-3.5 py-2.5">
                   <button
                     type="button"
-                    className="text-muted-foreground hover:text-foreground"
+                    className="text-subtle-foreground hover:bg-muted hover:text-foreground rounded-md p-0.5 transition-colors"
                     onClick={() => toggleExpand(server.name)}
                     aria-label={isOpen ? t("mcp.collapse") : t("mcp.expand")}
                   >
@@ -609,13 +609,13 @@ export default function McpSettings() {
                     )}
                   </button>
                   <span className={`size-2 shrink-0 rounded-full ${meta.dot}`} />
-                  <span className="text-foreground text-sm font-medium">
+                  <span className="text-foreground text-[13px] font-medium">
                     {server.name}
                   </span>
-                  <span className="text-muted-foreground text-[11px]">
+                  <span className="text-subtle-foreground text-[10.5px]">
                     {server.transport} · {server.scope}
                   </span>
-                  <span className={`text-[11px] ${meta.text}`}>{t(meta.labelKey)}</span>
+                  <span className={`text-[10.5px] ${meta.text}`}>{t(meta.labelKey)}</span>
                   {isBusy && (
                     <Loader2 className="text-muted-foreground size-3 animate-spin" />
                   )}
@@ -625,7 +625,7 @@ export default function McpSettings() {
                       onValueChange={(value) => setExposure(server, value)}
                       disabled={readOnly || isBusy}
                     >
-                      <SelectTrigger className="h-6 w-24 text-[11px]">
+                      <SelectTrigger className="h-7 w-24 text-[11px]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -669,7 +669,7 @@ export default function McpSettings() {
 
                 {confirmDelete === server.name && (
                   <div className="border-hairline flex items-center gap-2 border-t px-3 py-2">
-                    <span className="text-destructive text-xs">
+                    <span className="text-destructive text-[11.5px]">
                       {t("mcp.confirmDelete", { name: server.name })}
                     </span>
                     <div className="ml-auto flex gap-1">
@@ -699,58 +699,58 @@ export default function McpSettings() {
                 )}
 
                 {isOpen && (
-                  <div className="border-hairline space-y-3 border-t px-3 py-3">
-                    <div className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-1 text-[11px]">
-                      <span className="text-muted-foreground">{t("mcp.command")}</span>
+                  <div className="border-hairline space-y-3.5 border-t px-3.5 py-3.5">
+                    <div className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-1.5 text-[11px]">
+                      <span className="text-subtle-foreground">{t("mcp.command")}</span>
                       <span className="font-mono break-all">
                         {server.command
                           ? [server.command, ...(server.args ?? [])].join(" ")
                           : "—"}
                       </span>
-                      <span className="text-muted-foreground">{t("mcp.url")}</span>
+                      <span className="text-subtle-foreground">{t("mcp.url")}</span>
                       <span className="font-mono break-all">{server.url ?? "—"}</span>
-                      <span className="text-muted-foreground">{t("mcp.source")}</span>
+                      <span className="text-subtle-foreground">{t("mcp.source")}</span>
                       <span className="font-mono break-all">
                         {server.source ?? "—"}
                         {server.overridePath
                           ? ` (overridden by ${server.overridePath})`
                           : ""}
                       </span>
-                      <span className="text-muted-foreground">{t("mcp.resources")}</span>
+                      <span className="text-subtle-foreground">{t("mcp.resources")}</span>
                       <span>{server.hasResources ? t("mcp.yes") : t("mcp.no")}</span>
                     </div>
 
                     {server.description && (
-                      <p className="text-muted-foreground text-xs">
+                      <p className="text-muted-foreground text-[11.5px] leading-[1.6]">
                         {server.description}
                       </p>
                     )}
                     {server.instructions && (
                       <div>
-                        <div className="text-foreground mb-1 text-xs font-medium">
+                        <div className="text-foreground mb-1.5 text-[11px] font-medium">
                           {t("mcp.instructions")}
                         </div>
-                        <p className="text-muted-foreground max-h-40 overflow-y-auto text-[11px] whitespace-pre-wrap">
+                        <p className="text-muted-foreground max-h-40 overflow-y-auto text-[11px] leading-[1.65] whitespace-pre-wrap">
                           {server.instructions}
                         </p>
                       </div>
                     )}
 
                     <div>
-                      <div className="text-foreground mb-1 flex items-center gap-2 text-xs font-medium">
+                      <div className="text-foreground mb-1.5 flex items-center gap-2 text-[11px] font-medium">
                         {t("mcp.tools")}
-                        <span className="text-muted-foreground font-normal">
+                        <span className="text-subtle-foreground font-normal">
                           {server.tools.length}
                         </span>
                       </div>
                       {server.tools.length === 0 ? (
-                        <p className="text-muted-foreground text-[11px]">
+                        <p className="text-subtle-foreground text-[11px]">
                           {t("mcp.noTools")}
                         </p>
                       ) : (
                         <div className="flex flex-col gap-1">
                           {server.tools.map((tool) => (
-                            <div key={tool.name} className="text-[11px]">
+                            <div key={tool.name} className="text-[11px] leading-[1.6]">
                               <span className="font-mono">{tool.name}</span>
                               {tool.description && (
                                 <span className="text-muted-foreground">
@@ -812,8 +812,8 @@ export default function McpSettings() {
         </div>
       )}
 
-      <Separator />
-      <div className="text-muted-foreground space-y-1 text-[11px]">
+      <Separator className="bg-hairline" />
+      <div className="text-subtle-foreground space-y-1 text-[10.5px]">
         <div>
           {t("mcp.globalConfig")} <span className="font-mono">{data?.globalConfigPath ?? "—"}</span>
         </div>
@@ -891,7 +891,7 @@ export default function McpSettings() {
                 </Field>
                 <Field label={t("mcp.arguments")} hint={t("mcp.argumentsHint")}>
                   <textarea
-                    className="border-input bg-background focus-visible:border-ring min-h-16 rounded-lg border px-2.5 py-2 font-mono text-xs outline-none"
+                    className="border-hairline bg-background focus-visible:border-ring/50 min-h-16 rounded-lg border px-2.5 py-2 font-mono text-xs outline-none"
                     value={form.args}
                     onChange={(e) => setForm({ ...form, args: e.target.value })}
                     placeholder={"-y\n@modelcontextprotocol/server-filesystem\n/path"}
@@ -899,7 +899,7 @@ export default function McpSettings() {
                 </Field>
                 <Field label={t("mcp.environment")} hint={t("mcp.envHint")}>
                   <textarea
-                    className="border-input bg-background focus-visible:border-ring min-h-14 rounded-lg border px-2.5 py-2 font-mono text-xs outline-none"
+                    className="border-hairline bg-background focus-visible:border-ring/50 min-h-14 rounded-lg border px-2.5 py-2 font-mono text-xs outline-none"
                     value={form.env}
                     onChange={(e) => setForm({ ...form, env: e.target.value })}
                     placeholder="API_KEY=..."
@@ -926,7 +926,7 @@ export default function McpSettings() {
                 </Field>
                 <Field label={t("mcp.headers")} hint={t("mcp.envHint")}>
                   <textarea
-                    className="border-input bg-background focus-visible:border-ring min-h-14 rounded-lg border px-2.5 py-2 font-mono text-xs outline-none"
+                    className="border-hairline bg-background focus-visible:border-ring/50 min-h-14 rounded-lg border px-2.5 py-2 font-mono text-xs outline-none"
                     value={form.headers}
                     onChange={(e) => setForm({ ...form, headers: e.target.value })}
                     placeholder="Authorization=Bearer ..."
@@ -996,7 +996,7 @@ export default function McpSettings() {
               {t("mcp.logDescription")}
             </DialogDescription>
           </DialogHeader>
-          <pre className="border-hairline bg-muted/30 max-h-[55vh] overflow-auto rounded-lg border p-3 font-mono text-[11px] whitespace-pre-wrap">
+          <pre className="border-hairline bg-muted/30 max-h-[55vh] overflow-auto rounded-xl border p-3.5 font-mono text-[11.5px] leading-[1.65] whitespace-pre-wrap">
             {logText}
           </pre>
         </DialogContent>
@@ -1015,7 +1015,7 @@ export default function McpSettings() {
           </DialogHeader>
 
           {resourcesError && (
-            <div className="text-destructive text-xs break-words">
+            <div className="text-destructive text-[11.5px] break-words">
               {resourcesError}
             </div>
           )}
@@ -1029,7 +1029,7 @@ export default function McpSettings() {
             <div className="space-y-3">
               <button
                 type="button"
-                className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs"
+                className="text-subtle-foreground hover:text-foreground flex items-center gap-1 text-[11.5px]"
                 onClick={() => {
                   setActiveResource(null);
                   setResourceContents([]);
@@ -1050,12 +1050,12 @@ export default function McpSettings() {
                 </div>
               </div>
               {resourceLoading ? (
-                <div className="text-muted-foreground flex items-center gap-2 p-4 text-xs">
+                <div className="text-subtle-foreground flex items-center gap-2 p-4 text-[11.5px]">
                   <Loader2 className="size-3.5 animate-spin" />
                   {t("mcp.readingResource")}
                 </div>
               ) : (
-                <pre className="border-hairline bg-muted/30 max-h-[50vh] overflow-auto rounded-lg border p-3 font-mono text-[11px] whitespace-pre-wrap">
+                <pre className="border-hairline bg-muted/30 max-h-[50vh] overflow-auto rounded-xl border p-3.5 font-mono text-[11.5px] leading-[1.65] whitespace-pre-wrap">
                   {resourceContents.length === 0
                     ? t("mcp.noContents")
                     : resourceContents
@@ -1071,7 +1071,7 @@ export default function McpSettings() {
           ) : (
             <div className="max-h-[55vh] space-y-5 overflow-y-auto">
               <section>
-                <h3 className="text-foreground mb-1.5 text-xs font-medium">
+                <h3 className="text-foreground mb-1.5 text-[11.5px] font-medium">
                   {t("mcp.resourcesTitle")}
                   <span className="text-muted-foreground ml-1 font-normal">
                     {resourcesData?.resources.length ?? 0}
@@ -1110,7 +1110,7 @@ export default function McpSettings() {
               </section>
 
               <section>
-                <h3 className="text-foreground mb-1.5 text-xs font-medium">
+                <h3 className="text-foreground mb-1.5 text-[11.5px] font-medium">
                   {t("mcp.templates")}
                   <span className="text-muted-foreground ml-1 font-normal">
                     {resourcesData?.templates.length ?? 0}

@@ -154,7 +154,7 @@ function TreeRows({
               <div
                 style={{ paddingLeft: 8 + depth * 14 }}
                 onClick={() => onSelect(node.id)}
-                className={`group flex items-start gap-1.5 rounded-md py-1.5 pr-1.5 text-left transition-colors ${
+                className={`group flex items-start gap-1.5 rounded-lg py-2 pr-1.5 text-left transition-colors ${
                   selected
                     ? "bg-accent text-accent-foreground"
                     : node.current
@@ -167,9 +167,9 @@ function TreeRows({
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] font-medium">{label}</span>
+                    <span className="text-[11.5px] font-medium">{label}</span>
                     {node.current && (
-                      <span className="bg-primary/10 text-primary rounded-full px-1.5 py-0.5 text-[9px] font-medium">
+                      <span className="bg-primary/10 text-primary rounded-md px-1.5 py-0.5 text-[9px] font-medium">
                         {t("timeline.current")}
                       </span>
                     )}
@@ -178,7 +178,7 @@ function TreeRows({
                     </span>
                   </div>
                   {node.detail && (
-                    <p className="text-muted-foreground mt-0.5 line-clamp-2 text-[11px] break-words whitespace-pre-wrap">
+                    <p className="text-muted-foreground mt-1 line-clamp-2 text-[11px] leading-[1.55] break-words whitespace-pre-wrap">
                       {node.detail}
                     </p>
                   )}
@@ -198,7 +198,7 @@ function TreeRows({
                     }}
                     title={t("timeline.rewind")}
                     aria-label={t("timeline.rewind")}
-                    className="text-subtle-foreground hover:bg-primary/10 hover:text-primary rounded p-1 transition-colors"
+                    className="text-subtle-foreground hover:bg-primary/10 hover:text-primary rounded-md p-1 transition-colors"
                   >
                     <Undo2 className="size-3" />
                   </button>
@@ -210,7 +210,7 @@ function TreeRows({
                     }}
                     title={t("timeline.fork")}
                     aria-label={t("timeline.fork")}
-                    className="text-subtle-foreground hover:bg-primary/10 hover:text-primary rounded p-1 transition-colors"
+                    className="text-subtle-foreground hover:bg-primary/10 hover:text-primary rounded-md p-1 transition-colors"
                   >
                     <GitBranch className="size-3" />
                   </button>
@@ -295,10 +295,10 @@ export function TimelinePanel({
   };
 
   return (
-    <div className="border-border bg-background flex min-h-0 w-80 shrink-0 flex-col border-l">
-      <div className="border-border flex items-center gap-2 border-b px-3 py-2">
+    <div className="border-hairline bg-background flex min-h-0 w-80 shrink-0 flex-col border-l">
+      <div className="border-hairline flex h-10 items-center gap-2 border-b px-3">
         <GitBranch className="text-subtle-foreground size-3.5" />
-        <span className="text-foreground flex-1 text-xs font-medium">
+        <span className="text-foreground flex-1 text-[12.5px] font-medium">
           {t("timeline.title")}
         </span>
         {latestLeaf && current?.id !== latestLeaf.id && (
@@ -316,7 +316,7 @@ export function TimelinePanel({
         <button
           type="button"
           onClick={onClose}
-          className="text-subtle-foreground hover:text-muted-foreground rounded p-0.5 transition-colors"
+          className="text-subtle-foreground hover:bg-muted hover:text-foreground rounded-md p-1 transition-colors"
           title={t("timeline.close")}
           aria-label={t("timeline.close")}
         >
@@ -338,7 +338,7 @@ export function TimelinePanel({
             t={t}
           />
         ) : (
-          <p className="text-subtle-foreground px-2 py-4 text-center text-xs">
+          <p className="text-subtle-foreground px-2 py-4 text-center text-[11.5px]">
             {t("timeline.empty")}
           </p>
         )}
@@ -348,7 +348,7 @@ export function TimelinePanel({
         </div>
       </div>
 
-      <div className="border-border flex items-center gap-2 border-t px-3 py-2">
+      <div className="border-hairline flex items-center gap-2 border-t px-3 py-2.5">
         <Checkbox
           id="timeline-show-all"
           checked={showAll}
