@@ -167,7 +167,7 @@ function DiffView({
       className={
         embedded
           ? "overflow-hidden"
-          : "border-border bg-muted mt-1 overflow-hidden rounded-lg border"
+          : "border-hairline bg-muted/50 mt-1 overflow-hidden rounded-xl border"
       }
     >
       <div className="max-h-80 overflow-auto font-mono text-[12px] leading-relaxed">
@@ -200,7 +200,7 @@ function DiffView({
         })}
       </div>
       {truncated && (
-        <div className="text-subtle-foreground border-border border-t px-3 py-1 text-[11px]">
+        <div className="text-subtle-foreground border-hairline border-t px-3 py-1 text-[11px]">
           {t("tool.truncated")}
         </div>
       )}
@@ -426,7 +426,7 @@ function DetailsToggle({
     <button
       type="button"
       onClick={onToggle}
-      className="hover:text-muted-foreground flex w-full items-center gap-1 border-t border-border px-3 py-1.5 text-left text-xs text-subtle-foreground transition-colors"
+      className="hover:text-muted-foreground flex w-full items-center gap-1 border-t border-hairline px-3 py-1.5 text-left text-xs text-subtle-foreground transition-colors"
     >
       <motion.span
         className="inline-flex"
@@ -457,7 +457,7 @@ function RawDetails({
         <motion.div
           {...expand}
           transition={PANEL_TRANSITION}
-          className="border-t border-border overflow-hidden"
+          className="border-t border-hairline overflow-hidden"
         >
           {argsStr && (
             <pre className="text-muted-foreground bg-background max-h-80 overflow-auto px-3 py-2 font-mono text-xs leading-relaxed">
@@ -514,7 +514,7 @@ function WebSearchBlock({
   };
 
   return (
-    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+    <div className="border-hairline bg-muted/50 mt-1 overflow-hidden rounded-xl border">
       <div className="px-3 py-2">
         {query && (
           <div className="flex items-baseline gap-2 text-xs">
@@ -620,7 +620,7 @@ function WebFetchBlock({
   };
 
   return (
-    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+    <div className="border-hairline bg-muted/50 mt-1 overflow-hidden rounded-xl border">
       <div className="px-3 py-2">
         <div className="flex items-baseline gap-2 text-[11px]">
           <span className="text-subtle-foreground shrink-0">
@@ -695,7 +695,7 @@ function SubagentBlock({
   const running = status === "running";
 
   return (
-    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+    <div className="border-hairline bg-muted/50 mt-1 overflow-hidden rounded-xl border">
       <div className="flex flex-col gap-1.5 px-3 py-2">
         {items.length === 0 && (
           <p className="text-subtle-foreground text-[11px]">
@@ -836,7 +836,7 @@ function PathRow({
 }) {
   const { t } = useI18n();
   return (
-    <div className="border-border flex items-center gap-2 border-b px-3 py-1.5">
+    <div className="border-hairline flex items-center gap-2 border-b px-3 py-1.5">
       <span
         className="text-muted-foreground min-w-0 truncate font-mono text-[11px]"
         title={path}
@@ -882,7 +882,7 @@ function ReadBlock({
   const preview = result ? lines.slice(0, 8).join("\n") : resultPreview;
   const more = lines.length > 8;
   return (
-    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+    <div className="border-hairline bg-muted/50 mt-1 overflow-hidden rounded-xl border">
       <PathRow path={path} onOpen={onOpen} />
       {!showDetails && preview && (
         <pre
@@ -932,8 +932,8 @@ function GrepBlock({
   const matches = grepMatches(result);
   const matchCount = matches.filter((match) => !match.context).length;
   return (
-    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
-      <div className="border-border flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b px-3 py-1.5 text-[11px]">
+    <div className="border-hairline bg-muted/50 mt-1 overflow-hidden rounded-xl border">
+      <div className="border-hairline flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b px-3 py-1.5 text-[11px]">
         {pattern && (
           <>
             <span className="text-subtle-foreground">
@@ -1029,8 +1029,8 @@ function ListBlock({
   const { t } = useI18n();
   const entries = listEntries(result);
   return (
-    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
-      <div className="border-border flex items-center gap-2 border-b px-3 py-1.5">
+    <div className="border-hairline bg-muted/50 mt-1 overflow-hidden rounded-xl border">
+      <div className="border-hairline flex items-center gap-2 border-b px-3 py-1.5">
         <span
           className="text-muted-foreground min-w-0 truncate font-mono text-[11px]"
           title={path}
@@ -1114,7 +1114,7 @@ function DiffBlock({
 }) {
   const stats = diffStats(diffText);
   return (
-    <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+    <div className="border-hairline bg-muted/50 mt-1 overflow-hidden rounded-xl border">
       <PathRow
         path={path}
         onOpen={onOpen}
@@ -1233,7 +1233,7 @@ export default function ToolCallCard({
   return (
     <div className="my-2">
       {/* Header: icon + tool name + status */}
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex items-center gap-2 text-[12.5px]">
         <span className={`shrink-0 ${st.color}`}>{meta.icon}</span>
         <span
           className="text-muted-foreground font-medium"
@@ -1253,11 +1253,11 @@ export default function ToolCallCard({
         )}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           <span className={st.color}>{st.icon}</span>
-          <span className="text-subtle-foreground text-xs">
+          <span className="text-subtle-foreground text-[11px]">
             {t(st.labelKey)}
           </span>
           {elapsedMs !== null && (
-            <span className="text-subtle-foreground tabular-nums text-xs">
+            <span className="text-subtle-foreground text-[11px] tabular-nums">
               {formatElapsed(elapsedMs)}
             </span>
           )}
@@ -1298,7 +1298,7 @@ export default function ToolCallCard({
         />
       ) : name === "bash" ? (
         /* bash: terminal-style block with `$` prompt */
-        <div className="border-border bg-muted mt-1 overflow-hidden rounded-lg border">
+        <div className="border-hairline bg-muted/50 mt-1 overflow-hidden rounded-xl border">
           <div className="px-3 py-2 font-mono text-[13px] leading-relaxed">
             {summary && (
               <div className="group/cmd flex items-start gap-1">
@@ -1334,7 +1334,7 @@ export default function ToolCallCard({
             <button
               type="button"
               onClick={() => setShowDetails((v) => !v)}
-              className="hover:text-muted-foreground flex w-full items-center gap-1 border-t border-border px-3 py-1.5 text-left text-xs text-subtle-foreground transition-colors"
+              className="hover:text-muted-foreground flex w-full items-center gap-1 border-t border-hairline px-3 py-1.5 text-left text-xs text-subtle-foreground transition-colors"
             >
               <motion.span
                 className="inline-flex"
@@ -1351,7 +1351,7 @@ export default function ToolCallCard({
               <motion.div
                 {...expand}
                 transition={PANEL_TRANSITION}
-                className="border-t border-border overflow-hidden"
+                className="border-t border-hairline overflow-hidden"
               >
                 {argsStr && (
                   <pre className="text-muted-foreground bg-background overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed">
@@ -1466,7 +1466,7 @@ export default function ToolCallCard({
               <motion.div
                 {...expand}
                 transition={PANEL_TRANSITION}
-                className="border-border bg-muted mt-1 overflow-hidden rounded-lg border"
+                className="border-hairline bg-muted/50 mt-1 overflow-hidden rounded-xl border"
               >
                 {argsStr && (
                   <pre className="text-muted-foreground bg-background overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed">

@@ -608,16 +608,16 @@ export default function Composer({
   );
 
   return (
-    <div className="border-border bg-background shrink-0 border-t px-4 py-3">
-      <div className="relative mx-auto max-w-[820px]">
+    <div className="border-hairline bg-background shrink-0 border-t px-4 pt-2 pb-3">
+      <div className="relative mx-auto max-w-[760px]">
         {/* Slash command picker — bottom-anchored above the composer */}
         {showSlash && (
           <div
             ref={slashMenuRef}
-            className="border-border bg-background absolute bottom-full left-0 right-0 z-50 mb-1.5 overflow-hidden rounded-xl border shadow-lg"
+            className="border-hairline bg-popover absolute bottom-full left-0 right-0 z-50 mb-2 overflow-hidden rounded-xl border shadow-md"
           >
-            <Command className="bg-background p-0">
-              <div className="border-border border-b px-3 pt-2 pb-1.5">
+            <Command className="bg-popover p-0">
+              <div className="border-hairline border-b px-3 pt-2 pb-1.5">
                 <CommandInput
                   ref={slashInputRef}
                   placeholder={t("composer.searchCommands")}
@@ -676,7 +676,7 @@ export default function Composer({
                   },
                 )}
               </CommandList>
-              <div className="border-border bg-muted px-3 py-1.5 text-[11px] text-subtle-foreground">
+              <div className="border-hairline bg-muted/60 text-subtle-foreground border-t px-3 py-1.5 text-[10.5px]">
                 ↑↓ navigate · ↵ select · Esc close
               </div>
             </Command>
@@ -685,7 +685,7 @@ export default function Composer({
 
         {/* @ mention / file completion popover */}
         {showMention && (
-          <div className="border-border bg-background absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-lg">
+          <div className="border-hairline bg-popover absolute bottom-full left-0 right-0 z-50 mb-2 max-h-48 overflow-y-auto rounded-xl border p-1 shadow-md">
             {mentionFiles.length === 0 ? (
               <div className="text-muted-foreground px-3 py-2 font-mono text-xs">
                 No files found
@@ -727,7 +727,7 @@ export default function Composer({
 
         {/* /command argument completion popover */}
         {showArgMenu && (
-          <div className="border-border bg-background absolute bottom-full left-0 right-0 z-50 mb-1 max-h-48 overflow-y-auto rounded-lg border p-1 shadow-lg">
+          <div className="border-hairline bg-popover absolute bottom-full left-0 right-0 z-50 mb-2 max-h-48 overflow-y-auto rounded-xl border p-1 shadow-md">
             {argItems.length === 0 ? (
               <div className="text-muted-foreground px-3 py-2 font-mono text-xs">
                 No matching {argCmd === "model" ? "models" : "providers"}
@@ -759,11 +759,11 @@ export default function Composer({
         >
           {/* Queued steer / follow-up messages */}
           {queued.length > 0 && (
-            <div className="mb-2 flex flex-wrap items-center gap-2">
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
               {queued.map((q, idx) => (
                 <span
                   key={`${q.mode}-${idx}`}
-                  className="border-border bg-muted text-muted-foreground inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"
+                  className="border-hairline bg-muted/80 text-muted-foreground inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px]"
                   title={q.text}
                 >
                   <span className="text-subtle-foreground">
@@ -778,11 +778,11 @@ export default function Composer({
           )}
           {/* Text/code attachment chips */}
           {textAttachments.length > 0 && (
-            <div className="mb-2 flex flex-wrap items-center gap-2">
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
               {textAttachments.map((file, idx) => (
                 <div
                   key={`${file.name}-${idx}`}
-                  className="border-border bg-muted text-muted-foreground flex max-w-[240px] items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px]"
+                  className="border-hairline bg-secondary/60 text-muted-foreground flex max-w-[240px] items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px]"
                 >
                   <FileText className="text-subtle-foreground size-3 shrink-0" />
                   <span className="truncate" title={file.name}>
@@ -790,7 +790,7 @@ export default function Composer({
                   </span>
                   <button
                     type="button"
-                    className="text-subtle-foreground hover:text-muted-foreground shrink-0"
+                    className="text-subtle-foreground hover:text-foreground shrink-0"
                     onClick={() =>
                       setTextAttachments((prev) =>
                         prev.filter((_, index) => index !== idx),
@@ -810,7 +810,7 @@ export default function Composer({
               {attachments.map((a, idx) => (
                 <div
                   key={`${a.data.slice(0, 24)}-${idx}`}
-                  className="border-border bg-muted group/att relative h-14 w-14 overflow-hidden rounded-lg border"
+                  className="border-hairline group/att relative h-14 w-14 overflow-hidden rounded-lg border"
                   title={attachmentNames[idx] ?? ""}
                 >
                   <img
@@ -820,7 +820,7 @@ export default function Composer({
                   />
                   <button
                     type="button"
-                    className="bg-black/50 text-white absolute top-0.5 right-0.5 rounded p-0.5 opacity-0 transition-opacity group-hover/att:opacity-100"
+                    className="bg-black/50 text-white absolute top-1 right-1 rounded-md p-0.5 opacity-0 transition-opacity group-hover/att:opacity-100"
                     onClick={() => removeAttachment(idx)}
                     title={t("composer.removeAttachment")} aria-label={t("composer.removeAttachment")}
                   >
@@ -830,17 +830,88 @@ export default function Composer({
               ))}
             </div>
           )}
-          <Textarea
-            ref={textareaRef}
-            value={input}
-            onChange={onInputChange}
-            onKeyDown={onInputKeyDown}
-            onPaste={handlePaste}
-            placeholder={t("composer.placeholder")}
-            disabled={loading}
-            className="border-border focus:border-ring bg-card text-foreground placeholder:text-subtle-foreground max-h-[120px] min-h-[44px] resize-none rounded-xl border pl-[4.5rem] pr-14 text-[15px] shadow-sm"
-            rows={1}
-          />
+          <div className="border-border bg-card shadow-xs focus-within:border-ring/40 focus-within:ring-ring/10 rounded-2xl border transition-[border-color,box-shadow] duration-200 focus-within:shadow-sm focus-within:ring-4">
+            <Textarea
+              ref={textareaRef}
+              value={input}
+              onChange={onInputChange}
+              onKeyDown={onInputKeyDown}
+              onPaste={handlePaste}
+              placeholder={t("composer.placeholder")}
+              disabled={loading}
+              className="placeholder:text-subtle-foreground text-foreground max-h-[180px] min-h-[56px] resize-none rounded-none border-0 bg-transparent px-4 pt-3.5 pb-1 text-[15px] leading-[1.65] shadow-none focus-visible:border-transparent focus-visible:ring-0 md:text-[15px]"
+              rows={1}
+            />
+            <div className="flex items-center justify-between gap-2 px-2 pb-2">
+              <div className="flex items-center gap-0.5">
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="text-subtle-foreground hover:bg-muted hover:text-foreground"
+                  onClick={handleAttachClick}
+                  disabled={loading}
+                  title={t("composer.attach")} aria-label={t("composer.attach")}
+                >
+                  <Paperclip className="size-3.5" />
+                </Button>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className={
+                    terminalOpen
+                      ? "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
+                      : "text-subtle-foreground hover:bg-muted hover:text-foreground"
+                  }
+                  onClick={onToggleTerminal}
+                  title={t("chat.toggleTerminal")}
+                  aria-label={t("chat.toggleTerminal")}
+                >
+                  <TerminalSquare className="size-3.5" />
+                </Button>
+              </div>
+              <div className="flex items-center gap-1">
+                {streaming ? (
+                  <>
+                    {(input.trim() ||
+                      attachments.length > 0 ||
+                      textAttachments.length > 0) && (
+                      <Button
+                        size="icon-sm"
+                        className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-full"
+                        onClick={() => handleSend()}
+                        title={t("composer.sendSteering")} aria-label={t("composer.sendSteering")}
+                      >
+                        <Send className="size-3.5" />
+                      </Button>
+                    )}
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      className="border-border text-foreground hover:bg-accent hover:text-foreground rounded-full border"
+                      onClick={onStop}
+                      title={t("composer.stopGenerating")} aria-label={t("composer.stopGenerating")}
+                    >
+                      <Square className="size-3 shrink-0 fill-current" />
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="icon-sm"
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-muted disabled:text-subtle-foreground rounded-full disabled:opacity-100"
+                    onClick={() => handleSend()}
+                    disabled={
+                      !input.trim() &&
+                      attachments.length === 0 &&
+                      textAttachments.length === 0
+                    }
+                    title={t("composer.send")} aria-label={t("composer.send")}
+                  >
+                    <Send className="size-3.5" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
           <input
             ref={fileInputRef}
             type="file"
@@ -849,84 +920,21 @@ export default function Composer({
             className="hidden"
             onChange={handleFileChange}
           />
-          <Button
-            size="icon"
-            variant="ghost"
-            className="text-subtle-foreground hover:text-muted-foreground absolute bottom-1.5 left-1.5 size-8"
-            onClick={handleAttachClick}
-            disabled={loading}
-            title={t("composer.attach")} aria-label={t("composer.attach")}
-          >
-            <Paperclip className="size-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className={`absolute bottom-1.5 left-10 size-8 ${
-              terminalOpen
-                ? "bg-primary/10 text-primary hover:bg-primary/15"
-                : "text-subtle-foreground hover:text-muted-foreground"
-            }`}
-            onClick={onToggleTerminal}
-            title={t("chat.toggleTerminal")}
-            aria-label={t("chat.toggleTerminal")}
-          >
-            <TerminalSquare className="size-4" />
-          </Button>
-          {streaming ? (
-            <>
-              {(input.trim() ||
-                attachments.length > 0 ||
-                textAttachments.length > 0) && (
-                <Button
-                  size="icon"
-                  className="bg-primary text-primary-foreground absolute right-11 bottom-1.5 size-8 hover:opacity-90"
-                  onClick={() => handleSend()}
-                  title={t("composer.sendSteering")} aria-label={t("composer.sendSteering")}
-                >
-                  <Send className="size-4" />
-                </Button>
-              )}
-              <Button
-                size="icon"
-                variant="secondary"
-                className="bg-secondary text-muted-foreground absolute right-1.5 bottom-1.5 size-8 hover:bg-accent"
-                onClick={onStop}
-                title={t("composer.stopGenerating")} aria-label={t("composer.stopGenerating")}
-              >
-                <Square className="size-3.5 fill-current" />
-              </Button>
-            </>
-          ) : (
-            <Button
-              size="icon"
-              className="bg-primary text-primary-foreground absolute right-1.5 bottom-1.5 size-8 hover:opacity-90"
-              onClick={() => handleSend()}
-              disabled={
-                !input.trim() &&
-                attachments.length === 0 &&
-                textAttachments.length === 0
-              }
-              title={t("composer.send")} aria-label={t("composer.send")}
-            >
-              <Send className="size-4" />
-            </Button>
-          )}
         </div>
         {/* Status line — composer footer */}
-        <div className="mt-2 flex items-center justify-end gap-2">
-          <span className="text-subtle-foreground hidden items-center gap-2 text-[11px] md:flex">
+        <div className="mt-2 flex h-4 items-center justify-end">
+          <span className="text-subtle-foreground hidden items-center gap-1.5 text-[10.5px] md:flex">
             {streaming ? (
               <>
                 <span className="animate-pulse">{t("composer.running")}</span>
                 <span>{t("composer.enterSteers")}</span>
-                <span>·</span>
+                <span className="opacity-50">·</span>
                 <span>{t("composer.altEnterQueues")}</span>
               </>
             ) : (
               <>
                 <span>{t("composer.enterSend")}</span>
-                <span>·</span>
+                <span className="opacity-50">·</span>
                 <span>{t("composer.shiftEnter")}</span>
               </>
             )}

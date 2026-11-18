@@ -41,22 +41,22 @@ export default function MermaidDiagram({ code }: { code: string }) {
 
   if (showSource || state.failed) {
     return (
-      <div className="border-border bg-muted my-2 overflow-hidden rounded-lg border">
-        <div className="border-border text-subtle-foreground flex items-center justify-between border-b px-3 py-1.5 text-[11px]">
-          <span className="inline-flex items-center gap-1.5">
+      <div className="border-hairline bg-muted/50 my-3 overflow-hidden rounded-xl border">
+        <div className="border-hairline text-subtle-foreground flex h-8 items-center justify-between border-b pl-3.5 pr-2 text-[10px] tracking-[0.12em] uppercase">
+          <span className="inline-flex items-center gap-1.5 font-mono">
             {state.failed && <AlertCircle className="size-3.5" />}
             mermaid
           </span>
           <button
             type="button"
-            className="hover:text-foreground inline-flex items-center gap-1 transition-colors"
+            className="hover:bg-background/70 hover:text-foreground inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] tracking-normal normal-case transition-colors"
             onClick={() => setShowSource(!showSource)}
           >
             <Image className="size-3.5" />
             {t("chat.mermaidDiagram")}
           </button>
         </div>
-        <pre className="overflow-x-auto p-3 font-mono text-xs leading-relaxed">
+        <pre className="overflow-x-auto px-3.5 py-3 font-mono text-[12.5px] leading-[1.7]">
           <code>{code}</code>
         </pre>
       </div>
@@ -64,10 +64,10 @@ export default function MermaidDiagram({ code }: { code: string }) {
   }
 
   return (
-    <div className="border-border bg-muted group/mermaid relative my-2 overflow-hidden rounded-lg border">
+    <div className="border-hairline bg-muted/30 group/mermaid relative my-3 overflow-hidden rounded-xl border">
       <button
         type="button"
-        className="text-subtle-foreground hover:text-foreground absolute top-2 right-2 z-10 rounded p-1 opacity-0 transition-opacity group-hover/mermaid:opacity-100"
+        className="text-subtle-foreground hover:bg-background/70 hover:text-foreground absolute top-2 right-2 z-10 rounded-md p-1 opacity-0 transition-opacity group-hover/mermaid:opacity-100 focus-visible:opacity-100"
         onClick={() => setShowSource(true)}
         title={t("chat.mermaidSource")}
         aria-label={t("chat.mermaidSource")}
@@ -76,11 +76,11 @@ export default function MermaidDiagram({ code }: { code: string }) {
       </button>
       {state.svg ? (
         <div
-          className="mermaid-diagram flex justify-center overflow-x-auto p-3"
+          className="mermaid-diagram flex justify-center overflow-x-auto p-4"
           dangerouslySetInnerHTML={{ __html: state.svg }}
         />
       ) : (
-        <div className="text-subtle-foreground p-3 font-mono text-xs">{code}</div>
+        <div className="text-subtle-foreground p-3.5 font-mono text-[12.5px]">{code}</div>
       )}
     </div>
   );

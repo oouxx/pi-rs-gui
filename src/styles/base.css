@@ -45,9 +45,11 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--muted-foreground);
-    opacity: 0.4;
+    background: color-mix(in oklab, var(--foreground) 14%, transparent);
     border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--foreground) 24%, transparent);
   }
 
   ::selection {

@@ -83,7 +83,7 @@ const BlockRenderer = memo(function BlockRenderer({
           <img
             src={imageDataUrl(block)}
             alt=""
-            className="border-border max-h-64 rounded-md border"
+            className="border-hairline max-h-64 rounded-lg border"
           />
         </div>
       );
@@ -145,7 +145,7 @@ export const MessageItem = memo(function MessageItem({
     msg.role === "user" ? parseAttachedFiles(msg.content) : null;
   return (
     <motion.div
-      className="group mx-auto w-full max-w-[820px]"
+      className="group mx-auto w-full max-w-[760px]"
       // Only the newest message animates in; replayed transcripts mount all
       // messages at once and should not fade in as a block.
       initial={isLast ? { opacity: 0, y: 6 } : false}
@@ -161,15 +161,15 @@ export const MessageItem = memo(function MessageItem({
       )}
       {msg.role === "user" ? (
         /* User prompt in a subtle neutral box, full width */
-        <div className="border-border bg-card relative rounded-lg border px-4 py-3 text-[15px] leading-relaxed text-foreground">
+        <div className="border-hairline bg-secondary/60 text-foreground relative rounded-2xl border px-4 py-3 text-[15px] leading-[1.7]">
           <ForkButton
             msg={msg}
             onForkHere={onForkHere}
-            className="text-subtle-foreground hover:text-muted-foreground absolute top-2 right-9 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+            className="text-subtle-foreground hover:bg-background/70 hover:text-foreground absolute top-2 right-9 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
           />
           <CopyButton
             text={msg.content}
-            className="text-subtle-foreground hover:text-muted-foreground absolute top-2 right-2 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+            className="text-subtle-foreground hover:bg-background/70 hover:text-foreground absolute top-2 right-2 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100"
           />
           <div className="break-words whitespace-pre-wrap">
             {userContent?.text}
@@ -179,7 +179,7 @@ export const MessageItem = memo(function MessageItem({
               {userContent.files.map((name, index) => (
                 <span
                   key={`${name}-${index}`}
-                  className="border-border bg-muted text-muted-foreground inline-flex max-w-[240px] items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]"
+                  className="border-hairline bg-background/60 text-muted-foreground inline-flex max-w-[240px] items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]"
                   title={name}
                 >
                   <FileText className="text-subtle-foreground size-3 shrink-0" />
@@ -195,12 +195,12 @@ export const MessageItem = memo(function MessageItem({
                 key={`${msg.id}-img${bi}`}
                 src={imageDataUrl(b)}
                 alt=""
-                className="border-border mt-2 max-h-48 rounded-lg border"
+                className="border-hairline mt-2 max-h-48 rounded-lg border"
               />
             ))}
         </div>
       ) : msg.errorMessage ? (
-        <div className="border-destructive/30 bg-destructive/10 text-destructive relative flex items-start gap-2 rounded-lg border px-4 py-3 text-sm">
+        <div className="border-destructive/25 bg-destructive/[0.06] text-destructive relative flex items-start gap-2 rounded-xl border px-4 py-3 text-[13.5px] leading-relaxed">
           <AlertCircle className="mt-0.5 size-4 shrink-0" />
           <div className="min-w-0 break-words whitespace-pre-wrap">
             {msg.errorMessage}
@@ -208,15 +208,15 @@ export const MessageItem = memo(function MessageItem({
         </div>
       ) : (
         /* Assistant answers are plain markdown, no bubble */
-        <div className="text-foreground relative text-[15px] leading-relaxed">
+        <div className="text-foreground relative text-[15px] leading-[1.75]">
           <ForkButton
             msg={msg}
             onForkHere={onForkHere}
-            className="text-subtle-foreground hover:text-muted-foreground absolute -top-1 right-8 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+            className="text-subtle-foreground hover:bg-muted hover:text-foreground absolute -top-1 right-8 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
           />
           <CopyButton
             text={msg.content}
-            className="text-subtle-foreground hover:text-muted-foreground absolute -top-1 right-1 rounded p-1 opacity-0 transition-opacity group-hover:opacity-100"
+            className="text-subtle-foreground hover:bg-muted hover:text-foreground absolute -top-1 right-1 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100"
           />
           {msg.blocks.length > 0 ? (
             msg.blocks.map((block, bi) => (
@@ -227,7 +227,7 @@ export const MessageItem = memo(function MessageItem({
               />
             ))
           ) : streaming && isLastAi ? (
-            <span className="text-subtle-foreground inline-block animate-pulse">▍</span>
+            <span className="bg-primary ml-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-pulse rounded-full align-middle" />
           ) : null}
         </div>
       )}

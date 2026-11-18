@@ -30,9 +30,9 @@ export default function ThinkingBlock({ thinking, streaming = false }: ThinkingB
   }, [streaming])
 
   return (
-    <div className="border-border bg-muted my-2 overflow-hidden rounded-lg border">
+    <div className="border-hairline bg-muted/40 my-2 overflow-hidden rounded-xl border">
       <button
-        className="text-subtle-foreground hover:text-muted-foreground flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs transition-colors"
+        className="text-subtle-foreground hover:text-muted-foreground flex w-full items-center gap-1.5 px-3 py-2 text-left text-[11.5px] transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
         <motion.span
@@ -42,7 +42,7 @@ export default function ThinkingBlock({ thinking, streaming = false }: ThinkingB
         >
           <ChevronRight className="size-3.5" />
         </motion.span>
-        <Sparkles className="size-3.5" />
+        <Sparkles className="text-primary/70 size-3.5" />
         <span className="font-medium">
           {streaming ? t("thinking.thinking") : t("thinking.reasoning")}
         </span>
@@ -71,7 +71,7 @@ export default function ThinkingBlock({ thinking, streaming = false }: ThinkingB
             transition={PANEL_TRANSITION}
             className="overflow-hidden"
           >
-            <div className="text-muted-foreground border-border border-t px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap">
+            <div className="text-muted-foreground border-hairline border-t px-3.5 py-2.5 text-[12.5px] leading-[1.75] whitespace-pre-wrap">
               {thinking}
             </div>
           </motion.div>

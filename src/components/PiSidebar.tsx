@@ -521,7 +521,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                   commitRename(s.id, renameValue, s.title);
                 }}
                 onClick={(e) => e.stopPropagation()}
-                className="h-7 flex-1 rounded-sm bg-background px-1 text-sm outline-none ring-1 ring-ring"
+                className="bg-background ring-ring h-7 flex-1 rounded-md px-2 text-[13px] outline-none ring-1"
               />
             ) : (
               <SidebarMenuButton
@@ -541,22 +541,16 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                   });
                 }}
                 tooltip={s.title}
-                className="data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground hover:bg-muted hover:text-foreground pr-12"
+                className="text-secondary-foreground hover:bg-sidebar-accent hover:text-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-foreground h-8 gap-2 rounded-lg px-2 pr-9 text-[13px]"
               >
-                <span
-                  className={`size-1.5 shrink-0 rounded-full ${activeSessionId === s.id ? "bg-primary" : "bg-subtle-foreground"}`}
-                />
-                <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-                  <span className="flex w-full min-w-0 items-center gap-1.5">
-                    <span className="truncate leading-tight">{s.title}</span>
-                    {s.status === "running" && (
-                      <Loader2 className="text-success size-3 shrink-0 animate-spin" />
-                    )}
-                  </span>
-                </span>
+                <MessageSquare className="text-subtle-foreground hidden group-data-[collapsible=icon]:block" />
+                <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                {s.status === "running" && (
+                  <Loader2 className="text-success size-3 shrink-0 animate-spin" />
+                )}
               </SidebarMenuButton>
             )}
-            <div className="absolute top-1/2 right-1.5 z-10 flex -translate-y-1/2 items-center gap-0.5">
+            <div className="group-data-[collapsible=icon]:hidden absolute top-1/2 right-1.5 z-10 flex -translate-y-1/2 items-center gap-0.5">
               {s.status === "running" && (
                 <button
                   className="text-success hover:text-destructive rounded p-1 transition-colors"
@@ -632,15 +626,15 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader>
+      <SidebarHeader className="gap-1 px-2 pt-2.5 pb-2">
         <SidebarMenu>
           <SidebarMenuItem>
             {/* Brand header */}
-            <div className="flex items-center gap-2 px-2 py-1 group-data-[collapsible=icon]:justify-center">
-              <span className="bg-primary font-serif flex size-5 shrink-0 items-center justify-center rounded-md text-[12px] font-bold text-primary-foreground">
+            <div className="flex h-8 items-center gap-2 px-1.5 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+              <span className="bg-primary font-serif flex size-6 shrink-0 items-center justify-center rounded-lg text-[13px] font-bold text-primary-foreground shadow-xs">
                 p
               </span>
-              <span className="text-foreground text-sm font-semibold group-data-[collapsible=icon]:hidden">
+              <span className="text-foreground text-[13px] font-semibold tracking-[-0.01em] group-data-[collapsible=icon]:hidden">
                 pi
               </span>
             </div>
@@ -655,7 +649,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
               <button
                 type="button"
                 onClick={() => setProjectSwitcherOpen((o) => !o)}
-                className="text-foreground hover:bg-muted flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors"
+                className="text-muted-foreground hover:bg-sidebar-accent hover:text-foreground flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[13px] transition-colors"
                 title={activeProject?.path ?? t("sidebar.allConversations")}
                 aria-haspopup="menu"
                 aria-expanded={projectSwitcherOpen}
@@ -665,7 +659,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                   {activeProject ? activeProject.label : t("sidebar.allConversations")}
                 </span>
                 <ChevronDown
-                  className={`size-3 shrink-0 transition-transform group-data-[collapsible=icon]:hidden ${
+                  className={`size-3 shrink-0 opacity-60 transition-transform group-data-[collapsible=icon]:hidden ${
                     projectSwitcherOpen ? "rotate-180" : ""
                   }`}
                 />
@@ -673,7 +667,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
               {projectSwitcherOpen && (
                 <div
                   role="menu"
-                  className="border-hairline bg-popover text-popover-foreground absolute top-full left-0 z-50 mt-1 max-h-80 w-64 overflow-y-auto rounded-lg border p-1 shadow-lg"
+                  className="border-hairline bg-popover text-popover-foreground absolute top-full left-0 z-50 mt-1 max-h-80 w-64 overflow-y-auto rounded-xl border p-1 shadow-md"
                 >
                   <button
                     type="button"
@@ -682,7 +676,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                       setCurrentProject(null);
                       setProjectSwitcherOpen(false);
                     }}
-                    className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
+                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors ${
                       !activeProject
                         ? "bg-accent text-accent-foreground font-medium"
                         : "text-muted-foreground hover:bg-muted"
@@ -701,7 +695,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                         setCurrentProject(p.path || null);
                         setProjectSwitcherOpen(false);
                       }}
-                      className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
+                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors ${
                         activeProject?.path === p.path
                           ? "bg-accent text-accent-foreground font-medium"
                           : "text-muted-foreground hover:bg-muted"
@@ -739,16 +733,18 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 }
               }}
               tooltip={t("sidebar.newThread")}
-              className="bg-primary/10 text-primary hover:bg-primary/15 data-[active=true]:bg-primary/15 data-[active=true]:text-primary"
+              className="text-foreground hover:bg-sidebar-accent h-8 gap-2 rounded-lg px-2 text-[13px] font-medium [&_svg]:size-3.5"
             >
-              <Plus />
+              <span className="bg-primary/10 text-primary flex size-5 shrink-0 items-center justify-center rounded-md">
+                <Plus />
+              </span>
               <span>{t("sidebar.newThread")}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
+        <SidebarGroup className="px-2 py-1">
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton
@@ -757,6 +753,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 }
                 isActive={mode === "skills"}
                 tooltip={t("nav.skills")}
+                className="text-muted-foreground hover:bg-sidebar-accent hover:text-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-foreground h-8 gap-2 rounded-lg px-2 text-[13px]"
               >
                 <Code2 />
                 <span>{t("nav.skills")}</span>
@@ -764,34 +761,34 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
-        <SidebarGroup>
-          <div className="px-3 py-2 group-data-[collapsible=icon]:hidden">
+        <SidebarGroup className="px-2 py-1.5">
+          <div className="group-data-[collapsible=icon]:hidden">
             <div className="relative">
-              <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+              <Search className="text-subtle-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
               <Input
                 placeholder={t("sidebar.search")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-8 pl-8 text-xs"
+                className="border-hairline bg-background/70 placeholder:text-subtle-foreground focus-visible:border-ring/50 focus-visible:ring-ring/15 h-8 rounded-lg pl-8 text-[12.5px] focus-visible:ring-2 md:text-[12.5px]"
               />
             </div>
           </div>
         </SidebarGroup>
         {search.trim().length >= 2 && (
-          <SidebarGroup className="border-border border-t pt-2 group-data-[collapsible=icon]:hidden">
-            <div className="text-subtle-foreground flex items-center gap-1.5 px-3 pb-1 text-[10px] font-medium tracking-wide uppercase">
+          <SidebarGroup className="border-hairline border-t px-2 pt-2 group-data-[collapsible=icon]:hidden">
+            <div className="text-subtle-foreground flex items-center gap-1.5 px-2.5 pb-1.5 text-[10px] font-medium tracking-[0.08em] uppercase">
               <MessageSquare className="size-3" />
               {t("sidebar.messages")}
-              <span className="ml-auto">
+              <span className="ml-auto tabular-nums">
                 {searchingContent ? "…" : contentHits.length}
               </span>
             </div>
             {contentHits.length === 0 ? (
-              <div className="text-subtle-foreground px-3 py-2 text-[11px]">
+              <div className="text-subtle-foreground px-2.5 py-2 text-[11px]">
                 {searchingContent ? t("sidebar.searching") : t("sidebar.noMessageMatches")}
               </div>
             ) : (
-              <div className="max-h-64 overflow-y-auto px-1">
+              <div className="max-h-64 overflow-y-auto">
                 {contentHits.map((hit, index) => (
                   <button
                     key={`${hit.sessionId}-${index}`}
@@ -807,7 +804,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                         }),
                       );
                     }}
-                    className={`hover:bg-secondary w-full rounded-md px-2 py-1.5 text-left transition-colors ${
+                    className={`hover:bg-secondary w-full rounded-lg px-2 py-1.5 text-left transition-colors ${
                       hit.sessionId === activeSessionId
                         ? "bg-secondary"
                         : ""
@@ -836,29 +833,29 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
             )}
           </SidebarGroup>
         )}
-        <SidebarGroup className="min-h-0 flex-1 overflow-y-auto">
+        <SidebarGroup className="min-h-0 flex-1 overflow-y-auto px-2">
           {currentProject ? (
             /* Single-project view: flat session list under the project path */
             <div className="flex h-full flex-col">
-              <div className="px-3 pt-2 pb-1 group-data-[collapsible=icon]:hidden">
+              <div className="group-data-[collapsible=icon]:hidden px-2.5 pt-1.5 pb-1.5">
                 <div
-                  className="flex items-center gap-1.5 text-[11px] text-subtle-foreground"
+                  className="text-subtle-foreground flex items-center gap-1.5 text-[11px]"
                   title={activeProject?.path}
                 >
                   <FolderOpen className="size-3 shrink-0" />
                   <span className="min-w-0 flex-1 truncate font-medium">
                     {activeProject?.label}
                   </span>
-                  <span className="shrink-0">{projectSessions.length}</span>
+                  <span className="shrink-0 tabular-nums opacity-70">{projectSessions.length}</span>
                 </div>
               </div>
               <SidebarMenu>
                 {loading ? (
-                  <div className="text-muted-foreground py-8 text-center text-xs">
+                  <div className="text-subtle-foreground group-data-[collapsible=icon]:hidden py-10 text-center text-[12px]">
                     {t("common.loading")}
                   </div>
                 ) : projectSessions.length === 0 ? (
-                  <div className="text-muted-foreground py-8 text-center text-xs">
+                  <div className="text-subtle-foreground group-data-[collapsible=icon]:hidden py-10 text-center text-[12px]">
                     {search.trim()
                       ? t("sidebar.noMatching")
                       : t("sidebar.noProjectSessions")}
@@ -871,11 +868,11 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           ) : (
             <SidebarMenu>
               {loading ? (
-                <div className="text-muted-foreground py-8 text-center text-xs">
+                <div className="text-subtle-foreground group-data-[collapsible=icon]:hidden py-10 text-center text-[12px]">
                   {t("common.loading")}
                 </div>
               ) : visibleSessions.length === 0 ? (
-                <div className="text-muted-foreground py-8 text-center text-xs">
+                <div className="text-subtle-foreground group-data-[collapsible=icon]:hidden py-10 text-center text-[12px]">
                   {search.trim() ? t("sidebar.noMatching") : t("sidebar.noSessions")}
                 </div>
               ) : (
@@ -887,11 +884,11 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                       key={g.key}
                       open={!isCollapsed}
                       onOpenChange={(open) => setGroupCollapsed(g.key, !open)}
-                      className="mb-2"
+                      className="mb-1"
                     >
                       <CollapsibleTrigger
                         disabled={!!search.trim()}
-                        className="text-muted-foreground group-data-[collapsible=icon]:hidden flex w-full cursor-pointer items-center gap-1.5 px-3 py-1 text-[10px] font-medium uppercase tracking-wide select-none hover:text-foreground disabled:cursor-default"
+                        className="text-subtle-foreground hover:text-foreground group-data-[collapsible=icon]:hidden flex w-full cursor-pointer items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium tracking-[0.02em] select-none disabled:cursor-default"
                         title={g.path}
                       >
                         <ChevronRight
@@ -899,7 +896,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                         />
                         <FolderOpen className="size-3 shrink-0" />
                         <span className="truncate">{g.label}</span>
-                        <span className="ml-auto text-[10px] opacity-70">
+                        <span className="ml-auto text-[10px] tabular-nums opacity-60">
                           {g.sessions.length}
                         </span>
                       </CollapsibleTrigger>
@@ -916,7 +913,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           )}
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="px-2 pt-0 pb-2">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
@@ -925,6 +922,7 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
               }
               isActive={mode === "settings"}
               tooltip={t("nav.settings")}
+              className="text-muted-foreground hover:bg-sidebar-accent hover:text-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-foreground h-8 gap-2 rounded-lg px-2 text-[13px]"
             >
               <Settings />
               <span>{t("nav.settings")}</span>

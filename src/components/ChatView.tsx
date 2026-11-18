@@ -796,33 +796,34 @@ export default function ChatView({
   return (
     <div className="flex size-full flex-col">
       {/* Header — minimal, hairline */}
-      <div className="border-border bg-background flex shrink-0 items-center gap-3 border-b px-4 py-2">
-        <SidebarTrigger className="shrink-0" />
-        <div className="text-subtle-foreground flex min-w-0 shrink items-center gap-1.5 text-sm whitespace-nowrap">
-          <span className="text-foreground font-medium">
+      <div className="border-hairline bg-background flex h-12 shrink-0 items-center gap-1.5 border-b px-3">
+        <SidebarTrigger className="text-subtle-foreground hover:text-foreground -ml-1 size-7 shrink-0" />
+        <div className="flex min-w-0 max-w-[38%] items-center gap-1.5">
+          <span className="text-foreground truncate text-[13px] font-medium tracking-[-0.01em]">
             {activeTitle || t("chat.newConversation")}
           </span>
           {streaming && (
-            <Loader2 className="text-success size-3.5 shrink-0 animate-spin" />
+            <Loader2 className="text-primary size-3.5 shrink-0 animate-spin" />
           )}
         </div>
+        <span className="bg-border mx-0.5 h-3.5 w-px shrink-0" />
         <Popover open={folderOpen} onOpenChange={setFolderOpen}>
           <PopoverTrigger asChild>
             <button
               type="button"
               disabled={!activeSessionId}
-              className="text-subtle-foreground hover:text-muted-foreground inline-flex min-w-0 max-w-[180px] shrink items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-40"
+              className="text-muted-foreground hover:bg-muted hover:text-foreground inline-flex h-7 min-w-0 max-w-[160px] shrink items-center gap-1.5 rounded-md px-2 text-xs transition-colors disabled:pointer-events-none disabled:opacity-40"
               title={activeSessionCwd ?? t("chat.selectCwd")}
               aria-label={t("chat.workspace")}
             >
               <Folder className="size-3.5 shrink-0" />
-              <span className="hidden truncate sm:inline">
+              <span className="hidden min-w-0 truncate sm:inline">
                 {activeSessionCwd
                   ? (activeSessionCwd.split("/").filter(Boolean).pop() ??
                     activeSessionCwd)
                   : t("chat.selectCwd")}
               </span>
-              <ChevronDown className="size-3 shrink-0" />
+              <ChevronDown className="size-3 shrink-0 opacity-60" />
             </button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-80 p-1">
@@ -867,14 +868,15 @@ export default function ChatView({
             <button
               type="button"
               disabled={!activeSessionId}
-              className="text-subtle-foreground hover:text-muted-foreground inline-flex max-w-[220px] items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors disabled:opacity-40"
+              className="text-muted-foreground hover:bg-muted hover:text-foreground inline-flex h-7 min-w-0 max-w-[200px] items-center gap-1 rounded-md px-2 transition-colors disabled:pointer-events-none disabled:opacity-40"
               title={t("chat.selectModel")}
             >
-              <span className="truncate">
+              <span className="min-w-0 truncate font-mono text-[11px]">
                 {currentProvider && currentModel
                   ? `${currentProvider}/${currentModel}`
                   : t("chat.selectModel")}
               </span>
+              <ChevronDown className="size-3 shrink-0 opacity-60" />
             </button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-80 p-2">
@@ -902,104 +904,137 @@ export default function ChatView({
         </Popover>
         {usage && (
           <span
-            className={`hidden text-[11px] tabular-nums sm:inline ${
-              usage.percentage >= 85 ? "text-warning" : "text-subtle-foreground"
-            }`}
-            title={usage.formatted}
+            className="text-border hidden h-7 w-6 shrink-0 items-center justify-center sm:inline-flex"
+            title={`${t("chat.context")}: ${usage.formatted}`}
+            aria-label={`${t("chat.context")}: ${usage.formatted}`}
+            role="img"
           >
-            {usage.percentage.toFixed(0)}% ctx
+            <svg viewBox="0 0 16 16" className="size-4 -rotate-90">
+              <circle
+                cx="8"
+                cy="8"
+                r="6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+              <circle
+                cx="8"
+                cy="8"
+                r="6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeDasharray={`${Math.min(100, Math.max(0, usage.percentage)) * 0.377} 37.7`}
+                className={
+                  usage.percentage >= 85 ? "text-warning" : "text-primary"
+                }
+              />
+            </svg>
           </span>
         )}
-        <Popover open={infoOpen} onOpenChange={setInfoOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              disabled={!activeSessionId}
-              onClick={toggleInfo}
-              className="text-subtle-foreground hover:text-muted-foreground rounded-md p-1 transition-colors disabled:opacity-40"
-              title={t("chat.sessionInfo")} aria-label={t("chat.sessionInfo")}
-            >
-              <Info className="size-3.5" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-96 p-0">
-            {sessionInfo && (
-              <div className="flex flex-col gap-2 p-3 text-xs">
-                <div className="text-foreground truncate text-sm font-medium">
-                  {sessionInfo.title || "Untitled"}
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => threadSearch.open()}
+            className="text-subtle-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring/40 inline-flex size-7 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-none"
+            title={t("chat.findInChat")}
+            aria-label={t("chat.findInChat")}
+          >
+            <Search className="size-4" />
+          </button>
+          <Popover open={infoOpen} onOpenChange={setInfoOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                disabled={!activeSessionId}
+                onClick={toggleInfo}
+                className="text-subtle-foreground hover:bg-muted hover:text-foreground inline-flex size-7 items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-40"
+                title={t("chat.sessionInfo")} aria-label={t("chat.sessionInfo")}
+              >
+                <Info className="size-4" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-96 p-0">
+              {sessionInfo && (
+                <div className="flex flex-col gap-2 p-3 text-xs">
+                  <div className="text-foreground truncate text-sm font-medium">
+                    {sessionInfo.title || "Untitled"}
+                  </div>
+                  <InfoRow label={t("chat.sessionId")}>
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-foreground truncate font-mono transition-colors"
+                      title={t("session.copyId")}
+                      onClick={() => {
+                        navigator.clipboard?.writeText(sessionInfo.id).catch(() => {});
+                      }}
+                    >
+                      {sessionInfo.id}
+                    </button>
+                  </InfoRow>
+                  {sessionInfo.cwd && (
+                    <InfoRow label={t("chat.workingDirectory")}>
+                      <span className="text-muted-foreground truncate font-mono">
+                        {sessionInfo.cwd}
+                      </span>
+                    </InfoRow>
+                  )}
+                  {sessionInfo.sessionFile && (
+                    <InfoRow label={t("chat.sessionFile")}>
+                      <span className="text-muted-foreground truncate font-mono">
+                        {sessionInfo.sessionFile}
+                      </span>
+                    </InfoRow>
+                  )}
+                  <InfoRow label={t("chat.messages")}>
+                    <span className="text-muted-foreground">
+                      {sessionInfo.messageCount ?? 0}
+                    </span>
+                  </InfoRow>
+                  {sessionInfo.model?.provider && sessionInfo.model.modelId && (
+                    <InfoRow label={t("chat.model")}>
+                      <span className="text-muted-foreground font-mono">
+                        {sessionInfo.model.provider}/{sessionInfo.model.modelId}
+                      </span>
+                    </InfoRow>
+                  )}
+                  {usage && (
+                    <InfoRow label={t("chat.context")}>
+                      <span className="text-muted-foreground">
+                        {usage.percentage.toFixed(1)}% ·{" "}
+                        {formatTokens(usage.totalTokens)}/
+                        {formatTokens(usage.contextWindow)}
+                      </span>
+                    </InfoRow>
+                  )}
+                  {sessionInfo.createdAt && (
+                    <InfoRow label={t("chat.created")}>
+                      <span className="text-muted-foreground">
+                        {new Date(sessionInfo.createdAt).toLocaleString()}
+                      </span>
+                    </InfoRow>
+                  )}
                 </div>
-                <InfoRow label={t("chat.sessionId")}>
-                  <button
-                    type="button"
-                    className="text-muted-foreground hover:text-foreground truncate font-mono transition-colors"
-                    title={t("session.copyId")}
-                    onClick={() => {
-                      navigator.clipboard?.writeText(sessionInfo.id).catch(() => {});
-                    }}
-                  >
-                    {sessionInfo.id}
-                  </button>
-                </InfoRow>
-                {sessionInfo.cwd && (
-                  <InfoRow label={t("chat.workingDirectory")}>
-                    <span className="text-muted-foreground truncate font-mono">
-                      {sessionInfo.cwd}
-                    </span>
-                  </InfoRow>
-                )}
-                {sessionInfo.sessionFile && (
-                  <InfoRow label={t("chat.sessionFile")}>
-                    <span className="text-muted-foreground truncate font-mono">
-                      {sessionInfo.sessionFile}
-                    </span>
-                  </InfoRow>
-                )}
-                <InfoRow label={t("chat.messages")}>
-                  <span className="text-muted-foreground">
-                    {sessionInfo.messageCount ?? 0}
-                  </span>
-                </InfoRow>
-                {sessionInfo.model?.provider && sessionInfo.model.modelId && (
-                  <InfoRow label={t("chat.model")}>
-                    <span className="text-muted-foreground font-mono">
-                      {sessionInfo.model.provider}/{sessionInfo.model.modelId}
-                    </span>
-                  </InfoRow>
-                )}
-                {usage && (
-                  <InfoRow label={t("chat.context")}>
-                    <span className="text-muted-foreground">
-                      {usage.percentage.toFixed(1)}% ·{" "}
-                      {formatTokens(usage.totalTokens)}/
-                      {formatTokens(usage.contextWindow)}
-                    </span>
-                  </InfoRow>
-                )}
-                {sessionInfo.createdAt && (
-                  <InfoRow label={t("chat.created")}>
-                    <span className="text-muted-foreground">
-                      {new Date(sessionInfo.createdAt).toLocaleString()}
-                    </span>
-                  </InfoRow>
-                )}
-              </div>
-            )}
-          </PopoverContent>
-        </Popover>
-        <button
-          type="button"
-          onClick={toggleTimeline}
-          disabled={!activeSessionId}
-          className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors disabled:opacity-40 ${
-            showTimeline
-              ? "bg-success/10 text-success"
-              : "text-subtle-foreground hover:text-muted-foreground"
-          }`}
-          title={t("chat.toggleTimeline")}
-        >
-          <GitBranch className="size-3.5" />
-          {t("timeline.title")}
-        </button>
+              )}
+            </PopoverContent>
+          </Popover>
+          <button
+            type="button"
+            onClick={toggleTimeline}
+            disabled={!activeSessionId}
+            className={`inline-flex size-7 items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-40 ${
+              showTimeline
+                ? "bg-primary/10 text-primary"
+                : "text-subtle-foreground hover:bg-muted hover:text-foreground"
+            }`}
+            title={t("chat.toggleTimeline")}
+            aria-label={t("chat.toggleTimeline")}
+          >
+            <GitBranch className="size-4" />
+          </button>
+        </div>
       </div>
 
       {/* Messages + terminal dock (resizable) */}
@@ -1017,10 +1052,10 @@ export default function ChatView({
                 <div
                   key={activeSessionId}
                   ref={timelineRef}
-                  className="timeline custom-scroll bg-background relative flex h-full flex-col overflow-y-auto px-6 py-6"
+                  className="timeline custom-scroll bg-background relative flex h-full flex-col overflow-y-auto px-8 py-7"
                 >
             {threadSearch.isOpen && (
-              <div className="border-border bg-background absolute top-3 right-3 z-40 flex items-center gap-1.5 rounded-lg border px-2 py-1.5 shadow-lg">
+              <div className="border-hairline bg-popover/95 absolute top-3 right-4 z-40 flex items-center gap-1 rounded-xl border px-2 py-1.5 shadow-md backdrop-blur">
                 <Search className="text-subtle-foreground size-3.5" />
                 <input
                   ref={threadSearch.inputRef}
@@ -1039,14 +1074,14 @@ export default function ChatView({
                   placeholder={t("chat.findInChat")}
                   className="text-foreground h-6 w-40 bg-transparent text-xs outline-none placeholder:text-subtle-foreground"
                 />
-                <span className="text-subtle-foreground min-w-[2.5rem] text-center text-[10px]">
+                <span className="text-subtle-foreground min-w-[2.5rem] text-center text-[10px] tabular-nums">
                   {threadSearch.matchCount === 0
                     ? "0/0"
                     : `${threadSearch.activeIndex + 1}/${threadSearch.matchCount}`}
                 </span>
                 <button
                   type="button"
-                  className="text-subtle-foreground hover:text-muted-foreground rounded p-0.5 transition-colors"
+                  className="text-subtle-foreground hover:bg-muted hover:text-foreground rounded-md p-1 transition-colors"
                   onClick={() => threadSearch.goToMatch(-1)}
                   title={t("chat.prevMatch")} aria-label={t("chat.prevMatch")}
                 >
@@ -1054,7 +1089,7 @@ export default function ChatView({
                 </button>
                 <button
                   type="button"
-                  className="text-subtle-foreground hover:text-muted-foreground rounded p-0.5 transition-colors"
+                  className="text-subtle-foreground hover:bg-muted hover:text-foreground rounded-md p-1 transition-colors"
                   onClick={() => threadSearch.goToMatch(1)}
                   title={t("chat.nextMatch")} aria-label={t("chat.nextMatch")}
                 >
@@ -1062,7 +1097,7 @@ export default function ChatView({
                 </button>
                 <button
                   type="button"
-                  className="text-subtle-foreground hover:text-muted-foreground rounded p-0.5 transition-colors"
+                  className="text-subtle-foreground hover:bg-muted hover:text-foreground rounded-md p-1 transition-colors"
                   onClick={() => threadSearch.close()}
                   title={t("chat.closeFind")} aria-label={t("chat.closeFind")}
                 >
@@ -1070,23 +1105,23 @@ export default function ChatView({
                 </button>
               </div>
             )}
-            <div ref={timelineContentRef} className="flex flex-1 flex-col gap-5">
+            <div ref={timelineContentRef} className="flex flex-1 flex-col gap-6">
               {isEmpty ? (
-                <div className="flex flex-1 items-center justify-center">
+                <div className="flex flex-1 items-center justify-center px-6 pb-12">
                   <motion.div
-                    className="max-w-[560px] px-6 text-center"
+                    className="max-w-[460px] text-center"
                     {...enter}
                     transition={PANEL_TRANSITION}
                   >
-                    <div className="mb-5 flex items-center justify-center">
-                      <span className="bg-primary font-serif flex size-10 items-center justify-center rounded-xl text-xl font-bold text-primary-foreground shadow-md">
+                    <div className="mb-6 flex items-center justify-center">
+                      <span className="bg-primary font-serif flex size-11 items-center justify-center rounded-2xl text-[22px] font-bold text-primary-foreground shadow-sm ring-1 ring-black/5">
                         p
                       </span>
                     </div>
-                    <h1 className="font-serif bg-gradient-to-br from-foreground via-foreground to-muted-foreground bg-clip-text text-3xl font-semibold tracking-tight text-transparent">
+                    <h1 className="font-serif text-[31px] leading-tight font-semibold tracking-tight text-foreground">
                       {t("chat.emptyTitle")}
                     </h1>
-                    <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
+                    <p className="text-muted-foreground mx-auto mt-3.5 max-w-[400px] text-[13.5px] leading-[1.8]">
                       {t("chat.emptyHint")}
                     </p>
                   </motion.div>
