@@ -21,9 +21,22 @@ use serde_json::json;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, oneshot};
 
-use super::transcript::build_display_transcript;
+use super::logging::write_line;
+use super::transcript::{
+    build_display_transcript, build_display_transcript_interrupted, INTERRUPTED_TOOL_MESSAGE,
+};
 use super::types::FrontendEvent;
-use super::Store;
+use super::{set_sess_status, Store};
+
+/// Guard rail for one agent run. Individual tools have their own timeouts;
+/// this is the last-resort backstop so a wedged run cannot pin a session in
+/// "running" forever. Keep the frontend's `TURN_TIMEOUT_MS` in sync.
+const TURN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// How long to wait for the agent-state lock when collecting the final
+/// transcript after a failure. A wedged run can still hold it, and the
+/// supervisor must not stall behind it.
+const TRANSCRIPT_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub type SessionCommandSender = mpsc::UnboundedSender<SessionCommand>;
 
@@ -147,6 +160,9 @@ pub struct SessionActor {
     session: Arc<pi_coding_agent::core::agent_session::AgentSession>,
     cmd_rx: mpsc::UnboundedReceiver<SessionCommand>,
     app: AppHandle,
+    /// Used to flip the UI session status back to idle when a turn fails —
+    /// a failed run never emits `agent_end`, so nothing else would.
+    store: Arc<Store>,
     session_id: String,
     /// Shared with the event subscription so fork/import swaps keep the
     /// emitted event session id in sync.
@@ -160,7 +176,7 @@ impl SessionActor {
     pub fn new(
         runtime: AgentSessionRuntime,
         cmd_rx: mpsc::UnboundedReceiver<SessionCommand>,
-        _store: Arc<Store>,
+        store: Arc<Store>,
         app: AppHandle,
         sid_holder: Arc<std::sync::Mutex<String>>,
     ) -> Self {
@@ -172,6 +188,7 @@ impl SessionActor {
             session,
             cmd_rx,
             app,
+            store,
             session_id,
             sid_holder,
         }
@@ -488,9 +505,13 @@ impl SessionActor {
 
     /// Run an LLM turn as a separate task sharing `Arc<AgentSession>`.
     /// Streaming events flow through the session's event subscription; on
-    /// completion the final transcript is emitted. Turn failures (timeout,
-    /// agent-loop errors) are surfaced to the frontend via a `run_error`
-    /// agent-event so the UI never silently stalls.
+    /// completion the final transcript is emitted.
+    ///
+    /// The run is supervised: a panic (tokio would otherwise swallow it) or a
+    /// timeout is turned into a `run_error` event, the session status is reset
+    /// to idle, and the transcript is rebuilt with the unanswered tool calls
+    /// marked as interrupted. Without that final step the UI kept rendering
+    /// "等待" cards forever, because nothing ever resolves them.
     async fn start_turn(
         &mut self,
         text: String,
@@ -499,9 +520,14 @@ impl SessionActor {
     ) {
         let session = Arc::clone(&self.session);
         let app = self.app.clone();
+        let store = Arc::clone(&self.store);
         let sid = self.session_id.clone();
-        tokio::spawn(async move {
-            let result = tokio::time::timeout(std::time::Duration::from_secs(300), async {
+
+        // The turn itself only reports how it ended. All failure handling
+        // lives in the supervisor so timeout / panic / prompt-error take the
+        // same path.
+        let turn = tokio::spawn(async move {
+            let result = tokio::time::timeout(TURN_TIMEOUT, async {
                 // `add_user_text` is no longer public (v1.87); `prompt`
                 // is the equivalent entry point. Prompt templates and
                 // skill commands (`/skill:name`) are expanded by pi-rs;
@@ -523,44 +549,77 @@ impl SessionActor {
             })
             .await;
             match result {
-                // Outer error = the 300s timeout elapsed.
-                Err(_) => {
-                    eprintln!("[LLM] turn timed out after 300s");
-                    let _ = app.emit(
-                        super::events::AGENT_EVENT,
-                        FrontendEvent {
-                            event_type: "run_error".into(),
-                            session_id: sid.clone(),
-                            data: json!({
-                                "message": "Turn timed out after 300s. The run was abandoned.",
-                                "timeout": true,
-                            }),
-                        },
-                    );
-                }
+                // Outer error = the timeout elapsed.
+                Err(_) => Some("Turn timed out after 300s. The run was abandoned.".to_string()),
                 // Inner error = `prompt()` rejected the turn (no model / no
                 // API key / compaction in progress) or the agent loop failed.
-                Ok(Err(ref e)) => {
-                    eprintln!("[LLM] turn error: {e}");
-                    let _ = app.emit(
-                        super::events::AGENT_EVENT,
-                        FrontendEvent {
-                            event_type: "run_error".into(),
-                            session_id: sid.clone(),
-                            data: json!({"message": e.to_string()}),
-                        },
-                    );
-                }
-                Ok(Ok(())) => {}
+                Ok(Err(error)) => Some(error.to_string()),
+                Ok(Ok(())) => None,
             }
+        });
+
+        let session_after = Arc::clone(&self.session);
+        tokio::spawn(async move {
+            let failure = match turn.await {
+                Ok(failure) => failure,
+                Err(join) if join.is_panic() => {
+                    let payload = join.into_panic();
+                    Some(format!(
+                        "Turn task panicked: {}",
+                        panic_message(payload.as_ref())
+                    ))
+                }
+                Err(_) => Some("Turn task was cancelled before it finished.".to_string()),
+            };
+
+            if let Some(message) = failure.as_deref() {
+                write_line("LLM", &format!("sid={sid} run failed: {message}"));
+                let _ = app.emit(
+                    super::events::AGENT_EVENT,
+                    FrontendEvent {
+                        event_type: "run_error".into(),
+                        session_id: sid.clone(),
+                        data: json!({ "message": message }),
+                    },
+                );
+                // A failed run never emits `agent_end`; without this the
+                // sidebar keeps the session marked as running.
+                store
+                    .mutate(&app, |state| set_sess_status(state, &sid, "idle"))
+                    .await;
+            }
+
             // Emit the transcript so the frontend reflects the final state
-            // (also after aborts, whose transcript may be partial).
-            let msgs = session.get_messages().await;
-            let transcript = build_display_transcript(&msgs);
+            // (also after aborts, whose transcript may be partial). Guard the
+            // lock: a wedged run can still be holding the agent state, and the
+            // supervisor must not hang behind it.
+            let msgs =
+                match tokio::time::timeout(TRANSCRIPT_LOCK_TIMEOUT, session_after.get_messages())
+                    .await
+                {
+                    Ok(msgs) => msgs,
+                    Err(_) => {
+                        write_line(
+                            "LLM",
+                            &format!("sid={sid} transcript skipped: agent state lock still held"),
+                        );
+                        return;
+                    }
+                };
+            let transcript = match failure {
+                Some(_) => build_display_transcript_interrupted(&msgs, INTERRUPTED_TOOL_MESSAGE),
+                None => build_display_transcript(&msgs),
+            };
             if !transcript.is_empty() {
                 let _ = app.emit(
                     super::events::TRANSCRIPT_CHANGED,
-                    &json!({ "sessionId": sid, "transcript": transcript }),
+                    &json!({
+                        "sessionId": sid,
+                        "transcript": transcript,
+                        // The frontend re-attaches the error bubble from here:
+                        // a plain transcript replace would erase it.
+                        "runError": failure,
+                    }),
                 );
             }
         });
@@ -591,4 +650,13 @@ impl SessionActor {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = new_id.clone();
         Ok(new_id)
     }
+}
+
+/// Best-effort text for a panic payload (`&str`, `String`, or nothing useful).
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|text| (*text).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "non-string panic payload".to_string())
 }

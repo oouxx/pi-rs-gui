@@ -118,7 +118,10 @@ pub async fn scan_existing_sessions_async() -> Vec<SessionRecord> {
 }
 
 /// Read transcript messages from a JSONL session file using pi-rs `SessionManager`.
-pub fn read_transcript_from_file(path: &str) -> Vec<serde_json::Value> {
+pub fn read_transcript_from_file(
+    path: &str,
+    orphan_reason: Option<&str>,
+) -> Vec<serde_json::Value> {
     let session_dir = match std::path::PathBuf::from(path).parent() {
         Some(p) => p.to_string_lossy().to_string(),
         None => return vec![],
@@ -134,13 +137,17 @@ pub fn read_transcript_from_file(path: &str) -> Vec<serde_json::Value> {
     for entry in &entries {
         if let SessionEntry::Message { message, .. } = entry {
             if message.get("role").and_then(|r| r.as_str()) == Some("toolResult") {
+                // Session files use camelCase (`toolCallId` / `isError`); accept
+                // the snake_case spellings too so older files keep working.
                 let id = message
-                    .get("tool_call_id")
+                    .get("toolCallId")
+                    .or_else(|| message.get("tool_call_id"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
                 let is_error = message
-                    .get("is_error")
+                    .get("isError")
+                    .or_else(|| message.get("is_error"))
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
                 let text: String = message
@@ -184,6 +191,13 @@ pub fn read_transcript_from_file(path: &str) -> Vec<serde_json::Value> {
                                 b["status"] = json!(if *is_error { "error" } else { "success" });
                                 b["result"] = json!(result);
                                 b["isError"] = json!(is_error);
+                            } else if let Some(reason) = orphan_reason {
+                                // No actor is live for this file, so no result
+                                // will ever arrive: mark the call interrupted.
+                                b["status"] = json!("error");
+                                b["isError"] = json!(true);
+                                b["interrupted"] = json!(true);
+                                b["result"] = json!(reason);
                             }
                         }
                     }

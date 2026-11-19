@@ -13,6 +13,7 @@ use tauri::{AppHandle, Emitter};
 
 use super::actor::SessionCommand;
 use super::cwd::{decide_cwd_action, resolve_session_cwd, CwdAction};
+use super::logging::write_line;
 use super::session;
 use super::transcript::build_display_transcript;
 use super::types::{DesktopState, SessionRecord};
@@ -474,9 +475,12 @@ impl Store {
             }
             other => other,
         };
-        eprintln!(
-            "[CWD] set_session_cwd sid={} new_cwd={:?} current_cwd={:?} session_file={:?} action={:?}",
-            session_id, new_cwd, current_cwd, current_file, action
+        write_line(
+            "CWD",
+            &format!(
+                "set_session_cwd sid={} new_cwd={:?} current_cwd={:?} session_file={:?} action={:?}",
+                session_id, new_cwd, current_cwd, current_file, action
+            ),
         );
 
         match action {

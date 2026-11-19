@@ -202,6 +202,28 @@ pub fn serialize_session_event(event: &AgentSessionEvent) -> (String, serde_json
 /// the frontend can render `ToolCallCard` with `status`/`result`/`isError`
 /// both after a turn completes and on session reload.
 pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value> {
+    build_display_transcript_inner(msgs, None)
+}
+
+/// Result text shown for a tool call whose run died before it finished.
+pub const INTERRUPTED_TOOL_MESSAGE: &str =
+    "Run interrupted (timeout or crash): this tool call never returned a result.";
+
+/// Same as [`build_display_transcript`], but tool calls that never produced a
+/// result are rendered as interrupted errors instead of staying in the
+/// "pending" state forever. Used when a turn was abandoned (timeout / panic):
+/// the run is gone, so nothing will ever fill those cards in.
+pub fn build_display_transcript_interrupted(
+    msgs: &[AgentMessage],
+    reason: &str,
+) -> Vec<serde_json::Value> {
+    build_display_transcript_inner(msgs, Some(reason))
+}
+
+fn build_display_transcript_inner(
+    msgs: &[AgentMessage],
+    orphan_reason: Option<&str>,
+) -> Vec<serde_json::Value> {
     // First pass: collect tool results keyed by tool_call_id.
     let mut tool_results: std::collections::HashMap<String, (String, bool, serde_json::Value)> =
         std::collections::HashMap::new();
@@ -258,6 +280,13 @@ pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value>
                             b["isError"] = json!(is_error);
                             // Tool-specific payload (edit diff/patch, …).
                             b["details"] = details.clone();
+                        } else if let Some(reason) = orphan_reason {
+                            // The turn died before this call produced a result.
+                            // Surface it as an error so the card stops spinning.
+                            b["status"] = json!("error");
+                            b["isError"] = json!(true);
+                            b["interrupted"] = json!(true);
+                            b["result"] = json!(reason);
                         }
                     }
                 }
@@ -426,5 +455,30 @@ mod tests {
 
         assert_eq!(transcript.len(), 2);
         assert_eq!(transcript[1]["errorMessage"], "boom");
+    }
+
+    #[test]
+    fn interrupted_transcript_marks_orphan_tool_calls() {
+        let transcript = build_display_transcript_interrupted(
+            &[user("run it", 1), tool_call("t1", 2)],
+            "run interrupted",
+        );
+
+        let block = &transcript[1]["content"][0];
+        assert_eq!(block["status"], "error");
+        assert_eq!(block["isError"], true);
+        assert_eq!(block["interrupted"], true);
+        assert_eq!(block["result"], "run interrupted");
+    }
+
+    #[test]
+    fn normal_transcript_leaves_orphan_tool_calls_pending() {
+        // A live turn (or a session selected while a background run streams)
+        // must not render in-flight tool calls as failures.
+        let transcript = build_display_transcript(&[user("run it", 1), tool_call("t1", 2)]);
+
+        let block = &transcript[1]["content"][0];
+        assert!(block.get("status").is_none());
+        assert!(block.get("interrupted").is_none());
     }
 }

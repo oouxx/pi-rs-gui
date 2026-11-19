@@ -522,10 +522,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   applyTranscript(payload) {
     streamingRef = false;
-    set({
-      messages: payload ? transcriptToDisplay(payload.transcript) : [],
-      streaming: false,
-    });
+    const messages = payload ? transcriptToDisplay(payload.transcript) : [];
+    // A failed turn's error bubble is not part of the agent transcript: the
+    // `run_error` event adds it, and this transcript replace used to wipe it,
+    // leaving only endless "等待" tool cards. The backend now ships the error
+    // on the payload so it survives the replace.
+    const runError = payload?.runError;
+    if (runError) {
+      messages.push({
+        id: `msg-err-${payload?.sessionId ?? "run"}`,
+        role: "assistant",
+        content: "",
+        blocks: [],
+        createdAt: new Date().toISOString(),
+        errorMessage: runError,
+      });
+    }
+    set({ messages, streaming: false });
   },
 }));
 

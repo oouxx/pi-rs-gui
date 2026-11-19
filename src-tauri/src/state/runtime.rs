@@ -18,6 +18,7 @@ use tauri::{AppHandle, Emitter};
 
 use super::actor::{SessionActor, SessionCommand};
 use super::cwd::resolve_session_cwd;
+use super::logging::write_line;
 use super::transcript::serialize_session_event;
 use super::types::FrontendEvent;
 use super::Store;
@@ -235,15 +236,18 @@ impl Store {
                             }
                         }
                         if et == "tool_execution_start" {
-                            eprintln!(
-                                "[TOOL] start sid={} id={} name={}",
-                                sid,
-                                data.get("tool_call_id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or(""),
-                                data.get("tool_name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("?"),
+                            write_line(
+                                "TOOL",
+                                &format!(
+                                    "start sid={} id={} name={}",
+                                    sid,
+                                    data.get("tool_call_id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or(""),
+                                    data.get("tool_name")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("?"),
+                                ),
                             );
                         } else if et == "tool_execution_end" {
                             let is_error = data
@@ -259,17 +263,20 @@ impl Store {
                                         .unwrap_or_default()
                                 });
                             let snippet: String = result_str.chars().take(160).collect();
-                            eprintln!(
-                                "[TOOL] end   sid={} id={} name={} is_error={} result={:?}",
-                                sid,
-                                data.get("tool_call_id")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or(""),
-                                data.get("tool_name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("?"),
-                                is_error,
-                                snippet,
+                            write_line(
+                                "TOOL",
+                                &format!(
+                                    "end   sid={} id={} name={} is_error={} result={:?}",
+                                    sid,
+                                    data.get("tool_call_id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or(""),
+                                    data.get("tool_name")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("?"),
+                                    is_error,
+                                    snippet,
+                                ),
                             );
                         }
                         let _ = a2.emit(

@@ -381,20 +381,23 @@ pub async fn delete_custom_provider(
 pub async fn get_selected_transcript(
     store: State<'_, Arc<Store>>,
 ) -> Result<Option<serde_json::Value>, AppError> {
-    let (sess_id, session_file) = {
+    let (sess_id, session_file, is_running) = {
         let state = store.state.lock().await;
         let sid = state.selected_session_id.clone();
-        let file = state
-            .sessions
-            .iter()
-            .find(|s| s.id == sid)
+        let record = state.sessions.iter().find(|s| s.id == sid);
+        let file = record
             .and_then(|s| s.session_file.as_ref().filter(|f| !f.is_empty()))
             .cloned();
-        (sid, file)
+        let running = record.map(|s| s.status == "running").unwrap_or(false);
+        (sid, file, running)
     };
     if sess_id.is_empty() {
         return Ok(None);
     }
+    // A session that is not running can still end on a tool call that never
+    // produced a result (the run died). Render those as interrupted instead of
+    // leaving the cards spinning forever.
+    let orphan_reason = (!is_running).then_some(crate::state::INTERRUPTED_TOOL_MESSAGE);
 
     // Prefer in-memory session messages (more up-to-date than file) whenever
     // the session has a live actor — with multi-session the actor for the
@@ -402,7 +405,12 @@ pub async fn get_selected_transcript(
     if store.actors.contains(&sess_id).await {
         let in_memory = store.get_messages().await;
         if !in_memory.is_empty() {
-            let transcript = crate::state::build_display_transcript(&in_memory);
+            let transcript = match orphan_reason {
+                Some(reason) => {
+                    crate::state::build_display_transcript_interrupted(&in_memory, reason)
+                }
+                None => crate::state::build_display_transcript(&in_memory),
+            };
             if !transcript.is_empty() {
                 return Ok(Some(
                     json!({"sessionId": sess_id, "transcript": transcript}),
@@ -412,7 +420,7 @@ pub async fn get_selected_transcript(
     }
 
     let transcript = match session_file {
-        Some(ref p) => crate::state::session::read_transcript_from_file(p),
+        Some(ref p) => crate::state::session::read_transcript_from_file(p, orphan_reason),
         None => vec![],
     };
     if transcript.is_empty() {

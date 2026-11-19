@@ -36,8 +36,31 @@ fn hydrate_path_from_login_shell() {
     }
 }
 
+/// Mirror panics into the diagnostic log. A panic inside a tokio task only
+/// reaches stderr, which a Finder launch discards — leaving a turn silently
+/// dead with no trace. The default hook still runs afterwards.
+fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = info.payload();
+        let message = payload
+            .downcast_ref::<&str>()
+            .map(|text| (*text).to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "non-string panic payload".to_string());
+        let location = info
+            .location()
+            .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+        state::logging::write_line("PANIC", &format!("{message} ({location})"));
+        default_hook(info);
+    }));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_panic_hook();
+
     #[cfg(unix)]
     hydrate_path_from_login_shell();
 

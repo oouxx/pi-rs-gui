@@ -125,6 +125,12 @@ export interface TranscriptItem {
 export interface TranscriptPayload {
   sessionId?: string;
   transcript: TranscriptItem[];
+  /**
+   * Set when the turn that produced this transcript failed (timeout, panic,
+   * agent-loop error). The error bubble is re-attached by `applyTranscript`
+   * so replacing the message list cannot erase it.
+   */
+  runError?: string | null;
 }
 
 // ── Models / providers ───────────────────────────────────────

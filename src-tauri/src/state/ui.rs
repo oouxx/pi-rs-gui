@@ -1,5 +1,6 @@
 //! State persistence — active session ID + scoped-model patterns.
 
+use crate::state::logging::write_line;
 use crate::state::DesktopState;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -9,7 +10,10 @@ use std::path::PathBuf;
 fn get_state_path() -> Option<PathBuf> {
     let dir = pi_coding_agent::config::get_agent_dir();
     if let Err(error) = std::fs::create_dir_all(&dir) {
-        eprintln!("[ui-state] cannot create {}: {error}", dir.display());
+        write_line(
+            "ui-state",
+            &format!("cannot create {}: {error}", dir.display()),
+        );
         return None;
     }
     Some(dir.join("ui-state.json"))
@@ -26,10 +30,13 @@ pub fn persist_state(state: &DesktopState) {
         match serde_json::to_string_pretty(&slim) {
             Ok(json) => {
                 if let Err(error) = std::fs::write(&path, &json) {
-                    eprintln!("[ui-state] cannot write {}: {error}", path.display());
+                    write_line(
+                        "ui-state",
+                        &format!("cannot write {}: {error}", path.display()),
+                    );
                 }
             }
-            Err(error) => eprintln!("[ui-state] cannot serialize state: {error}"),
+            Err(error) => write_line("ui-state", &format!("cannot serialize state: {error}")),
         }
     }
 }
