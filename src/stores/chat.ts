@@ -47,9 +47,6 @@ export interface SessionItem {
   preview?: string;
 }
 
-/** Keep in sync with the backend actor's turn timeout (`actor.rs`). */
-const TURN_TIMEOUT_MS = 300_000;
-
 // ── Module-scoped mutable state ─────────────────────────────────
 // Event listeners and delta batching must not live in React state: the store
 // is a singleton, and these counters/queues change far more often than the UI
@@ -64,7 +61,6 @@ let stepOffset = 0;
 // multiple tokens within a frame trigger a single render.
 let deltaQueue: StreamDelta[] = [];
 let deltaRaf: number | null = null;
-
 function flushDeltas() {
   deltaRaf = null;
   if (deltaQueue.length === 0) return;
@@ -346,14 +342,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ streaming: true });
     try {
       await submitComposer(payloadText, attachments);
-      // Safety net matching the backend's turn timeout. The transcript event
-      // normally clears streaming when the turn ends.
-      setTimeout(() => {
-        if (streamingRef) {
-          streamingRef = false;
-          set({ streaming: false });
-        }
-      }, TURN_TIMEOUT_MS);
     } catch (error) {
       streamingRef = false;
       set({ streaming: false });

@@ -28,10 +28,9 @@ use super::transcript::{
 use super::types::FrontendEvent;
 use super::{set_sess_status, Store};
 
-/// Guard rail for one agent run. Individual tools have their own timeouts;
-/// this is the last-resort backstop so a wedged run cannot pin a session in
-/// "running" forever. Keep the frontend's `TURN_TIMEOUT_MS` in sync.
-const TURN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+/// `AgentSession::abort()` waits for idle, which never happens once the run
+/// future was dropped mid-flight. Bound it; recovery kicks in on timeout.
+const ABORT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// How long to wait for the agent-state lock when collecting the final
 /// transcript after a failure. A wedged run can still hold it, and the
@@ -227,8 +226,18 @@ impl SessionActor {
                 self.start_turn(text, images, streaming_behavior).await;
             }
             SessionCommand::Abort { reply } => {
-                self.session.abort().await;
+                let settled = tokio::time::timeout(ABORT_TIMEOUT, self.session.abort())
+                    .await
+                    .is_ok();
                 let _ = reply.send(());
+                if !settled || self.session.is_streaming().await {
+                    let store = Arc::clone(&self.store);
+                    let app = self.app.clone();
+                    let sid = self.session_id.clone();
+                    tokio::spawn(async move {
+                        recycle_actor(store, app, sid, "abort did not settle").await;
+                    });
+                }
             }
             SessionCommand::SetModel {
                 provider,
@@ -495,7 +504,7 @@ impl SessionActor {
                 let _ = reply.send(items);
             }
             SessionCommand::Shutdown => {
-                self.session.abort().await;
+                let _ = tokio::time::timeout(ABORT_TIMEOUT, self.session.abort()).await;
                 // Break out of the loop by ending the run.
                 // We cannot return from handle(), so mark by dropping cmd_rx.
                 self.cmd_rx.close();
@@ -505,13 +514,12 @@ impl SessionActor {
 
     /// Run an LLM turn as a separate task sharing `Arc<AgentSession>`.
     /// Streaming events flow through the session's event subscription; on
-    /// completion the final transcript is emitted.
+    /// completion the final transcript is emitted. There is no timeout: the
+    /// turn ends when pi-rs emits its terminal events.
     ///
-    /// The run is supervised: a panic (tokio would otherwise swallow it) or a
-    /// timeout is turned into a `run_error` event, the session status is reset
-    /// to idle, and the transcript is rebuilt with the unanswered tool calls
-    /// marked as interrupted. Without that final step the UI kept rendering
-    /// "等待" cards forever, because nothing ever resolves them.
+    /// A failed run leaves pi-rs's `is_agent_run_active` set (only the settle
+    /// path clears it), which makes every later prompt queue behind a dead run
+    /// — so the actor is recycled when a failure leaves the session streaming.
     async fn start_turn(
         &mut self,
         text: String,
@@ -523,39 +531,24 @@ impl SessionActor {
         let store = Arc::clone(&self.store);
         let sid = self.session_id.clone();
 
-        // The turn itself only reports how it ended. All failure handling
-        // lives in the supervisor so timeout / panic / prompt-error take the
-        // same path.
         let turn = tokio::spawn(async move {
-            let result = tokio::time::timeout(TURN_TIMEOUT, async {
-                // `add_user_text` is no longer public (v1.87); `prompt`
-                // is the equivalent entry point. Prompt templates and
-                // skill commands (`/skill:name`) are expanded by pi-rs;
-                // builtin commands never reach here (the frontend routes
-                // them locally).
-                session
-                    .prompt(
-                        &text,
-                        Some(PromptOptions {
-                            expand_prompt_templates: Some(true),
-                            images: (!images.is_empty()).then_some(images),
-                            // When a turn is already running, pi-rs queues
-                            // the message and returns immediately.
-                            streaming_behavior,
-                            ..Default::default()
-                        }),
-                    )
-                    .await
-            })
-            .await;
-            match result {
-                // Outer error = the timeout elapsed.
-                Err(_) => Some("Turn timed out after 300s. The run was abandoned.".to_string()),
-                // Inner error = `prompt()` rejected the turn (no model / no
-                // API key / compaction in progress) or the agent loop failed.
-                Ok(Err(error)) => Some(error.to_string()),
-                Ok(Ok(())) => None,
-            }
+            // `add_user_text` is no longer public (v1.87); `prompt` is the
+            // equivalent entry point. Prompt templates and skill commands
+            // (`/skill:name`) are expanded by pi-rs; builtin commands never
+            // reach here (the frontend routes them locally).
+            session
+                .prompt(
+                    &text,
+                    Some(PromptOptions {
+                        expand_prompt_templates: Some(true),
+                        images: (!images.is_empty()).then_some(images),
+                        streaming_behavior,
+                        ..Default::default()
+                    }),
+                )
+                .await
+                .map_err(|error| error.to_string())
+                .err()
         });
 
         let session_after = Arc::clone(&self.session);
@@ -587,6 +580,19 @@ impl SessionActor {
                 store
                     .mutate(&app, |state| set_sess_status(state, &sid, "idle"))
                     .await;
+
+                let abort_settled = tokio::time::timeout(ABORT_TIMEOUT, session_after.abort())
+                    .await
+                    .is_ok();
+                if !abort_settled || session_after.is_streaming().await {
+                    recycle_actor(
+                        Arc::clone(&store),
+                        app.clone(),
+                        sid.clone(),
+                        "run left the session streaming",
+                    )
+                    .await;
+                }
             }
 
             // Emit the transcript so the frontend reflects the final state
@@ -659,4 +665,19 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
         .map(|text| (*text).to_string())
         .or_else(|| payload.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "non-string panic payload".to_string())
+}
+
+/// Drop a wedged actor and rebuild it from the session file.
+///
+/// pi-rs clears `is_agent_run_active` only when a run settles. If the run
+/// future is dropped mid-flight (abort / panic) the flag stays set,
+/// every later `prompt()` is queued as a steer and never consumed, and
+/// `abort()` waits for idle forever. Recreating the session is the only way to
+/// restore a usable agent state.
+async fn recycle_actor(store: Arc<Store>, app: AppHandle, sid: String, reason: &str) {
+    write_line("LLM", &format!("sid={sid} recycling actor: {reason}"));
+    store.shutdown_actor(&sid).await;
+    if let Err(error) = store.ensure_actor(&app, &sid).await {
+        write_line("LLM", &format!("sid={sid} actor recycle failed: {error}"));
+    }
 }
