@@ -546,14 +546,15 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
                 <MessageSquare className="text-subtle-foreground hidden group-data-[collapsible=icon]:block" />
                 <span className="min-w-0 flex-1 truncate">{s.title}</span>
                 {s.status === "running" && (
-                  <Loader2 className="text-success size-3 shrink-0 animate-spin" />
+                  <Loader2 className="text-success size-3 shrink-0 animate-spin transition-opacity group-hover/item:opacity-0 group-focus-within/item:opacity-0" />
                 )}
               </SidebarMenuButton>
             )}
             <div className="group-data-[collapsible=icon]:hidden absolute top-1/2 right-1.5 z-10 flex -translate-y-1/2 items-center gap-0.5">
               {s.status === "running" && (
                 <button
-                  className="text-success hover:text-destructive rounded p-1 transition-colors"
+                  type="button"
+                  className="text-success hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive rounded-md p-1 opacity-0 transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleStop(s.id);
