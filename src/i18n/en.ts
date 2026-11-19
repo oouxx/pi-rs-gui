@@ -380,6 +380,7 @@ const en = {
   "chat.toggleTerminal": "Toggle terminal panel (⌘J)",
   "chat.toggleTimeline": "Toggle branches panel",
   "chat.findInChat": "Find in chat…",
+  "chat.loadEarlier": "Load earlier messages ({count} more)",
   "chat.prevMatch": "Previous match (Shift+Enter)",
   "chat.nextMatch": "Next match (Enter)",
   "chat.mermaidDiagram": "Preview",

@@ -327,7 +327,18 @@ impl Store {
             session::select_session_by_id(s, session_id);
         })
         .await;
-        self.ensure_actor(app, session_id).await?;
+        self.actors.touch(session_id).await;
+        // Warming a cold actor can await MCP connections (up to 10s) and must
+        // not block the selection. The transcript command reads the session
+        // file while the actor is not ready yet.
+        let store = Arc::clone(self);
+        let app = app.clone();
+        let sid = session_id.to_string();
+        tokio::spawn(async move {
+            if let Err(error) = store.ensure_actor(&app, &sid).await {
+                write_line("SEL", &format!("sid={sid} actor warmup failed: {error}"));
+            }
+        });
         Ok(self.state.lock().await.clone())
     }
 

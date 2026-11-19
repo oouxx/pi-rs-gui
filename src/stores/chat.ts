@@ -54,6 +54,10 @@ export interface SessionItem {
 let activeSessionIdRef: string | null = null;
 let streamingRef = false;
 let transcriptGen = 0;
+// True between selecting a session and its transcript arriving. The previous
+// transcript stays on screen meanwhile, so new-session events are held back
+// until the snapshot replaces it.
+let switchingRef = false;
 // Block offset of the current assistant step within its merged message
 // (consecutive steps of a tool-calling run render as one bubble).
 let stepOffset = 0;
@@ -197,13 +201,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // transcript fetch that selectSession's reset can wipe.
     const prevRef = activeSessionIdRef;
     activeSessionIdRef = sessionId;
+    switchingRef = true;
     try {
       await apiSelectSession(sessionId);
     } catch (error) {
       activeSessionIdRef = prevRef;
+      switchingRef = false;
       throw error;
     }
-    set({ activeSessionId: sessionId, messages: [] });
+    // Keep the previous transcript until the new one arrives (applyTranscript
+    // or the initial fetch clears the flag).
+    set({ activeSessionId: sessionId });
     // Multi-session: the backend no longer aborts the old session. Derive
     // streaming from the selected session's status.
     try {
@@ -225,6 +233,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       activeSessionIdRef = newId;
       set({ activeSessionId: newId });
     }
+    switchingRef = false;
     streamingRef = false;
     set({ messages: [], streaming: false });
     void get().refreshState();
@@ -355,6 +364,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   handleAgentEvent(evt) {
     if (evt.session_id !== activeSessionIdRef) return;
+    if (switchingRef) return;
     const et = evt.event_type;
 
     if (et === "message_start") {
@@ -509,6 +519,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   applyTranscript(payload) {
+    switchingRef = false;
     streamingRef = false;
     const messages = payload ? transcriptToDisplay(payload.transcript) : [];
     // A failed turn's error bubble is not part of the agent transcript: the
@@ -609,16 +620,25 @@ export function useChatSync() {
       teardown();
       currentSession = sessionId;
       activeSessionIdRef = sessionId;
-      if (!sessionId) return;
+      if (!sessionId) {
+        switchingRef = false;
+        useChatStore.setState({ messages: [] });
+        return;
+      }
       const gen = ++transcriptGen;
-      useChatStore.setState({ messages: [] });
 
-      void getSelectedTranscript().then((transcript) => {
-        if (disposed || gen !== transcriptGen) return;
-        useChatStore.setState({
-          messages: transcript ? transcriptToDisplay(transcript.transcript) : [],
+      void getSelectedTranscript()
+        .then((transcript) => {
+          if (disposed || gen !== transcriptGen) return;
+          useChatStore.setState({
+            messages: transcript ? transcriptToDisplay(transcript.transcript) : [],
+          });
+          switchingRef = false;
+        })
+        .catch(() => {
+          if (disposed || gen !== transcriptGen) return;
+          switchingRef = false;
         });
-      });
 
       void (async () => {
         const u = await tauriListen<AgentEventPayload>(EVENTS.agentEvent, (evt) => {

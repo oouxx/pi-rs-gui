@@ -79,6 +79,14 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let _ = store.ensure_selected_actor(&handle).await;
+                // Idle actors are dropped periodically so visited sessions do
+                // not keep an AgentSession + MCP connection alive forever.
+                let mut tick = tokio::time::interval(std::time::Duration::from_secs(5 * 60));
+                tick.tick().await;
+                loop {
+                    tick.tick().await;
+                    store.evict_idle_actors().await;
+                }
             });
             Ok(())
         })

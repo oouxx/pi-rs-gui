@@ -5,6 +5,8 @@
 //! rename the key in place (the mailbox itself is unchanged).
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Instant;
 
 use tokio::sync::{oneshot, Mutex};
 
@@ -13,6 +15,8 @@ use super::actor::{SessionCommand, SessionHandle};
 #[derive(Default)]
 pub struct ActorRegistry {
     handles: Mutex<HashMap<String, SessionHandle>>,
+    warmups: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    last_used: Mutex<HashMap<String, Instant>>,
 }
 
 impl ActorRegistry {
@@ -21,15 +25,51 @@ impl ActorRegistry {
     }
 
     pub async fn insert(&self, session_id: String, handle: SessionHandle) {
-        self.handles.lock().await.insert(session_id, handle);
+        self.handles.lock().await.insert(session_id.clone(), handle);
+        self.last_used
+            .lock()
+            .await
+            .insert(session_id, Instant::now());
     }
 
     pub async fn remove(&self, session_id: &str) -> Option<SessionHandle> {
-        self.handles.lock().await.remove(session_id)
+        let handle = self.handles.lock().await.remove(session_id);
+        self.last_used.lock().await.remove(session_id);
+        handle
+    }
+
+    /// Record actor activity (selection, command, send) for idle eviction.
+    pub async fn touch(&self, session_id: &str) {
+        self.last_used
+            .lock()
+            .await
+            .insert(session_id.to_string(), Instant::now());
+    }
+
+    /// Snapshot of registered actors with their last activity time.
+    pub async fn snapshot(&self) -> Vec<(String, Instant)> {
+        let handles = self.handles.lock().await;
+        let last_used = self.last_used.lock().await;
+        let now = Instant::now();
+        handles
+            .keys()
+            .map(|id| (id.clone(), last_used.get(id).copied().unwrap_or(now)))
+            .collect()
     }
 
     pub async fn contains(&self, session_id: &str) -> bool {
         self.handles.lock().await.contains_key(session_id)
+    }
+
+    /// Per-session creation lock. Concurrent `ensure_actor` calls for the same
+    /// session serialize instead of spawning duplicate runtimes.
+    pub async fn warmup_lock(&self, session_id: &str) -> Arc<Mutex<()>> {
+        self.warmups
+            .lock()
+            .await
+            .entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
     }
 
     /// Re-key an existing mailbox after fork/import changed the session id.
@@ -55,6 +95,7 @@ impl ActorRegistry {
                 .map(|h| h.tx.clone())
                 .ok_or_else(|| "no session".to_string())?
         };
+        self.touch(session_id).await;
         let (reply_tx, reply_rx) = oneshot::channel();
         tx.send(make(reply_tx))
             .map_err(|_| "session closed".to_string())?;

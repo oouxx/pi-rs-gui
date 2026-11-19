@@ -105,6 +105,10 @@ function formatTokens(count: number): string {
   return String(count);
 }
 
+/** Render only the most recent messages; older ones load on scroll. */
+const INITIAL_VISIBLE_MESSAGES = 50;
+const VISIBLE_MESSAGES_PAGE = 50;
+
 export default function ChatView({
   onOpenSettings,
 }: {
@@ -156,6 +160,42 @@ export default function ChatView({
   const autoScrollTopRef = useRef<number | null>(null);
   const lastScrollHeightRef = useRef(0);
   const threadSearch = useThreadSearch(timelineRef);
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_MESSAGES);
+  const visibleCountRef = useRef(INITIAL_VISIBLE_MESSAGES);
+  const messageCountRef = useRef(0);
+  const restoreScrollRef = useRef<{ height: number; top: number } | null>(null);
+
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_MESSAGES);
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    visibleCountRef.current = visibleCount;
+  }, [visibleCount]);
+
+  useEffect(() => {
+    messageCountRef.current = messages.length;
+  }, [messages.length]);
+
+  const loadEarlierMessages = useCallback(() => {
+    const el = timelineRef.current;
+    if (!el || messageCountRef.current <= visibleCountRef.current) return;
+    // Record the viewport anchor so prepending older messages does not jump.
+    restoreScrollRef.current = { height: el.scrollHeight, top: el.scrollTop };
+    setVisibleCount((count) => count + VISIBLE_MESSAGES_PAGE);
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = timelineRef.current;
+    const pending = restoreScrollRef.current;
+    if (!el || !pending) return;
+    restoreScrollRef.current = null;
+    el.scrollTop = el.scrollHeight - pending.height + pending.top;
+  }, [visibleCount]);
+
+  const hiddenCount = Math.max(0, messages.length - visibleCount);
+  const visibleMessages =
+    hiddenCount > 0 ? messages.slice(hiddenCount) : messages;
 
   // ── Header data ────────────────────────────────────────────
   const refreshModelPicker = useCallback(async () => {
@@ -718,6 +758,8 @@ export default function ChatView({
         source,
         contentGrew,
       );
+      // Load older messages when the user reaches the top.
+      if (el.scrollTop < 120) loadEarlierMessages();
     };
     const onWheel = (e: WheelEvent) => {
       if (e.deltaY < 0) stickToBottomRef.current = false;
@@ -735,7 +777,7 @@ export default function ChatView({
       el.removeEventListener("scroll", onScroll);
       el.removeEventListener("wheel", onWheel);
     };
-  }, [activeSessionId, pinToBottom]);
+  }, [activeSessionId, pinToBottom, loadEarlierMessages]);
 
   useLayoutEffect(() => {
     pinToBottom();
@@ -1127,17 +1169,30 @@ export default function ChatView({
                   </motion.div>
                 </div>
               ) : (
-                messages.map((msg, idx) => (
-                  <MessageItem
-                    key={msg.id}
-                    msg={msg}
-                    streaming={streaming}
-                    isLast={idx === messages.length - 1}
-                    onForkHere={forkFromMessage}
-                    versions={versionsByMessage.get(msg.id)}
-                    onSelectVersion={handleSelectVersion}
-                  />
-                ))
+                <>
+                  {hiddenCount > 0 && (
+                    <div className="flex justify-center">
+                      <button
+                        type="button"
+                        onClick={loadEarlierMessages}
+                        className="text-subtle-foreground hover:text-foreground hover:bg-muted rounded-md px-2 py-1 text-[11px] transition-colors"
+                      >
+                        {t("chat.loadEarlier", { count: hiddenCount })}
+                      </button>
+                    </div>
+                  )}
+                  {visibleMessages.map((msg, idx) => (
+                    <MessageItem
+                      key={msg.id}
+                      msg={msg}
+                      streaming={streaming}
+                      isLast={idx === visibleMessages.length - 1}
+                      onForkHere={forkFromMessage}
+                      versions={versionsByMessage.get(msg.id)}
+                      onSelectVersion={handleSelectVersion}
+                    />
+                  ))}
+                </>
               )}
             </div>
                 </div>

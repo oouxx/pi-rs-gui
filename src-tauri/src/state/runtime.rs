@@ -23,6 +23,14 @@ use super::transcript::serialize_session_event;
 use super::types::FrontendEvent;
 use super::Store;
 
+/// Background actors are dropped after this much inactivity. Each one owns an
+/// AgentSession and its MCP connections; rebuilding from the session file on
+/// the next selection is cheaper than keeping every visited session alive.
+const ACTOR_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15 * 60);
+
+/// Hard cap on warm actors, least recently used evicted first.
+const MAX_WARM_ACTORS: usize = 8;
+
 impl Store {
     /// Build the runtime factory closure that creates AgentSessions.
     ///
@@ -364,6 +372,15 @@ impl Store {
         session_id: &str,
     ) -> Result<(), String> {
         if self.actors.contains(session_id).await {
+            self.actors.touch(session_id).await;
+            return Ok(());
+        }
+        // Serialize creation per session: selection warms the actor in the
+        // background while commands may ask for it concurrently.
+        let warmup = self.actors.warmup_lock(session_id).await;
+        let _guard = warmup.lock().await;
+        if self.actors.contains(session_id).await {
+            self.actors.touch(session_id).await;
             return Ok(());
         }
         let (cwd, session_file) = {
@@ -422,6 +439,55 @@ impl Store {
     pub async fn shutdown_actor(self: &Arc<Self>, session_id: &str) {
         if let Some(handle) = self.actors.remove(session_id).await {
             let _ = handle.tx.send(SessionCommand::Shutdown);
+        }
+    }
+
+    /// Drop actors that have been idle in the background. The selected session
+    /// and any running session are never evicted; the next selection rebuilds
+    /// the actor from its session file.
+    pub async fn evict_idle_actors(self: &Arc<Self>) {
+        let (selected, running) = {
+            let state = self.state.lock().await;
+            let running: std::collections::HashSet<String> = state
+                .sessions
+                .iter()
+                .filter(|s| s.status == "running")
+                .map(|s| s.id.clone())
+                .collect();
+            (state.selected_session_id.clone(), running)
+        };
+        let snapshot = self.actors.snapshot().await;
+        let mut candidates: Vec<(String, std::time::Instant)> = snapshot
+            .iter()
+            .filter(|(sid, _)| sid != &selected && !running.contains(sid))
+            .cloned()
+            .collect();
+        if candidates.is_empty() {
+            return;
+        }
+        candidates.sort_by_key(|(_, last)| *last);
+        let now = std::time::Instant::now();
+        let mut victims: Vec<String> = candidates
+            .iter()
+            .filter(|(_, last)| now.duration_since(*last) >= ACTOR_IDLE_TIMEOUT)
+            .map(|(sid, _)| sid.clone())
+            .collect();
+        let excess = snapshot
+            .len()
+            .saturating_sub(victims.len())
+            .saturating_sub(MAX_WARM_ACTORS);
+        if excess > 0 {
+            let extra: Vec<String> = candidates
+                .iter()
+                .filter(|(sid, _)| !victims.contains(sid))
+                .take(excess)
+                .map(|(sid, _)| sid.clone())
+                .collect();
+            victims.extend(extra);
+        }
+        for sid in victims {
+            write_line("SEL", &format!("evicting idle actor sid={sid}"));
+            self.shutdown_actor(&sid).await;
         }
     }
 }

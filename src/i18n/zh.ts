@@ -379,6 +379,7 @@ const zh: Record<TranslationKey, string> = {
   "chat.toggleTerminal": "切换终端面板 (⌘J)",
   "chat.toggleTimeline": "切换分支面板",
   "chat.findInChat": "在对话中查找…",
+  "chat.loadEarlier": "加载更早的消息（还有 {count} 条）",
   "chat.prevMatch": "上一个匹配 (Shift+Enter)",
   "chat.nextMatch": "下一个匹配 (Enter)",
   "chat.mermaidDiagram": "图形",
