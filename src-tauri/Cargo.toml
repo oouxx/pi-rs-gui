@@ -1,6 +1,6 @@
 [package]
 name = "pi-rs-gui"
-version = "0.6.3"
+version = "0.6.4"
 description = "A Tauri v2 GUI for pi-coding-agent (Rust)"
 authors = ["you"]
 edition = "2021"
