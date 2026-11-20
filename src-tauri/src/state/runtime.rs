@@ -435,7 +435,7 @@ impl Store {
         self.ensure_actor(app, &sid).await
     }
 
-    /// Abort and destroy a session's actor (archive/delete).
+    /// Abort and destroy a session's actor (session delete).
     pub async fn shutdown_actor(self: &Arc<Self>, session_id: &str) {
         if let Some(handle) = self.actors.remove(session_id).await {
             let _ = handle.tx.send(SessionCommand::Shutdown);

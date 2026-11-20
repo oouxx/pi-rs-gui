@@ -43,30 +43,6 @@ pub async fn create_session(
 }
 
 #[tauri::command]
-pub async fn archive_session(
-    app: AppHandle,
-    store: State<'_, Arc<Store>>,
-    session_id: String,
-) -> Result<DesktopState, AppError> {
-    // Destroy the session's actor (abort + remove from the registry).
-    store.shutdown_actor(&session_id).await;
-    let mut failure: Option<String> = None;
-    let state = store
-        .mutate(&app, |s| {
-            if let Err(error) = session::archive_session_by_id(s, &session_id) {
-                failure = Some(error);
-            }
-        })
-        .await;
-    if let Some(error) = failure {
-        return Err(AppError::from(error));
-    }
-    // Ensure the newly selected session has an actor ready.
-    store.ensure_selected_actor(&app).await.ok();
-    Ok(state)
-}
-
-#[tauri::command]
 pub async fn delete_session(
     app: AppHandle,
     store: State<'_, Arc<Store>>,
@@ -557,113 +533,6 @@ pub async fn file_completions(
     Ok(crate::state::files::file_completions(&cwd, &query))
 }
 
-// ── Session export ──
-
-#[tauri::command]
-pub async fn export_session(
-    store: State<'_, Arc<Store>>,
-    session_id: String,
-    format: String,
-    target_path: String,
-) -> Result<String, AppError> {
-    let session_file = {
-        let state = store.state.lock().await;
-        state
-            .sessions
-            .iter()
-            .find(|s| s.id == session_id)
-            .and_then(|s| s.session_file.as_ref())
-            .filter(|f| !f.is_empty())
-            .cloned()
-            .ok_or_else(|| format!("session '{session_id}' has no session file"))?
-    };
-    crate::state::export::export_session(&session_file, &format, &target_path)
-        .map_err(AppError::from)
-}
-
-// ── Session share (/share via GitHub CLI) ──
-
-/// Share the selected session as a secret GitHub gist. Requires the `gh` CLI
-/// to be installed and logged in (`gh auth login`), mirroring TS `/share`.
-/// Returns the gist URL.
-#[tauri::command]
-pub async fn share_session(store: State<'_, Arc<Store>>) -> Result<String, AppError> {
-    use std::process::Stdio;
-
-    // 1. gh must exist and be logged in.
-    let auth = tokio::process::Command::new("gh")
-        .args(["auth", "status"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await
-        .map_err(|_| {
-            AppError::new(
-                "gh_missing",
-                "GitHub CLI (gh) is not installed. Install it from https://cli.github.com/",
-            )
-        })?;
-    if !auth.success() {
-        return Err(AppError::new(
-            "gh_not_logged_in",
-            "GitHub CLI is not logged in. Run 'gh auth login' first.",
-        ));
-    }
-
-    // 2. Resolve the selected session's file.
-    let sid = store.state.lock().await.selected_session_id.clone();
-    if sid.is_empty() {
-        return Err(AppError::not_found("No session selected"));
-    }
-    let session_file = {
-        let state = store.state.lock().await;
-        state
-            .sessions
-            .iter()
-            .find(|s| s.id == sid)
-            .and_then(|s| s.session_file.as_ref())
-            .filter(|f| !f.is_empty())
-            .cloned()
-            .ok_or_else(|| AppError::not_found("session has no session file"))?
-    };
-
-    // 3. Export to a temp HTML file.
-    let tmp = std::env::temp_dir().join("pi-gui-share.html");
-    crate::state::export::export_session(&session_file, "html", &tmp.to_string_lossy())?;
-
-    // 4. Create a secret gist and extract the URL from the output.
-    let out = tokio::process::Command::new("gh")
-        .args(["gist", "create", "--public=false", &tmp.to_string_lossy()])
-        .output()
-        .await
-        .map_err(|e| AppError::from(format!("failed to run gh: {e}")))?;
-    let _ = std::fs::remove_file(&tmp);
-    if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-        return Err(AppError::new(
-            "gh_failed",
-            if err.is_empty() {
-                "gh gist create failed".to_string()
-            } else {
-                err
-            },
-        ));
-    }
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let url = stdout
-        .lines()
-        .find_map(|l| {
-            let t = l.trim();
-            if t.starts_with("https://gist.github.com/") {
-                Some(t.to_string())
-            } else {
-                None
-            }
-        })
-        .ok_or_else(|| format!("could not parse gist URL from: {stdout}"))?;
-    Ok(url)
-}
-
 // ── Terminal ──
 
 #[tauri::command]
@@ -978,7 +847,7 @@ pub async fn cycle_scoped_model(
 
 // ── Full-text session search ──
 
-/// Search user/assistant message text across all non-archived sessions.
+/// Search user/assistant message text across all sessions.
 /// Runs on a blocking worker because it reads every JSONL file.
 #[tauri::command]
 pub async fn search_sessions(
@@ -994,7 +863,6 @@ pub async fn search_sessions(
         state
             .sessions
             .iter()
-            .filter(|session| session.archived_at.is_none())
             .filter_map(|session| {
                 let file = session
                     .session_file

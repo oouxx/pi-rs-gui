@@ -73,7 +73,7 @@ A Tauri v2 + React 19 desktop GUI for [pi-rs](https://github.com/oouxx/pi-rs) �
 │  lib.rs (command registration) · commands/mod.rs  │
 │  state/ (store, session, model, providers, skills,│
 │          extensions, settings, files, terminal,  │
-│          export, transcript, ui, cwd)            │
+│          transcript, ui, cwd)                    │
 └───────────────────────┬──────────────────────────┘
                         │ git tag dependency
 ┌───────────────────────┴──────────────────────────┐

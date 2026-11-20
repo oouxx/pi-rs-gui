@@ -16,7 +16,6 @@ export interface SessionRecordDto {
   preview: string;
   status: string;
   sessionFile?: string | null;
-  archivedAt?: string | null;
   config?: unknown;
   thinkingLevel?: string | null;
   cwd?: string | null;

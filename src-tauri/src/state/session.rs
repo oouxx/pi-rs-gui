@@ -57,7 +57,7 @@ fn last_message_preview(path: &str) -> String {
 /// Map a pi-rs `SessionInfo` to the UI-facing record.
 ///
 /// pi-rs `list_all` scans every subdirectory of the sessions dir, including
-/// `archived/` — callers filter those out so archived sessions don't reappear.
+/// `archived/` — files left there by the removed archive feature stay hidden.
 fn record_from_info(info: pi_coding_agent::core::session_manager::SessionInfo) -> SessionRecord {
     let title = info.name.unwrap_or_else(|| {
         if !info.first_message.is_empty() && info.first_message != "(no messages)" {
@@ -84,7 +84,6 @@ fn record_from_info(info: pi_coding_agent::core::session_manager::SessionInfo) -
         preview,
         status: "idle".to_string(),
         session_file: Some(info.path.to_string_lossy().to_string()),
-        archived_at: None,
         config: None,
         thinking_level: None,
         cwd: (!info.cwd.is_empty()).then_some(info.cwd),
@@ -298,48 +297,12 @@ pub fn select_session_by_id(state: &mut DesktopState, session_id: &str) {
     state.selected_session_id = session_id.to_string();
 }
 
-/// Soft-archive a session by ID: moves the file to an `archived/` subdirectory
-/// and removes the session from the active list. The file remains on disk for
-/// potential recovery. After archiving, selects the next available session.
-pub fn archive_session_by_id(state: &mut DesktopState, session_id: &str) -> Result<(), String> {
-    // Move the session file to an archived/ subdirectory. Do this before the
-    // in-memory removal so a failed move surfaces instead of pretending the
-    // session was archived.
-    if let Some(sess) = state.sessions.iter().find(|s| s.id == session_id) {
-        if let Some(ref fp) = sess.session_file {
-            let path = std::path::Path::new(fp);
-            if path.exists() {
-                let archived_dir = path.parent().unwrap_or(path).join("archived");
-                std::fs::create_dir_all(&archived_dir).map_err(|error| {
-                    format!("Cannot create {}: {error}", archived_dir.display())
-                })?;
-                let file_name = path
-                    .file_name()
-                    .ok_or_else(|| format!("Invalid session path: {}", path.display()))?;
-                let dest = archived_dir.join(file_name);
-                std::fs::rename(path, &dest)
-                    .map_err(|error| format!("Cannot archive {}: {error}", path.display()))?;
-            }
-        }
-    }
-    // Remove the session from the in-memory list.
-    state.sessions.retain(|s| s.id != session_id);
-    // Select the next available session.
-    let next_id = state
-        .sessions
-        .iter()
-        .find(|s| s.archived_at.is_none())
-        .map(|s| s.id.clone());
-    state.selected_session_id = next_id.unwrap_or_default();
-    Ok(())
-}
-
 /// Permanently delete a session by ID: removes the file from disk and the
 /// session from the in-memory list. After deletion, selects the next available
 /// session.
 pub fn delete_session_by_id(state: &mut DesktopState, session_id: &str) -> Result<(), String> {
-    // Delete the session file from disk (and the archived copy, if any) before
-    // dropping it from the in-memory list.
+    // Delete the session file from disk (including an `archived/` copy left by
+    // the removed archive feature) before dropping it from the in-memory list.
     if let Some(sess) = state.sessions.iter().find(|s| s.id == session_id) {
         if let Some(ref fp) = sess.session_file {
             let path = std::path::Path::new(fp);
@@ -360,11 +323,7 @@ pub fn delete_session_by_id(state: &mut DesktopState, session_id: &str) -> Resul
     // Remove the session from the in-memory list.
     state.sessions.retain(|s| s.id != session_id);
     // Select the next available session.
-    let next_id = state
-        .sessions
-        .iter()
-        .find(|s| s.archived_at.is_none())
-        .map(|s| s.id.clone());
+    let next_id = state.sessions.first().map(|s| s.id.clone());
     state.selected_session_id = next_id.unwrap_or_default();
     Ok(())
 }
@@ -386,7 +345,6 @@ pub fn create_session_simple(state: &mut DesktopState, title: &str, cwd: Option<
         preview: String::new(),
         status: "idle".to_string(),
         session_file: None,
-        archived_at: None,
         config: None,
         thinking_level: None,
         cwd: cwd

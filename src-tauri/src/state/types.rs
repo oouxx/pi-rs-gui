@@ -25,8 +25,6 @@ pub struct SessionRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_file: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub archived_at: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_level: Option<String>,

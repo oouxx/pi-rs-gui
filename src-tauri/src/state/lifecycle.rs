@@ -230,7 +230,6 @@ impl Store {
                         preview: String::new(),
                         status: "idle".to_string(),
                         session_file,
-                        archived_at: None,
                         config: None,
                         thinking_level: None,
                         cwd: Some(cwd),

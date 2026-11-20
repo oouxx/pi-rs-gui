@@ -322,20 +322,6 @@ export function reloadSession() {
   return tauriInvoke<void>("reload_session");
 }
 
-// ── Session export ──
-
-export function exportSession(
-  sessionId: string,
-  format: "html" | "jsonl",
-  targetPath: string,
-) {
-  return tauriInvoke<string>("export_session", {
-    sessionId,
-    format,
-    targetPath,
-  });
-}
-
 // ── General settings ──
 
 export function getGeneralSettings() {
@@ -364,9 +350,6 @@ export function selectSession(sessionId: string) {
 }
 export function createSession(title?: string, cwd?: string) {
   return tauriInvoke<DesktopAppState>("create_session", { title, cwd });
-}
-export function archiveSession(sessionId: string) {
-  return tauriInvoke<DesktopAppState>("archive_session", { sessionId });
 }
 export function renameSession(sessionId: string, title: string) {
   return tauriInvoke<DesktopAppState>("rename_session", { sessionId, title });

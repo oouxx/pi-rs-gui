@@ -8,7 +8,6 @@ import {
   cancelCurrentRun,
   selectSession as apiSelectSession,
   createSession as apiCreateSession,
-  archiveSession as apiArchiveSession,
   deleteSession as apiDeleteSession,
   renameSession as apiRenameSession,
   type ComposerImage,
@@ -155,7 +154,6 @@ export interface ChatState {
   selectSession(sessionId: string): Promise<void>;
   createSession(title?: string, cwd?: string): Promise<string | null>;
   deleteSession(sessionId: string): Promise<void>;
-  archiveSession(sessionId: string): Promise<void>;
   stop(): Promise<void>;
   sendMessage(
     text: string,
@@ -181,7 +179,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   applyState(state) {
     set({
       sessions: (state.sessions ?? [])
-        .filter((s) => !s.archivedAt)
         .map((s) => ({
           id: s.id,
           title: s.title || "Untitled",
@@ -256,11 +253,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   async deleteSession(sessionId) {
     await apiDeleteSession(sessionId);
-    await get().refreshState();
-  },
-
-  async archiveSession(sessionId) {
-    await apiArchiveSession(sessionId);
     await get().refreshState();
   },
 
@@ -713,7 +705,6 @@ export function useChat() {
       selectSession: state.selectSession,
       createSession: state.createSession,
       deleteSession: state.deleteSession,
-      archiveSession: state.archiveSession,
       messages: state.messages,
       sendMessage: state.sendMessage,
       stop: state.stop,
