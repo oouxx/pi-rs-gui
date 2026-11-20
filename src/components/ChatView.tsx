@@ -56,14 +56,11 @@ import TerminalDock from "@/components/TerminalDock";
 import type { ModelOption, ProviderInfo } from "@/components/PickModel";
 import Composer from "@/components/chat/Composer";
 import { MessageItem } from "@/components/chat/MessageItem";
-import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   compactSession,
-  exportSession,
   getProjectTrust,
   importSession,
-  reloadSession,
   setProjectTrust,
   getModels,
   getProviders,
@@ -73,10 +70,8 @@ import {
   setSessionModel,
   setSessionThinkingLevel,
   cycleScopedModel,
-  renameSession,
   setSessionCwd,
   openPath,
-  shareSession,
   type SessionInfo,
   type SessionUsage,
 } from "@/api/commands";
@@ -110,7 +105,6 @@ export default function ChatView({
     messages,
     sessions,
     createSession,
-    selectSession,
     sendMessage,
     stop,
     streaming,
@@ -311,31 +305,6 @@ export default function ChatView({
     }
   }, [infoOpen, activeSessionId]);
 
-  const exportActiveSession = useCallback(async () => {
-    if (!activeSessionId) return false;
-    const session = sessions.find((s) => s.id === activeSessionId);
-    const title = session?.title || "session";
-    const path = await saveDialog({
-      title: t("chat.exportDialog"),
-      defaultPath: `${title}.jsonl`,
-      filters: [{ name: "JSONL file", extensions: ["jsonl"] }],
-    });
-    if (typeof path !== "string" || !path) return false;
-    try {
-      await exportSession(activeSessionId, "jsonl", path);
-    } catch (e) {
-      console.error("[export]", e);
-      toast({
-        variant: "error",
-        title: t("chat.exportFailed"),
-        description: errorText(e),
-      });
-    }
-    return true;
-  }, [activeSessionId, sessions, toast, t]);
-
-  // Route builtin slash commands to real actions (TS interactive mode does
-  // the same; unhandled commands fall through to the LLM as plain text).
   const tryHandleSlash = useCallback(
     async (text: string): Promise<boolean> => {
       if (!text.startsWith("/")) return false;
@@ -344,17 +313,6 @@ export default function ChatView({
       switch (cmd) {
         case "/new":
           await createSession();
-          return true;
-        case "/name":
-          if (arg && activeSessionId) {
-            await renameSession(activeSessionId, arg).catch((e) => {
-              toast({
-                variant: "error",
-                title: t("chat.renameFailed"),
-                description: errorText(e),
-              });
-            });
-          }
           return true;
         case "/compact":
           await compactSession(arg || undefined).catch((e) => {
@@ -365,49 +323,6 @@ export default function ChatView({
               description: errorText(e),
             });
           });
-          return true;
-        case "/share":
-          try {
-            const url = await shareSession();
-            navigator.clipboard?.writeText(url).catch(() => {});
-            toast({
-              variant: "success",
-              title: t("chat.shared"),
-              description: url,
-            });
-          } catch (e) {
-            toast({
-              variant: "error",
-              title: t("chat.shareFailed"),
-              description: errorText(e),
-            });
-          }
-          return true;
-        case "/export":
-          await exportActiveSession();
-          return true;
-        case "/copy": {
-          const last = [...messages].reverse().find((m) => m.role === "assistant");
-          if (last) navigator.clipboard?.writeText(last.content).catch(() => {});
-          return true;
-        }
-        case "/session":
-          if (activeSessionId) {
-            getSessionInfo(activeSessionId)
-              .then((info) => setSessionInfo(info))
-              .catch((e) => {
-                toast({
-                  variant: "error",
-                  title: t("chat.sessionInfoFailed"),
-                  description: errorText(e),
-                });
-              });
-            setInfoOpen(true);
-          }
-          return true;
-        case "/settings":
-        case "/hotkeys":
-          onOpenSettings?.();
           return true;
         case "/mcp":
           onOpenSettings?.("mcp");
@@ -441,9 +356,6 @@ export default function ChatView({
           }
           return true;
         }
-        case "/login":
-          setModelOpen(true);
-          return true;
         case "/thinking": {
           if (arg) {
             await handleThinkingSelect(arg.toLowerCase());
@@ -468,18 +380,6 @@ export default function ChatView({
           }
           return true;
         }
-        case "/reload":
-          await reloadSession().catch((e) => {
-            toast({
-              variant: "error",
-              title: t("chat.reloadFailed"),
-              description: errorText(e),
-            });
-          });
-          return true;
-        case "/logout":
-          onOpenSettings?.();
-          return true;
         case "/trust": {
           try {
             const info = await getProjectTrust(activeSessionCwd);
@@ -494,39 +394,16 @@ export default function ChatView({
           }
           return true;
         }
-        case "/resume": {
-          const q = arg.toLowerCase();
-          if (q) {
-            const match = sessions.find(
-              (s) =>
-                s.id.toLowerCase().startsWith(q) ||
-                s.title.toLowerCase().includes(q),
-            );
-            if (match) await selectSession(match.id);
-          }
-          return true;
-        }
-        case "/quit":
-          try {
-            await getCurrentWindow().close();
-          } catch {
-            /* ignore */
-          }
-          return true;
         default:
           return false;
       }
     },
     [
       createSession,
-      selectSession,
-      sessions,
       activeSessionId,
       activeSessionCwd,
-      messages,
       onOpenSettings,
       handleThinkingSelect,
-      exportActiveSession,
       toast,
       t,
     ],

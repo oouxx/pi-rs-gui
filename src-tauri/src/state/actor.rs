@@ -38,6 +38,23 @@ const ABORT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 /// supervisor must not stall behind it.
 const TRANSCRIPT_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// Built-ins this GUI implements. pi-rs keeps growing its builtin list for the
+/// TUI, and a command the desktop side cannot handle would be sent to the model
+/// as a prompt — so the composer menu is an allow-list, not a mirror of
+/// `builtin_slash_commands()`.
+const SUPPORTED_BUILTINS: &[&str] = &["new", "model", "compact", "import", "trust"];
+
+/// Commands the desktop app implements itself; pi-rs has no builtin for them.
+const GUI_SLASH_COMMANDS: &[(&str, &str, Option<&str>)] = &[
+    (
+        "thinking",
+        "Set the thinking level",
+        Some("<off|low|medium|high|xhigh|max>"),
+    ),
+    ("theme", "Switch the color theme", Some("<light|dark|system>")),
+    ("mcp", "Open MCP settings", None),
+];
+
 pub type SessionCommandSender = mpsc::UnboundedSender<SessionCommand>;
 
 /// Handle to a running session actor (the sender side of its mailbox).
@@ -331,10 +348,21 @@ impl SessionActor {
             SessionCommand::GetCommands { reply } => {
                 let mut items = Vec::new();
                 for c in pi_coding_agent::core::slash_commands::builtin_slash_commands() {
+                    if !SUPPORTED_BUILTINS.contains(&c.name.as_str()) {
+                        continue;
+                    }
                     items.push(json!({
                         "name": c.name,
                         "description": c.description,
                         "argumentHint": c.argument_hint,
+                        "source": "builtin",
+                    }));
+                }
+                for (name, description, argument_hint) in GUI_SLASH_COMMANDS {
+                    items.push(json!({
+                        "name": name,
+                        "description": description,
+                        "argumentHint": argument_hint,
                         "source": "builtin",
                     }));
                 }

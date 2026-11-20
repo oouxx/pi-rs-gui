@@ -22,14 +22,14 @@ A Tauri v2 + React 19 desktop GUI for [pi-rs](https://github.com/oouxx/pi-rs) �
   **send while a turn is running** (Enter = steer, Alt+Enter = follow-up),
   context-usage indicator, per-session thinking level, in-chat search
   (Cmd/Ctrl+F), copy message/code, draft persistence
-- **Composer** — `/` real pi-rs slash commands (grouped, with argument
-  completion for `/model` & `/login`), `@` workspace file completion aligned
+- **Composer** — `/` slash commands (grouped; an allow-list of the desktop
+  app's own commands plus extension/prompt/skill commands, with argument
+  completion for `/model`), `@` workspace file completion aligned
   with the TS original autocomplete (fuzzy scoring, path scoping, quotes,
   `~` expansion, directory continuation, Tab trigger), image attachments and
   inlined **text/code file attachments** (paste or drop)
-- **Sessions** — sidebar with title + **full-text message search** / rename /
-  copy ID / archive / delete / export (HTML + JSONL) / working-directory
-  picker / relative timestamps; session info panel
+- **Sessions** — sidebar with title + **full-text message search** / delete /
+  working-directory picker / relative timestamps; session info panel
 - **MCP** — Settings → MCP manages `mcp.json` servers (global/project),
   enable/disable, exposure, add/edit/delete, live status + tools,
   resource/template browsing and reading, reconnect, OAuth sign-in, and

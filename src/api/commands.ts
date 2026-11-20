@@ -141,9 +141,6 @@ export function submitComposer(
 }
 
 
-export function shareSession() {
-  return tauriInvoke<string>("share_session");
-}
 export function listCustomProviders() {
   return tauriInvoke<CustomProviderInfo[]>("list_custom_providers");
 }

@@ -23,14 +23,13 @@ import { useToast } from "@/components/ui/toast";
 import {
   fileCompletions,
   getModels,
-  getProviders,
   listSlashCommands,
   type ComposerImage,
   type FileCompletion,
   type QueuedMessage,
   type StreamingBehavior,
 } from "@/api/commands";
-import type { ModelOption, ProviderInfo, SlashCommandInfo } from "@/api/types";
+import type { ModelOption, SlashCommandInfo } from "@/api/types";
 import { matchesBinding, useKeybindings } from "@/lib/keybindings";
 import { useI18n } from "@/i18n";
 import {
@@ -103,11 +102,9 @@ export default function Composer({
   const [mentionFiles, setMentionFiles] = useState<FileCompletion[]>([]);
   const [slashCommands, setSlashCommands] = useState<SlashCommandInfo[]>([]);
   const [showArgMenu, setShowArgMenu] = useState(false);
-  const [argCmd, setArgCmd] = useState<"model" | "login">("model");
   const [argStart, setArgStart] = useState(0);
   const [argPrefix, setArgPrefix] = useState("");
   const [modelList, setModelList] = useState<ModelOption[]>([]);
-  const [providerList, setProviderList] = useState<ProviderInfo[]>([]);
 
   const prevInputRef = useRef("");
   const mentionForcedRef = useRef(false);
@@ -156,11 +153,8 @@ export default function Composer({
   }, [refreshSlashCommands, sessionId]);
 
   useEffect(() => {
-    Promise.all([getProviders(), getModels()])
-      .then(([prov, mods]) => {
-        setProviderList(prov.providers ?? []);
-        setModelList(mods.models ?? []);
-      })
+    getModels()
+      .then((mods) => setModelList(mods.models ?? []))
       .catch((e) => console.error("[composer] model list", e));
   }, []);
 
@@ -425,14 +419,11 @@ export default function Composer({
         setShowMention(false);
       }
 
-      // Detect /command <arg> argument completion (builtin model/login)
-      const argMatch = textBeforeCursor.match(/^\/(model|login)\s+([\w./:-]*)$/);
+      // Detect `/model <provider/id>` argument completion.
+      const argMatch = textBeforeCursor.match(/^\/model\s+([\w./:-]*)$/);
       if (argMatch) {
-        const cmd = argMatch[1] as "model" | "login";
-        const argPrefixText = argMatch[2];
-        setArgCmd(cmd);
-        setArgStart(("/" + cmd + " ").length);
-        setArgPrefix(argPrefixText);
+        setArgPrefix(argMatch[1]);
+        setArgStart("/model ".length);
         setShowArgMenu(true);
       } else if (showArgMenu) {
         setShowArgMenu(false);
@@ -552,28 +543,20 @@ export default function Composer({
 
   const argItems = useMemo(() => {
     const q = argPrefix.trim().toLowerCase();
-    if (argCmd === "model") {
-      return modelList
-        .filter(
-          (m) =>
-            !q ||
-            `${m.providerId}/${m.modelId}`.toLowerCase().includes(q) ||
-            m.label.toLowerCase().includes(q),
-        )
-        .slice(0, 15)
-        .map((m) => ({
-          value: `${m.providerId}/${m.modelId}`,
-          label: m.modelId,
-          description: m.providerId,
-        }));
-    }
-    return providerList
+    return modelList
       .filter(
-        (p) => !q || p.id.toLowerCase().includes(q) || p.name.toLowerCase().includes(q),
+        (m) =>
+          !q ||
+          `${m.providerId}/${m.modelId}`.toLowerCase().includes(q) ||
+          m.label.toLowerCase().includes(q),
       )
       .slice(0, 15)
-      .map((p) => ({ value: p.id, label: p.id, description: p.name }));
-  }, [argCmd, argPrefix, modelList, providerList]);
+      .map((m) => ({
+        value: `${m.providerId}/${m.modelId}`,
+        label: m.modelId,
+        description: m.providerId,
+      }));
+  }, [argPrefix, modelList]);
 
   const handleArgSelect = useCallback(
     (value: string) => {
@@ -730,7 +713,7 @@ export default function Composer({
           <div className="border-hairline bg-popover absolute bottom-full left-0 right-0 z-50 mb-2 max-h-48 overflow-y-auto rounded-xl border p-1 shadow-md">
             {argItems.length === 0 ? (
               <div className="text-muted-foreground px-3 py-2 font-mono text-xs">
-                No matching {argCmd === "model" ? "models" : "providers"}
+                No matching models
               </div>
             ) : (
               argItems.map((item) => (
