@@ -39,18 +39,26 @@ const loaders: Record<string, () => Promise<unknown>> = {
 };
 
 const aliases: Record<string, string> = {
+  "c#": "csharp",
+  "c++": "cpp",
   cjs: "javascript",
+  console: "bash",
+  cs: "csharp",
   docker: "dockerfile",
+  env: "ini",
   html: "xml",
   js: "javascript",
   jsonc: "json",
   jsx: "javascript",
+  kt: "kotlin",
   md: "markdown",
   mjs: "javascript",
   objc: "objectivec",
+  patch: "diff",
   ps1: "powershell",
   py: "python",
   rb: "ruby",
+  rs: "rust",
   sh: "bash",
   shell: "bash",
   toml: "ini",
@@ -61,6 +69,24 @@ const aliases: Record<string, string> = {
   yml: "yaml",
   zsh: "bash",
 };
+
+/** Well-known file names that carry no usable extension. */
+const fileNameLanguages: Record<string, string> = {
+  ".env": "ini",
+  dockerfile: "dockerfile",
+  makefile: "makefile",
+};
+
+/** Language for a file path, by file name or extension (`null` when unknown). */
+export function languageFromPath(path?: string | null): string | null {
+  if (!path) return null;
+  const base = (path.split(/[\\/]/).pop() ?? "").toLowerCase();
+  const named = fileNameLanguages[base];
+  if (named) return named;
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0 || dot === base.length - 1) return null;
+  return resolveLanguage(base.slice(dot + 1));
+}
 
 const pending = new Map<string, Promise<boolean>>();
 

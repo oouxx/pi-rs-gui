@@ -23,6 +23,9 @@ import { getActiveSessionCwd, openFile, openPath } from "@/api/commands";
 import { useToast } from "@/components/ui/toast";
 import { useI18n, type TranslationKey } from "@/i18n";
 import { errorText } from "@/lib/errors";
+import { useHighlightedCode } from "@/hooks/use-highlighted-code";
+import { useThrottledText } from "@/hooks/use-throttled-text";
+import { languageFromPath } from "@/lib/highlight";
 
 interface ToolCallCardProps {
   name: string;
@@ -440,16 +443,38 @@ function DetailsToggle({
   );
 }
 
+/** `<pre>` that syntax-highlights its text when the language is known. */
+function CodeText({
+  code,
+  language,
+  className,
+}: {
+  code: string;
+  language?: string | null;
+  className?: string;
+}) {
+  const html = useHighlightedCode(code, language);
+  if (!html) return <pre className={className}>{code}</pre>;
+  return (
+    <pre
+      className={`${className ?? ""} md-code`}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
 function RawDetails({
   argsStr,
   result,
   effError,
   showDetails,
+  language,
 }: {
   argsStr: string;
   result?: string;
   effError: boolean;
   showDetails: boolean;
+  language?: string | null;
 }) {
   return (
     <AnimatePresence initial={false}>
@@ -465,13 +490,13 @@ function RawDetails({
             </pre>
           )}
           {result && (
-            <pre
+            <CodeText
+              code={result}
+              language={language}
               className={`bg-background max-h-80 overflow-auto px-3 py-2 font-mono text-xs leading-relaxed ${
                 effError ? "text-destructive" : "text-muted-foreground"
               }`}
-            >
-              {result}
-            </pre>
+            />
           )}
         </motion.div>
       )}
@@ -881,18 +906,18 @@ function ReadBlock({
   const lines = result ? result.split("\n") : [];
   const preview = result ? lines.slice(0, 8).join("\n") : resultPreview;
   const more = lines.length > 8;
+  const language = languageFromPath(path);
   return (
     <div className="border-hairline bg-muted/50 mt-1 overflow-hidden rounded-xl border">
       <PathRow path={path} onOpen={onOpen} />
       {!showDetails && preview && (
-        <pre
+        <CodeText
+          code={`${preview}${more ? "\n…" : ""}`}
+          language={language}
           className={`max-h-40 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed ${
             effError ? "text-destructive" : "text-muted-foreground"
           }`}
-        >
-          {preview}
-          {more ? "\n…" : ""}
-        </pre>
+        />
       )}
       {(argsStr || result) && (
         <DetailsToggle showDetails={showDetails} onToggle={onToggle} />
@@ -902,6 +927,7 @@ function ReadBlock({
         result={result}
         effError={effError}
         showDetails={showDetails}
+        language={language}
       />
     </div>
   );
@@ -1189,6 +1215,9 @@ export default function ToolCallCard({
       ? result.slice(0, 240) + "…"
       : result
     : "";
+  // Bash output grows while the command runs; throttle the highlighted render
+  // so a chatty command cannot stall the frame.
+  const bashOutput = useThrottledText(result ?? "", status === "running");
   const diff = diffFor(name, args, details);
   const argsRecord = asRecord(args);
   const filePath =
@@ -1320,14 +1349,13 @@ export default function ToolCallCard({
               </div>
             )}
             {resultPreview && !showDetails && (
-              <div
+              <CodeText
+                code={`${effError ? "✗ " : ""}${resultPreview}`}
+                language="bash"
                 className={`mt-1 break-words whitespace-pre-wrap ${
                   effError ? "text-destructive" : "text-subtle-foreground"
                 }`}
-              >
-                {effError ? "✗ " : ""}
-                {resultPreview}
-              </div>
+              />
             )}
           </div>
           {(argsStr || result) && (
@@ -1359,13 +1387,13 @@ export default function ToolCallCard({
                   </pre>
                 )}
                 {result && (
-                  <pre
+                  <CodeText
+                    code={bashOutput}
+                    language="bash"
                     className={`bg-background overflow-x-auto px-3 py-2 font-mono text-xs leading-relaxed ${
                       effError ? "text-destructive" : "text-muted-foreground"
                     }`}
-                  >
-                    {result}
-                  </pre>
+                  />
                 )}
               </motion.div>
             )}
