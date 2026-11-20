@@ -1,15 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Sidebar,
   SidebarContent,
@@ -21,13 +12,6 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import {
   Collapsible,
   CollapsibleTrigger,
   CollapsibleContent,
@@ -38,23 +22,15 @@ import {
   Code2,
   Plus,
   Trash2,
-  Pencil,
-  Copy,
-  Check,
-  FileDown,
-  FileJson,
   FolderOpen,
   ChevronRight,
   ChevronDown,
   Loader2,
   Square,
   MessageSquare,
-  Archive,
-  AlertTriangle,
 } from "lucide-react";
-import { save } from "@tauri-apps/plugin-dialog";
 import { useChatContext } from "@/hooks/ChatProvider";
-import { exportSession, renameSession, abortSession, searchSessions } from "@/api/commands";
+import { abortSession, searchSessions } from "@/api/commands";
 import type { SessionSearchResult } from "@/api/types";
 import { matchesBinding, useKeybindings } from "@/lib/keybindings";
 import { useI18n } from "@/i18n";
@@ -115,19 +91,11 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     selectSession,
     createSession,
     deleteSession,
-    archiveSession,
     loading,
   } = useChatContext();
   const [search, setSearch] = useState("");
   const [contentHits, setContentHits] = useState<SessionSearchResult[]>([]);
   const [searchingContent, setSearchingContent] = useState(false);
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<SessionItem | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelRenameRef = useRef(false);
   const [collapsedGroups, setCollapsedGroups] =
     useState<Set<string>>(loadCollapsedGroups);
   const prevActiveIdRef = useRef<string | null>(null);
@@ -242,14 +210,6 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     });
   }, [activeSessionId, sessions]);
 
-  // Clear any pending copy-feedback timer on unmount.
-  useEffect(
-    () => () => {
-      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-    },
-    [],
-  );
-
   // Cmd/Ctrl+N starts a new thread from anywhere (customizable).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -359,10 +319,8 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
 
   const handleDelete = useCallback(
     async (session: SessionItem) => {
-      setDeleting(true);
       try {
         await deleteSession(session.id);
-        setPendingDelete(null);
         toast({
           variant: "success",
           title: t("sidebar.deleted"),
@@ -374,31 +332,9 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           title: t("sidebar.deleteFailed"),
           description: errorText(e),
         });
-      } finally {
-        setDeleting(false);
       }
     },
     [deleteSession, t, toast],
-  );
-
-  const handleArchive = useCallback(
-    async (session: SessionItem) => {
-      try {
-        await archiveSession(session.id);
-        toast({
-          variant: "success",
-          title: t("sidebar.archived"),
-          description: session.title,
-        });
-      } catch (e) {
-        toast({
-          variant: "error",
-          title: t("sidebar.archiveFailed"),
-          description: errorText(e),
-        });
-      }
-    },
-    [archiveSession, t, toast],
   );
 
   const handleStop = useCallback(async (sessionId: string) => {
@@ -414,214 +350,62 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
     }
   }, [t, toast]);
 
-  const commitRename = useCallback(
-    (id: string, value: string, original: string) => {
-      setRenamingId(null);
-      const trimmed = value.trim();
-      if (trimmed && trimmed !== original) {
-        renameSession(id, trimmed).catch((e) => {
-          toast({
-            variant: "error",
-            title: t("sidebar.renameFailed"),
-            description: errorText(e),
-          });
-        });
-      }
-    },
-    [t, toast],
-  );
-
-  const handleStartRename = useCallback((id: string, title: string) => {
-    cancelRenameRef.current = false;
-    setRenamingId(id);
-    setRenameValue(title);
-  }, []);
-
-  const handleCopyId = useCallback(
-    (id: string) => {
-      const write = navigator.clipboard?.writeText(id);
-      if (!write) {
-        toast({ variant: "error", title: t("sidebar.copyFailed") });
-        return;
-      }
-      write
-        .then(() => {
-          setCopiedId(id);
-          if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
-          copyTimerRef.current = setTimeout(() => setCopiedId(null), 1200);
-        })
-        .catch(() =>
-          toast({ variant: "error", title: t("sidebar.copyFailed") }),
-        );
-    },
-    [t, toast],
-  );
-
-  const handleExport = useCallback(
-    async (session: SessionItem, format: "html" | "jsonl") => {
-      const ext = format === "html" ? "html" : "jsonl";
-      const base = (session.title || "session")
-        .trim()
-        .replace(/[^a-zA-Z0-9\u4e00-\u9fa5._-]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 80);
-      const path = await save({
-        title: t("sidebar.exportDialog", { format: format.toUpperCase() }),
-        defaultPath: `${base || "session"}.${ext}`,
-        filters: [
-          {
-            name: t(format === "html" ? "sidebar.htmlFile" : "sidebar.jsonlFile"),
-            extensions: [ext],
-          },
-        ],
-      });
-      if (typeof path !== "string" || !path) return;
-      try {
-        await exportSession(session.id, format, path);
-      } catch (e) {
-        console.error(`[export ${format}]`, e);
-        toast({
-          variant: "error",
-          title: t("sidebar.exportFailed"),
-          description: errorText(e),
-        });
-      }
-    },
-    [t, toast],
-  );
-
   const renderSessionItem = (s: SessionItem) => (
     <SidebarMenuItem key={s.id} className="group/item">
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div className="relative flex items-center">
-            {renamingId === s.id ? (
-              <input
-                autoFocus
-                value={renameValue}
-                onFocus={(e) => e.currentTarget.select()}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    e.currentTarget.blur();
-                  }
-                  if (e.key === "Escape") {
-                    e.preventDefault();
-                    cancelRenameRef.current = true;
-                    e.currentTarget.blur();
-                  }
-                }}
-                onBlur={() => {
-                  if (cancelRenameRef.current) {
-                    cancelRenameRef.current = false;
-                    setRenamingId(null);
-                    return;
-                  }
-                  commitRename(s.id, renameValue, s.title);
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className="bg-background ring-ring h-7 flex-1 rounded-md px-2 text-[13px] outline-none ring-1"
-              />
-            ) : (
-              <SidebarMenuButton
-                isActive={activeSessionId === s.id}
-                onClick={() => {
-                  onModeChange("chat");
-                  // Opening a thread switches the sidebar to
-                  // that thread's project/workspace.
-                  setCurrentProject(s.cwd || null);
-                  selectSession(s.id).catch((e) => {
-                    console.error("[selectSession]", e);
-                    toast({
-                      variant: "error",
-                      title: t("sidebar.openSessionFailed"),
-                      description: errorText(e),
-                    });
-                  });
-                }}
-                tooltip={s.title}
-                className="text-secondary-foreground hover:bg-sidebar-accent hover:text-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-foreground h-8 gap-2 rounded-lg px-2 pr-9 text-[13px]"
-              >
-                <MessageSquare className="text-subtle-foreground hidden group-data-[collapsible=icon]:block" />
-                <span className="min-w-0 flex-1 truncate">{s.title}</span>
-                {s.status === "running" && (
-                  <Loader2 className="text-success size-3 shrink-0 animate-spin transition-opacity group-hover/item:opacity-0 group-focus-within/item:opacity-0" />
-                )}
-              </SidebarMenuButton>
-            )}
-            <div className="group-data-[collapsible=icon]:hidden absolute top-1/2 right-1.5 z-10 flex -translate-y-1/2 items-center gap-0.5">
-              {s.status === "running" && (
-                <button
-                  type="button"
-                  className="text-success hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive rounded-md p-1 opacity-0 transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleStop(s.id);
-                  }}
-                  title={t("session.stopRunning")} aria-label={t("session.stopRunning")}
-                >
-                  <Square className="size-3 fill-current" />
-                </button>
-              )}
-              <button
-                type="button"
-                className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive rounded-md p-1 opacity-0 transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100 focus-visible:opacity-100"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setPendingDelete(s);
-                }}
-                title={t("sidebar.deletePermanently")}
-                aria-label={t("sidebar.deletePermanently")}
-                style={{ display: renamingId === s.id ? "none" : undefined }}
-              >
-                <Trash2 className="size-3.5" />
-              </button>
-            </div>
-          </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent>
+      <div className="relative flex items-center">
+        <SidebarMenuButton
+          isActive={activeSessionId === s.id}
+          onClick={() => {
+            onModeChange("chat");
+            // Opening a thread switches the sidebar to that thread's
+            // project/workspace.
+            setCurrentProject(s.cwd || null);
+            selectSession(s.id).catch((e) => {
+              console.error("[selectSession]", e);
+              toast({
+                variant: "error",
+                title: t("sidebar.openSessionFailed"),
+                description: errorText(e),
+              });
+            });
+          }}
+          tooltip={s.title}
+          className="text-secondary-foreground hover:bg-sidebar-accent hover:text-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-foreground h-8 gap-2 rounded-lg px-2 pr-9 text-[13px]"
+        >
+          <MessageSquare className="text-subtle-foreground hidden group-data-[collapsible=icon]:block" />
+          <span className="min-w-0 flex-1 truncate">{s.title}</span>
           {s.status === "running" && (
-            <ContextMenuItem onSelect={() => handleStop(s.id)}>
-              <Square className="text-success size-3.5 fill-current" />
-              {t("session.stopRunning")}
-            </ContextMenuItem>
+            <Loader2 className="text-success size-3 shrink-0 animate-spin transition-opacity group-hover/item:opacity-0 group-focus-within/item:opacity-0" />
           )}
-          <ContextMenuItem onSelect={() => handleStartRename(s.id, s.title)}>
-            <Pencil className="size-3.5" />
-            {t("session.rename")}
-          </ContextMenuItem>
-          <ContextMenuItem onSelect={() => handleCopyId(s.id)}>
-            {copiedId === s.id ? (
-              <Check className="size-3.5 text-success" />
-            ) : (
-              <Copy className="size-3.5" />
-            )}
-            {copiedId === s.id ? t("session.copied") : t("session.copyId")}
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem onSelect={() => handleExport(s, "html")}>
-            <FileDown className="size-3.5" />
-            {t("session.exportHtml")}
-          </ContextMenuItem>
-          <ContextMenuItem onSelect={() => handleExport(s, "jsonl")}>
-            <FileJson className="size-3.5" />
-            {t("session.exportJsonl")}
-          </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem onSelect={() => handleArchive(s)}>
-            <Archive className="size-3.5" />
-            {t("session.archive")}
-          </ContextMenuItem>
-          <ContextMenuItem
-            variant="destructive"
-            onSelect={() => setPendingDelete(s)}
+        </SidebarMenuButton>
+        <div className="group-data-[collapsible=icon]:hidden absolute top-1/2 right-1.5 z-10 flex -translate-y-1/2 items-center gap-0.5">
+          {s.status === "running" && (
+            <button
+              type="button"
+              className="text-success hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive rounded-md p-1 opacity-0 transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleStop(s.id);
+              }}
+              title={t("session.stopRunning")} aria-label={t("session.stopRunning")}
+            >
+              <Square className="size-3 fill-current" />
+            </button>
+          )}
+          <button
+            type="button"
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive rounded-md p-1 opacity-0 transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100 focus-visible:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete(s);
+            }}
+            title={t("sidebar.deletePermanently")}
+            aria-label={t("sidebar.deletePermanently")}
           >
             <Trash2 className="size-3.5" />
-            {t("sidebar.deletePermanently")}
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
+          </button>
+        </div>
+      </div>
     </SidebarMenuItem>
   );
 
@@ -931,50 +715,6 @@ export default function PiSidebar({ mode, onModeChange }: PiSidebarProps) {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
-
-      <Dialog
-        open={!!pendingDelete}
-        onOpenChange={(open) => {
-          if (!open && !deleting) setPendingDelete(null);
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t("sidebar.deleteTitle")}</DialogTitle>
-            <DialogDescription>
-              {pendingDelete
-                ? t("sidebar.deleteDescription", {
-                    title: pendingDelete.title,
-                  })
-                : ""}
-            </DialogDescription>
-          </DialogHeader>
-          {pendingDelete?.status === "running" && (
-            <p className="text-warning flex items-start gap-1.5 text-xs">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              {t("sidebar.deleteRunningHint")}
-            </p>
-          )}
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              autoFocus
-              onClick={() => setPendingDelete(null)}
-              disabled={deleting}
-            >
-              {t("sidebar.cancel")}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => pendingDelete && handleDelete(pendingDelete)}
-              disabled={deleting}
-            >
-              {deleting && <Loader2 className="size-3.5 animate-spin" />}
-              {t("sidebar.deleteConfirm")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Sidebar>
   );
 }
