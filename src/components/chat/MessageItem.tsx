@@ -2,15 +2,13 @@ import { memo } from "react";
 import { motion } from "motion/react";
 import { PANEL_TRANSITION } from "@/lib/motion";
 import ReactMarkdown from "react-markdown";
-import { AlertCircle, FileText, GitBranch } from "lucide-react";
+import { AlertCircle, FileText } from "lucide-react";
 import { useI18n } from "@/i18n";
 import { useThrottledText } from "@/hooks/use-throttled-text";
 import type { ContentBlock, DisplayMessage } from "@/hooks/message-reducer";
 import ToolCallCard from "@/components/ToolCallCard";
 import ThinkingBlock from "@/components/ThinkingBlock";
 import { CopyButton, mdComponents, rehypePlugins, remarkPlugins } from "./markdown";
-import VersionSwitcher from "./VersionSwitcher";
-import type { MessageBox } from "@/lib/session-versions";
 
 function imageDataUrl(block: ContentBlock): string {
   if (block.data) {
@@ -96,50 +94,16 @@ const BlockRenderer = memo(function BlockRenderer({
 /** A single transcript message. Memoized: during streaming only the last
  *  assistant message's props change (new blocks), so all other messages skip
  *  re-rendering entirely. */
-/** Fork-at-message action (hidden until hover, like the copy button). */
-function ForkButton({
-  msg,
-  onForkHere,
-  className,
-}: {
-  msg: DisplayMessage;
-  onForkHere?: (msg: DisplayMessage) => void;
-  className: string;
-}) {
-  const { t } = useI18n();
-  if (!onForkHere || msg.id.startsWith("msg-opt-")) return null;
-  return (
-    <button
-      type="button"
-      onClick={() => onForkHere(msg)}
-      title={t("chat.forkFromHere")}
-      aria-label={t("chat.forkFromHere")}
-      className={className}
-    >
-      <GitBranch className="size-3.5" />
-    </button>
-  );
-}
-
 export const MessageItem = memo(function MessageItem({
   msg,
   streaming,
   isLast,
-  onForkHere,
-  versions,
-  onSelectVersion,
 }: {
   msg: DisplayMessage;
   streaming: boolean;
   isLast: boolean;
-  onForkHere?: (msg: DisplayMessage) => void;
-  versions?: MessageBox;
-  onSelectVersion?: (
-    entryId: string,
-    parentKey: string,
-    anchorTop: number,
-  ) => void;
 }) {
+  const { t } = useI18n();
   const isLastAi = msg.role === "assistant" && isLast;
   const userContent =
     msg.role === "user" ? parseAttachedFiles(msg.content) : null;
@@ -152,21 +116,9 @@ export const MessageItem = memo(function MessageItem({
       animate={{ opacity: 1, y: 0 }}
       transition={PANEL_TRANSITION}
     >
-      {versions && onSelectVersion && (
-        <VersionSwitcher
-          versions={versions}
-          disabled={streaming}
-          onSelect={onSelectVersion}
-        />
-      )}
       {msg.role === "user" ? (
         /* User prompt in a subtle neutral box, full width */
         <div className="border-hairline bg-secondary/60 text-foreground relative rounded-2xl border px-4 py-3 text-[15px] leading-[1.7]">
-          <ForkButton
-            msg={msg}
-            onForkHere={onForkHere}
-            className="text-subtle-foreground hover:bg-background/70 hover:text-foreground absolute top-2 right-9 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-          />
           <CopyButton
             text={msg.content}
             className="text-subtle-foreground hover:bg-background/70 hover:text-foreground absolute top-2 right-2 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100"
@@ -209,11 +161,6 @@ export const MessageItem = memo(function MessageItem({
       ) : (
         /* Assistant answers are plain markdown, no bubble */
         <div className="text-foreground relative text-[15px] leading-[1.75]">
-          <ForkButton
-            msg={msg}
-            onForkHere={onForkHere}
-            className="text-subtle-foreground hover:bg-muted hover:text-foreground absolute -top-1 right-8 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-          />
           <CopyButton
             text={msg.content}
             className="text-subtle-foreground hover:bg-muted hover:text-foreground absolute -top-1 right-1 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100"
@@ -229,6 +176,11 @@ export const MessageItem = memo(function MessageItem({
           ) : streaming && isLastAi ? (
             <span className="bg-primary ml-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-pulse rounded-full align-middle" />
           ) : null}
+          {msg.interrupted && (
+            <div className="text-subtle-foreground mt-1.5 text-[12px]">
+              {t("chat.stopped")}
+            </div>
+          )}
         </div>
       )}
     </motion.div>

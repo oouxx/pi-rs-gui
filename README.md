@@ -17,8 +17,8 @@ A Tauri v2 + React 19 desktop GUI for [pi-rs](https://github.com/oouxx/pi-rs) �
 - **Chat** — streaming assistant messages with **render-cost throttled
   markdown**, **syntax-highlighted code blocks** (languages loaded on demand),
   **KaTeX math** and **Mermaid diagrams**, thinking blocks with elapsed time,
-  per-message **version switcher** for forks/edit variants, tool-call cards
-  with **inline edit diffs** and **open-file-in-editor**, Stop button,
+  tool-call cards with **inline edit diffs** and **open-file-in-editor**,
+  Stop button,
   **send while a turn is running** (Enter = steer, Alt+Enter = follow-up),
   context-usage indicator, per-session thinking level, in-chat search
   (Cmd/Ctrl+F), copy message/code, draft persistence
@@ -29,8 +29,7 @@ A Tauri v2 + React 19 desktop GUI for [pi-rs](https://github.com/oouxx/pi-rs) �
   inlined **text/code file attachments** (paste or drop)
 - **Sessions** — sidebar with title + **full-text message search** / rename /
   copy ID / archive / delete / export (HTML + JSONL) / working-directory
-  picker / relative timestamps; session info panel; Timeline panel for
-  fork-tree navigation
+  picker / relative timestamps; session info panel
 - **MCP** — Settings → MCP manages `mcp.json` servers (global/project),
   enable/disable, exposure, add/edit/delete, live status + tools,
   resource/template browsing and reading, reconnect, OAuth sign-in, and
@@ -73,8 +72,8 @@ A Tauri v2 + React 19 desktop GUI for [pi-rs](https://github.com/oouxx/pi-rs) �
 │ pi-gui-rs (Rust, src-tauri/src)                   │
 │  lib.rs (command registration) · commands/mod.rs  │
 │  state/ (store, session, model, providers, skills,│
-│          extensions, settings, files, tree,       │
-│          terminal, export, transcript, ui, cwd)   │
+│          extensions, settings, files, terminal,  │
+│          export, transcript, ui, cwd)            │
 └───────────────────────┬──────────────────────────┘
                         │ git tag dependency
 ┌───────────────────────┴──────────────────────────┐
@@ -125,7 +124,7 @@ pi-gui-rs/
 │   ├── App.tsx                 # Router entry
 │   ├── components/             # Views + shadcn/ui primitives (ui/)
 │   │   ├── AppShell.tsx        # View switching shell
-│   │   ├── ChatView.tsx        # Chat, composer, timeline, search
+│   │   ├── ChatView.tsx        # Chat, composer, search
 │   │   ├── PiSidebar.tsx       # Session list + navigation
 │   │   ├── SkillsView.tsx      # Skill discovery
 │   │   ├── ExtensionsView.tsx  # Registered Rust extensions

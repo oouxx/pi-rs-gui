@@ -23,7 +23,8 @@ use tokio::sync::{mpsc, oneshot};
 
 use super::logging::write_line;
 use super::transcript::{
-    build_display_transcript, build_display_transcript_interrupted, INTERRUPTED_TOOL_MESSAGE,
+    build_display_transcript, build_display_transcript_interrupted, transcript_was_aborted,
+    INTERRUPTED_TOOL_MESSAGE, STOPPED_TOOL_MESSAGE,
 };
 use super::types::FrontendEvent;
 use super::{set_sess_status, Store};
@@ -64,25 +65,6 @@ pub enum SessionCommand {
     Compact {
         custom_instructions: Option<String>,
         reply: oneshot::Sender<Result<(), String>>,
-    },
-    Navigate {
-        entry_id: String,
-        reply: oneshot::Sender<Result<(), String>>,
-    },
-    GetTree {
-        reply: oneshot::Sender<Vec<serde_json::Value>>,
-    },
-    /// Fork the session at a timeline node. On success the session's id
-    /// changes; the actor re-registers in the store under the new id and the
-    /// reply carries it.
-    ForkAt {
-        entry_id: String,
-        reply: oneshot::Sender<Result<String, String>>,
-    },
-    /// Duplicate the session at the current position (`/clone`). Same as
-    /// ForkAt but always targets the current leaf.
-    Clone {
-        reply: oneshot::Sender<Result<String, String>>,
     },
     /// Switch the session to a different session file (matches TS `/import`).
     Import {
@@ -163,7 +145,7 @@ pub struct SessionActor {
     /// a failed run never emits `agent_end`, so nothing else would.
     store: Arc<Store>,
     session_id: String,
-    /// Shared with the event subscription so fork/import swaps keep the
+    /// Shared with the event subscription so import swaps keep the
     /// emitted event session id in sync.
     sid_holder: Arc<std::sync::Mutex<String>>,
 }
@@ -269,49 +251,6 @@ impl SessionActor {
                     .map(|_| ())
                     .map_err(|e| e.to_string());
                 self.emit_transcript().await;
-                let _ = reply.send(result);
-            }
-            SessionCommand::Navigate { entry_id, reply } => {
-                let ok = self.session.navigate_tree(&entry_id).await;
-                let _ = reply.send(if ok {
-                    Ok(())
-                } else {
-                    Err(format!("entry '{entry_id}' not found"))
-                });
-            }
-            SessionCommand::GetTree { reply } => {
-                let tree = self.session.get_tree();
-                let _ = reply.send(super::tree::tree_json(&tree, None));
-            }
-            SessionCommand::ForkAt { entry_id, reply } => {
-                let result = self
-                    .session
-                    // `at`: the branch includes the selected entry (the GUI's
-                    // timeline fork has always been inclusive).
-                    .session_mgr_fork(&entry_id, Some("at"))
-                    .await
-                    .map(|_| ())
-                    .map_err(|e| e.to_string());
-                let result = self.finish_swap(result).await;
-                let _ = reply.send(result);
-            }
-            SessionCommand::Clone { reply } => {
-                let result = async {
-                    let leaf = {
-                        let mgr = self.session.get_session_manager();
-                        mgr.get_leaf_id()
-                            .ok_or_else(|| "Nothing to clone yet".to_string())?
-                            .to_string()
-                    };
-                    self.session
-                        // `at`: keep the current leaf in the clone.
-                        .session_mgr_fork(&leaf, Some("at"))
-                        .await
-                        .map(|_| ())
-                        .map_err(|e| e.to_string())
-                }
-                .await;
-                let result = self.finish_swap(result).await;
                 let _ = reply.send(result);
             }
             SessionCommand::Import { path, reply } => {
@@ -614,6 +553,11 @@ impl SessionActor {
                 };
             let transcript = match failure {
                 Some(_) => build_display_transcript_interrupted(&msgs, INTERRUPTED_TOOL_MESSAGE),
+                // A user stop keeps the partial answer as normal content and
+                // only closes the tool call that never returned.
+                None if transcript_was_aborted(&msgs) => {
+                    build_display_transcript_interrupted(&msgs, STOPPED_TOOL_MESSAGE)
+                }
                 None => build_display_transcript(&msgs),
             };
             if !transcript.is_empty() {
@@ -643,7 +587,7 @@ impl SessionActor {
         }
     }
 
-    /// After fork/import the session's id changes. Update this actor's id,
+    /// After an import the session's id changes. Update this actor's id,
     /// the shared sid holder (event subscription), and return the new id; the
     /// store re-registers the handle under it (the mailbox sender is unchanged).
     async fn finish_swap(&mut self, result: Result<(), String>) -> Result<String, String> {

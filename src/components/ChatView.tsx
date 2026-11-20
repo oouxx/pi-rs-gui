@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Search,
   ArrowUp,
@@ -13,7 +13,6 @@ import {
   ChevronDown,
   Copy,
   ExternalLink,
-  GitBranch,
 } from "lucide-react";
 import {
   Group,
@@ -39,7 +38,6 @@ import {
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import ThinkingLevelSelect from "@/components/ThinkingLevelSelect";
 import { canonicalThinkingLevel } from "@/lib/thinking-levels";
-import { buildVersions, type MessageBox } from "@/lib/session-versions";
 import { useChatContext } from "@/hooks/ChatProvider";
 import { useThreadSearch } from "@/hooks/use-thread-search";
 import { setThemePreference } from "@/hooks/useTheme";
@@ -58,13 +56,11 @@ import TerminalDock from "@/components/TerminalDock";
 import type { ModelOption, ProviderInfo } from "@/components/PickModel";
 import Composer from "@/components/chat/Composer";
 import { MessageItem } from "@/components/chat/MessageItem";
-import { TimelinePanel } from "@/components/chat/TimelinePanel";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   compactSession,
   exportSession,
-  forkSessionAt,
   getProjectTrust,
   importSession,
   reloadSession,
@@ -74,18 +70,14 @@ import {
   getSessionInfo,
   getSessionModel,
   getSessionUsage,
-  getSessionTree,
-  navigateSessionTree,
   setSessionModel,
   setSessionThinkingLevel,
   cycleScopedModel,
   renameSession,
   setSessionCwd,
   openPath,
-  cloneSession,
   shareSession,
   type SessionInfo,
-  type SessionTreeNode,
   type SessionUsage,
 } from "@/api/commands";
 import { errorText } from "@/lib/errors";
@@ -130,14 +122,12 @@ export default function ChatView({
   const { toast } = useToast();
   const { bindings } = useKeybindings();
   const { t } = useI18n();
-  const [showTimeline, setShowTimeline] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [folderOpen, setFolderOpen] = useState(false);
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: "chat-terminal",
     panelIds: ["messages", "terminal"],
   });
-  const [timelineTree, setTimelineTree] = useState<SessionTreeNode[]>([]);
   const [modelList, setModelList] = useState<ModelOption[]>([]);
   const [providerList, setProviderList] = useState<ProviderInfo[]>([]);
   const [currentProvider, setCurrentProvider] = useState("");
@@ -321,122 +311,6 @@ export default function ChatView({
     }
   }, [infoOpen, activeSessionId]);
 
-  const toggleTimeline = useCallback(() => {
-    setShowTimeline((prev) => !prev);
-  }, []);
-
-  useEffect(() => {
-    if (!activeSessionId || streaming) return;
-    let alive = true;
-    getSessionTree(activeSessionId)
-      .then((tree) => {
-        if (alive) setTimelineTree(tree ?? []);
-      })
-      .catch(() => {
-        if (alive) setTimelineTree([]);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [activeSessionId, streaming, showTimeline]);
-
-  const cachedVersionsRef = useRef<Map<string, MessageBox>>(new Map());
-  const versionsByMessage = useMemo(() => {
-    if (streaming) return cachedVersionsRef.current;
-    const next = buildVersions(messages, timelineTree);
-    cachedVersionsRef.current = next;
-    return next;
-  }, [messages, timelineTree, streaming]);
-
-  const versionAnchorRef = useRef<{ key: string; top: number } | null>(null);
-
-  const handleSelectVersion = useCallback(
-    async (entryId: string, parentKey: string, anchorTop: number) => {
-      if (!activeSessionId) return;
-      versionAnchorRef.current = { key: parentKey, top: anchorTop };
-      try {
-        await navigateSessionTree(activeSessionId, entryId);
-      } catch (e) {
-        versionAnchorRef.current = null;
-        toast({
-          variant: "error",
-          title: t("timeline.navigateFailed"),
-          description: errorText(e),
-        });
-      }
-    },
-    [activeSessionId, t, toast],
-  );
-
-  const handleForkAt = useCallback(
-    async (entryId: string) => {
-      try {
-        await forkSessionAt(entryId);
-        setShowTimeline(false);
-        toast({ variant: "success", title: t("timeline.forked") });
-      } catch (e) {
-        console.error("[fork]", e);
-        toast({
-          variant: "error",
-          title: t("chat.forkFailed"),
-          description: errorText(e),
-        });
-      }
-    },
-    [toast, t],
-  );
-
-  /** Fork at the session-tree node matching a displayed message. Message
-   *  ids carry the source timestamp (`msg-<ms>`), so the tree node is the
-   *  same-role message closest to it. */
-  const forkFromMessage = useCallback(
-    async (message: { id: string; role: string }) => {
-      if (!activeSessionId) return;
-      const match = /^msg-(\d+)$/.exec(message.id);
-      if (!match) {
-        toast({ variant: "error", title: t("chat.forkPending") });
-        return;
-      }
-      const timestamp = Number(match[1]);
-      try {
-        const tree = await getSessionTree(activeSessionId);
-        const flat: SessionTreeNode[] = [];
-        const walk = (nodes: SessionTreeNode[]) => {
-          for (const node of nodes) {
-            flat.push(node);
-            walk(node.children);
-          }
-        };
-        walk(tree ?? []);
-        let best: SessionTreeNode | null = null;
-        let bestDiff = Number.POSITIVE_INFINITY;
-        for (const node of flat) {
-          if (node.kind !== "message" || node.role !== message.role) continue;
-          const diff = Math.abs(Date.parse(node.timestamp) - timestamp);
-          if (diff < bestDiff) {
-            best = node;
-            bestDiff = diff;
-          }
-        }
-        if (!best || bestDiff > 5000) {
-          toast({ variant: "error", title: t("chat.forkNotFound") });
-          return;
-        }
-        await forkSessionAt(best.id);
-        setShowTimeline(false);
-        toast({ variant: "success", title: t("chat.forked") });
-      } catch (e) {
-        console.error("[fork message]", e);
-        toast({
-          variant: "error",
-          title: t("chat.forkFailed"),
-          description: errorText(e),
-        });
-      }
-    },
-    [activeSessionId, t, toast],
-  );
-
   const exportActiveSession = useCallback(async () => {
     if (!activeSessionId) return false;
     const session = sessions.find((s) => s.id === activeSessionId);
@@ -492,19 +366,6 @@ export default function ChatView({
             });
           });
           return true;
-        case "/clone":
-          try {
-            await cloneSession();
-            setShowTimeline(false);
-            toast({ variant: "success", title: t("chat.cloned") });
-          } catch (e) {
-            toast({
-              variant: "error",
-              title: t("chat.cloneFailed"),
-              description: errorText(e),
-            });
-          }
-          return true;
         case "/share":
           try {
             const url = await shareSession();
@@ -542,14 +403,6 @@ export default function ChatView({
                 });
               });
             setInfoOpen(true);
-          }
-          return true;
-        case "/tree":
-          setShowTimeline(true);
-          if (activeSessionId) {
-            getSessionTree(activeSessionId)
-              .then((t) => setTimelineTree(t ?? []))
-              .catch(() => setTimelineTree([]));
           }
           return true;
         case "/settings":
@@ -599,14 +452,6 @@ export default function ChatView({
           }
           return true;
         }
-        case "/fork":
-          setShowTimeline(true);
-          if (activeSessionId) {
-            getSessionTree(activeSessionId)
-              .then((t) => setTimelineTree(t ?? []))
-              .catch(() => setTimelineTree([]));
-          }
-          return true;
         case "/import": {
           const selected = await openDialog({
             multiple: false,
@@ -782,19 +627,6 @@ export default function ChatView({
   useLayoutEffect(() => {
     pinToBottom();
   }, [messages, activeSessionId, streaming, pinToBottom]);
-
-  useLayoutEffect(() => {
-    const anchor = versionAnchorRef.current;
-    const el = timelineRef.current;
-    if (!anchor || !el) return;
-    const target = el.querySelector<HTMLElement>(
-      `[data-version-anchor="${anchor.key}"]`,
-    );
-    if (target) {
-      el.scrollTop += target.getBoundingClientRect().top - anchor.top;
-    }
-    versionAnchorRef.current = null;
-  }, [messages]);
 
   // Find-in-chat / terminal / model cycling (bindings are customizable).
   useEffect(() => {
@@ -1062,20 +894,6 @@ export default function ChatView({
               )}
             </PopoverContent>
           </Popover>
-          <button
-            type="button"
-            onClick={toggleTimeline}
-            disabled={!activeSessionId}
-            className={`inline-flex size-7 items-center justify-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-40 ${
-              showTimeline
-                ? "bg-primary/10 text-primary"
-                : "text-subtle-foreground hover:bg-muted hover:text-foreground"
-            }`}
-            title={t("chat.toggleTimeline")}
-            aria-label={t("chat.toggleTimeline")}
-          >
-            <GitBranch className="size-4" />
-          </button>
         </div>
       </div>
 
@@ -1187,9 +1005,6 @@ export default function ChatView({
                       msg={msg}
                       streaming={streaming}
                       isLast={idx === visibleMessages.length - 1}
-                      onForkHere={forkFromMessage}
-                      versions={versionsByMessage.get(msg.id)}
-                      onSelectVersion={handleSelectVersion}
                     />
                   ))}
                 </>
@@ -1308,15 +1123,6 @@ export default function ChatView({
             </DialogFooter>
           </DialogContent>
         </Dialog>
-        {showTimeline && activeSessionId && (
-          <TimelinePanel
-            tree={timelineTree}
-            sessionId={activeSessionId}
-            onClose={() => setShowTimeline(false)}
-            onTreeChange={setTimelineTree}
-            onFork={handleForkAt}
-          />
-        )}
       </div>
     </div>
   );

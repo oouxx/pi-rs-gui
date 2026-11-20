@@ -128,6 +128,20 @@ function errorText(error: unknown): string {
   return parseError(error).message;
 }
 
+/** Terminal state of a streamed assistant message: a user stop is not a
+ *  failure, so it never becomes an error bubble. */
+function terminalFlags(msg: { errorMessage?: unknown; stopReason?: unknown } | undefined): {
+  errorMessage?: string;
+  interrupted?: boolean;
+} {
+  const interrupted = msg?.stopReason === "aborted";
+  const errorMessage =
+    !interrupted && typeof msg?.errorMessage === "string" && msg.errorMessage
+      ? msg.errorMessage
+      : undefined;
+  return { errorMessage, interrupted };
+}
+
 export interface ChatState {
   sessions: SessionItem[];
   activeSessionId: string | null;
@@ -377,10 +391,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const rawBlocks = msg.content;
       const blocks = toBlocks(rawBlocks);
       const text = extractText(rawBlocks);
-      const errorMessage =
-        typeof msg.error_message === "string" && msg.error_message
-          ? msg.error_message
-          : undefined;
+      const { errorMessage, interrupted } = terminalFlags(msg);
       set((state) => {
         // Consecutive steps of a tool-calling run merge into one bubble. The
         // reducer records the step's block offset for this step's deltas.
@@ -389,6 +400,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           blocks,
           text,
           errorMessage,
+          interrupted,
         );
         stepOffset = offset;
         return { messages };
@@ -415,16 +427,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const rawBlocks = msg.content;
       if (!rawBlocks) return;
       const blocks = toBlocks(rawBlocks);
-      const errorMessage =
-        typeof msg.error_message === "string" && msg.error_message
-          ? msg.error_message
-          : undefined;
+      const { errorMessage, interrupted } = terminalFlags(msg);
       set((state) => ({
         messages: replaceAssistantStep(
           state.messages,
           stepOffset,
           blocks,
           errorMessage,
+          interrupted,
         ),
       }));
       return;

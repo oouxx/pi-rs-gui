@@ -17,7 +17,6 @@ import type {
   SessionInfo,
   SessionModelState,
   SessionSearchResult,
-  SessionTreeNode,
   SessionUsage,
   SkillInfo,
   SlashCommandInfo,
@@ -88,7 +87,6 @@ export type {
   SessionModelState,
   SessionRecordDto,
   SessionSearchResult,
-  SessionTreeNode,
   SessionUsage,
   SkillInfo,
   SlashCommandInfo,
@@ -142,9 +140,6 @@ export function submitComposer(
   });
 }
 
-export function cloneSession() {
-  return tauriInvoke<DesktopAppState>("clone_session");
-}
 
 export function shareSession() {
   return tauriInvoke<string>("share_session");
@@ -304,18 +299,6 @@ export function getSessionInfo(sessionId: string) {
   return tauriInvoke<SessionInfo>("get_session_info", { sessionId });
 }
 
-// ── Session tree (timeline) ──
-
-export function getSessionTree(sessionId: string) {
-  return tauriInvoke<SessionTreeNode[]>("get_session_tree", { sessionId });
-}
-export function navigateSessionTree(sessionId: string, entryId: string) {
-  return tauriInvoke<SessionTreeNode[]>("navigate_session_tree", {
-    sessionId,
-    entryId,
-  });
-}
-
 // ── Session maintenance ──
 
 export function compactSession(customInstructions?: string) {
@@ -333,11 +316,8 @@ export function setProjectTrust(cwd: string, decision: boolean | null) {
   return tauriInvoke<TrustDecision>("set_project_trust", { cwd, decision });
 }
 
-// ── Fork / import / reload ──
+// ── Import / reload ──
 
-export function forkSessionAt(entryId: string) {
-  return tauriInvoke<DesktopAppState>("fork_session_at", { entryId });
-}
 export function importSession(inputPath: string) {
   return tauriInvoke<DesktopAppState>("import_session", { inputPath });
 }

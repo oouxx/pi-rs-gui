@@ -112,9 +112,18 @@ pub fn scan_existing_sessions() -> Vec<SessionRecord> {
     records_from_infos(futures::executor::block_on(SessionManager::list_all(None)))
 }
 
-/// Async variant used from runtime paths (fork/import/select).
+/// Async variant used from runtime paths (import/select).
 pub async fn scan_existing_sessions_async() -> Vec<SessionRecord> {
     records_from_infos(SessionManager::list_all(None).await)
+}
+
+/// Terminal stop reason of a persisted assistant message (files use camelCase,
+/// older files snake_case).
+fn message_stop_reason(message: &serde_json::Value) -> Option<&str> {
+    message
+        .get("stopReason")
+        .or_else(|| message.get("stop_reason"))
+        .and_then(|v| v.as_str())
 }
 
 /// Read transcript messages from a JSONL session file using pi-rs `SessionManager`.
@@ -128,6 +137,25 @@ pub fn read_transcript_from_file(
     };
     let mgr = SessionManager::new("", &session_dir, Some(path), false, None);
     let entries = mgr.get_entries();
+
+    // A stopped run reads differently from a crashed one.
+    let aborted = entries
+        .iter()
+        .rev()
+        .find_map(|entry| match entry {
+            SessionEntry::Message { message, .. }
+                if message.get("role").and_then(|r| r.as_str()) == Some("assistant") =>
+            {
+                Some(message_stop_reason(message) == Some("aborted"))
+            }
+            _ => None,
+        })
+        .unwrap_or(false);
+    let orphan_reason = if aborted {
+        Some(crate::state::STOPPED_TOOL_MESSAGE)
+    } else {
+        orphan_reason
+    };
 
     // First pass: collect tool results keyed by tool_call_id so we can merge
     // them onto their corresponding toolCall blocks in the next pass.
@@ -213,6 +241,9 @@ pub fn read_transcript_from_file(
                 })
                 .unwrap_or_default();
 
+            let interrupted =
+                role == "assistant" && message_stop_reason(message) == Some("aborted");
+
             if role == "assistant" {
                 if let Some(last) = messages.last_mut() {
                     if last.get("role").and_then(|r| r.as_str()) == Some("assistant") {
@@ -229,6 +260,9 @@ pub fn read_transcript_from_file(
                                 .collect();
                             last["text"] = json!(merged_text);
                         }
+                        if interrupted {
+                            last["interrupted"] = json!(true);
+                        }
                         continue;
                     }
                 }
@@ -242,14 +276,18 @@ pub fn read_transcript_from_file(
             let created = chrono::DateTime::from_timestamp(ts_secs as i64, 0)
                 .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
                 .unwrap_or_else(now_iso);
-            messages.push(json!({
+            let mut item = json!({
                 "id": format!("msg-{}", messages.len()),
                 "kind": "message",
                 "role": role,
                 "text": text,
                 "content": blocks,
                 "createdAt": created,
-            }));
+            });
+            if interrupted {
+                item["interrupted"] = json!(true);
+            }
+            messages.push(item);
         }
     }
     messages

@@ -44,6 +44,7 @@ export interface DisplayMessage {
   blocks: ContentBlock[]; // structured content blocks
   createdAt: string;
   errorMessage?: string; // assistant run failure (LLM error, timeout)
+  interrupted?: boolean; // user stopped the turn; content is partial
 }
 
 export interface StreamDelta {
@@ -201,6 +202,7 @@ export function appendAssistantStep(
   blocks: ContentBlock[],
   text: string,
   errorMessage?: string,
+  interrupted?: boolean,
 ): { messages: DisplayMessage[]; stepOffset: number } {
   if (prev.length > 0) {
     const last = prev[prev.length - 1];
@@ -215,6 +217,7 @@ export function appendAssistantStep(
             blocks: [...last.blocks, ...blocks],
             content: last.content + text,
             errorMessage: errorMessage ?? last.errorMessage,
+            interrupted: interrupted ?? last.interrupted,
           },
         ],
       };
@@ -231,6 +234,7 @@ export function appendAssistantStep(
         blocks,
         createdAt: new Date().toISOString(),
         errorMessage,
+        interrupted,
       },
     ],
   };
@@ -246,6 +250,7 @@ export function replaceAssistantStep(
   offset: number,
   blocks: ContentBlock[],
   errorMessage?: string,
+  interrupted?: boolean,
 ): DisplayMessage[] {
   if (prev.length === 0) return prev;
   const last = prev[prev.length - 1];
@@ -259,6 +264,7 @@ export function replaceAssistantStep(
       blocks: merged,
       content: blocksToText(merged),
       errorMessage: errorMessage ?? last.errorMessage,
+      interrupted: interrupted ?? last.interrupted,
     },
   ];
 }
@@ -289,6 +295,7 @@ export function transcriptToDisplay(
           typeof t.errorMessage === "string" && t.errorMessage
             ? t.errorMessage
             : undefined,
+        interrupted: t.interrupted === true,
       };
     });
 }

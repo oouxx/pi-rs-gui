@@ -1,6 +1,6 @@
 //! Session lifecycle operations (`impl Store`).
 //!
-//! Extracted from `store.rs`: selection, creation, fork/import/clone, cwd
+//! Extracted from `store.rs`: selection, creation, import, cwd
 //! switching, messaging and model switching. Actor construction itself lives
 //! in [`super::runtime`]; the actor map lives in [`super::actors`].
 
@@ -30,52 +30,6 @@ impl Store {
         self.send_cmd(&sid, |reply| SessionCommand::GetCommands { reply })
             .await
             .unwrap_or_default()
-    }
-
-    /// Get the session tree (timeline) for a session. Uses the in-memory
-    /// runtime when the session has a live actor, otherwise opens the file.
-    pub async fn get_session_tree_json(
-        &self,
-        session_id: &str,
-    ) -> Result<Vec<serde_json::Value>, String> {
-        if self.actors.contains(session_id).await {
-            return self
-                .send_cmd(session_id, |reply| SessionCommand::GetTree { reply })
-                .await;
-        }
-        let session_file = {
-            let state = self.state.lock().await;
-            state
-                .sessions
-                .iter()
-                .find(|s| s.id == session_id)
-                .and_then(|s| s.session_file.as_ref())
-                .filter(|f| !f.is_empty())
-                .cloned()
-                .ok_or_else(|| format!("session '{session_id}' has no session file"))?
-        };
-        Ok(crate::state::tree::tree_from_session_file(&session_file))
-    }
-
-    /// Navigate the session's tree to a node and return the updated tree.
-    pub async fn navigate_session_tree(
-        self: &Arc<Self>,
-        app: &AppHandle,
-        session_id: &str,
-        entry_id: &str,
-    ) -> Result<Vec<serde_json::Value>, String> {
-        self.send_cmd(session_id, |reply| SessionCommand::Navigate {
-            entry_id: entry_id.to_string(),
-            reply,
-        })
-        .await??;
-        // Emit the updated transcript so the chat pane switches to the branch.
-        let transcript = build_display_transcript(&self.get_messages().await);
-        let _ = app.emit(
-            super::events::TRANSCRIPT_CHANGED,
-            &json!({ "sessionId": session_id, "transcript": transcript }),
-        );
-        self.get_session_tree_json(session_id).await
     }
 
     /// Set the selected session's model (and persist it as the global default).
@@ -177,7 +131,7 @@ impl Store {
         Ok(self.state.lock().await.clone())
     }
 
-    /// Refresh the Store after a fork/import swapped the session: re-register
+    /// Refresh the Store after an import swapped the session: re-register
     /// the actor handle under the new id, rescan the session list, select the
     /// new session, and emit the updated transcript.
     async fn refresh_after_session_swap(
@@ -213,34 +167,6 @@ impl Store {
             })
             .await
         }
-    }
-
-    /// Fork the selected session at a timeline node (matches TS `fork`).
-    pub async fn fork_session_at(
-        self: &Arc<Self>,
-        app: &AppHandle,
-        entry_id: &str,
-    ) -> Result<DesktopState, String> {
-        let sid = self.state.lock().await.selected_session_id.clone();
-        let new_id = self
-            .send_cmd(&sid, |reply| SessionCommand::ForkAt {
-                entry_id: entry_id.to_string(),
-                reply,
-            })
-            .await??;
-        Ok(self.refresh_after_session_swap(app, &sid, &new_id).await)
-    }
-
-    /// Duplicate the current session at its current position (`/clone`).
-    pub async fn clone_session(self: &Arc<Self>, app: &AppHandle) -> Result<DesktopState, String> {
-        let sid = self.state.lock().await.selected_session_id.clone();
-        if sid.is_empty() {
-            return Err("No session".to_string());
-        }
-        let new_id = self
-            .send_cmd(&sid, |reply| SessionCommand::Clone { reply })
-            .await??;
-        Ok(self.refresh_after_session_swap(app, &sid, &new_id).await)
     }
 
     /// Import a session from a JSONL file (matches TS `/import`).
@@ -436,10 +362,10 @@ impl Store {
             .await;
     }
 
-    /// Set the working directory for a session. If the session is already
-    /// initialized (has a session file with history), fork a new session with
-    /// the new cwd (history is copied by pi-rs via `fork_from`). The original
-    /// session is left untouched.
+    /// Set the working directory for a session. Only sessions without history
+    /// can move: an existing session file has its cwd in the header, so a
+    /// session that already persisted messages is refused instead of being
+    /// forked into a new one.
     pub async fn set_session_cwd(
         self: &Arc<Self>,
         app: &AppHandle,
@@ -457,7 +383,7 @@ impl Store {
         let new_cwd = p.to_string_lossy().to_string();
 
         // Read the current session record (without holding the lock across init).
-        let (current_file, current_cwd, title) = {
+        let (current_file, current_cwd) = {
             let state = self.state.lock().await;
             let sess = state
                 .sessions
@@ -467,25 +393,10 @@ impl Store {
             (
                 sess.session_file.clone().filter(|f| !f.is_empty()),
                 sess.cwd.clone(),
-                sess.title.clone(),
             )
         };
 
         let action = decide_cwd_action(current_file.as_deref(), &new_cwd, current_cwd.as_deref());
-        // Fresh sessions have a computed file path that does NOT exist yet (no
-        // messages sent). Forking from a non-existent file fails — downgrade to
-        // SetInPlace (re-init the runtime with the new cwd) in that case.
-        let action = match action {
-            CwdAction::Fork
-                if current_file
-                    .as_deref()
-                    .map(|f| !std::path::Path::new(f).exists())
-                    .unwrap_or(true) =>
-            {
-                CwdAction::SetInPlace
-            }
-            other => other,
-        };
         write_line(
             "CWD",
             &format!(
@@ -511,56 +422,10 @@ impl Store {
                 self.ensure_actor(app, session_id).await?;
                 Ok(self.state.lock().await.clone())
             }
-            CwdAction::Fork => {
-                // pi-rs copies the history into a new session file under the
-                // new cwd; create the runtime first, then insert the record
-                // under the real id.
-                let old_file = current_file.clone().unwrap_or_default();
-                if old_file.is_empty() {
-                    return Err("Session has no file to fork from".to_string());
-                }
-                let session_dir = Self::session_dir_for(&new_cwd);
-                let session_manager =
-                    pi_coding_agent::core::session_manager::SessionManager::fork_from(
-                        &old_file,
-                        &new_cwd,
-                        Some(&session_dir),
-                        None,
-                    )
-                    .map_err(|e| format!("Failed to fork session: {e}"))?;
-                let (new_id, session_file) =
-                    self.spawn_actor(app, &new_cwd, session_manager).await?;
-                if session_file.is_none() {
-                    // No persisted file means the fork is unusable — drop the
-                    // actor and leave the original session selected.
-                    self.shutdown_actor(&new_id).await;
-                    return Err("Failed to persist session file for forked session".into());
-                }
-                let title = if title.is_empty() {
-                    "New thread".to_string()
-                } else {
-                    title
-                };
-                Ok(self
-                    .mutate(app, move |s| {
-                        if !s.sessions.iter().any(|r| r.id == new_id) {
-                            s.sessions.push(SessionRecord {
-                                id: new_id.clone(),
-                                title,
-                                updated_at: super::store::now_iso(),
-                                preview: String::new(),
-                                status: "idle".to_string(),
-                                session_file,
-                                archived_at: None,
-                                config: None,
-                                thinking_level: None,
-                                cwd: Some(new_cwd),
-                            });
-                        }
-                        s.selected_session_id = new_id.clone();
-                    })
-                    .await)
-            }
+            CwdAction::HasHistory => Err(format!(
+                "This session already has messages; its working directory is stored in the session file. Start a new session in {} instead.",
+                new_cwd
+            )),
         }
     }
 

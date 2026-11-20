@@ -8,7 +8,7 @@
 //!
 //! Responsibilities are split across sibling modules:
 //! - [`super::runtime`] — runtime factory, actor spawn/ensure/shutdown
-//! - [`super::lifecycle`] — session CRUD, fork/import, messaging, model switch
+//! - [`super::lifecycle`] — session CRUD, import, messaging, model switch
 //! - [`super::actors`] — mailbox registry
 
 use std::sync::Arc;

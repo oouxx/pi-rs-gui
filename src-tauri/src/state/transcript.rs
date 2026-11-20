@@ -1,6 +1,6 @@
 //! Agent event serialization and display transcript building.
 
-use pi_agent_core::pi_ai_types::ContentBlock;
+use pi_agent_core::pi_ai_types::{ContentBlock, StopReason};
 use pi_agent_core::types::AgentMessage;
 use pi_coding_agent::core::agent_session::AgentSessionEvent;
 use serde_json::json;
@@ -209,6 +209,10 @@ pub fn build_display_transcript(msgs: &[AgentMessage]) -> Vec<serde_json::Value>
 pub const INTERRUPTED_TOOL_MESSAGE: &str =
     "Run interrupted (timeout or crash): this tool call never returned a result.";
 
+/// Result text shown for a tool call the user stopped before it returned.
+pub const STOPPED_TOOL_MESSAGE: &str =
+    "Stopped before this tool call returned a result.";
+
 /// Same as [`build_display_transcript`], but tool calls that never produced a
 /// result are rendered as interrupted errors instead of staying in the
 /// "pending" state forever. Used when a turn was abandoned (timeout / panic):
@@ -218,6 +222,21 @@ pub fn build_display_transcript_interrupted(
     reason: &str,
 ) -> Vec<serde_json::Value> {
     build_display_transcript_inner(msgs, Some(reason))
+}
+
+/// Whether the last assistant step was stopped by the user rather than
+/// failing. An aborted step is a normal user action, so the transcript keeps
+/// its text and marks it `interrupted` instead of carrying an error.
+pub fn transcript_was_aborted(msgs: &[AgentMessage]) -> bool {
+    msgs.iter()
+        .rev()
+        .find_map(|msg| match msg {
+            AgentMessage::Assistant { stop_reason, .. } => {
+                Some(matches!(stop_reason, Some(StopReason::Aborted)))
+            }
+            _ => None,
+        })
+        .unwrap_or(false)
 }
 
 fn build_display_transcript_inner(
@@ -256,14 +275,28 @@ fn build_display_transcript_inner(
     // (Claude Code style), with text/thinking/toolCall blocks interleaved.
     let mut out: Vec<serde_json::Value> = Vec::new();
     for msg in msgs {
-        let (role, content, ts, error_message) = match msg {
-            AgentMessage::User { content, timestamp } => ("user", content, *timestamp, None),
+        let (role, content, ts, error_message, interrupted) = match msg {
+            AgentMessage::User { content, timestamp } => {
+                ("user", content, *timestamp, None, false)
+            }
             AgentMessage::Assistant {
                 content,
                 timestamp,
                 error_message,
+                stop_reason,
                 ..
-            } => ("assistant", content, *timestamp, error_message.clone()),
+            } => {
+                let interrupted = matches!(stop_reason, Some(StopReason::Aborted));
+                (
+                    "assistant",
+                    content,
+                    *timestamp,
+                    // A stop is not a failure: keep the partial answer as a
+                    // normal message and flag it instead of showing an error.
+                    error_message.clone().filter(|_| !interrupted),
+                    interrupted,
+                )
+            }
             _ => continue,
         };
 
@@ -323,11 +356,18 @@ fn build_display_transcript_inner(
                             .collect();
                         last["text"] = json!(merged_text);
                     }
-                    // Propagate an error marker onto the merged bubble.
+                    // Propagate the step's terminal marker onto the merged
+                    // bubble (an error wins over an earlier stop).
                     if let Some(err) = error_message {
                         if !err.is_empty() {
                             last["errorMessage"] = json!(err);
+                            if let Some(obj) = last.as_object_mut() {
+                                obj.remove("interrupted");
+                            }
                         }
+                    }
+                    if interrupted {
+                        last["interrupted"] = json!(true);
                     }
                     continue;
                 }
@@ -353,6 +393,9 @@ fn build_display_transcript_inner(
             if !err.is_empty() {
                 item["errorMessage"] = json!(err);
             }
+        }
+        if interrupted {
+            item["interrupted"] = json!(true);
         }
         out.push(item);
     }

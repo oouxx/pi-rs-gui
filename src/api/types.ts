@@ -1,8 +1,9 @@
 /**
  * IPC contract types mirrored from the Rust backend.
  *
- * Serde serializes with `rename_all = "camelCase"` for our own structs; pi-rs
- * types keep their own spellings (e.g. `error_message`, `tool_call_id`).
+ * Serde serializes our structs and pi-rs `AgentMessage`s with camelCase fields
+ * (`stopReason`, `errorMessage`); the surrounding event envelopes built with
+ * `json!` use snake_case (`tool_call_id`, `partial_result`).
  * Keep this file in sync whenever a command payload changes.
  */
 
@@ -86,8 +87,10 @@ export interface AgentMessageDto {
   role?: "user" | "assistant" | "system" | "toolResult" | string;
   content?: RawContentBlock[];
   timestamp?: number;
-  error_message?: string;
-  stop_reason?: string | null;
+  /** pi-rs serializes AgentMessage with camelCase fields. */
+  errorMessage?: string;
+  /** `"aborted"` when the user stopped the run. */
+  stopReason?: string | null;
 }
 
 export interface AgentEventPayload {
@@ -120,6 +123,8 @@ export interface TranscriptItem {
   content?: RawContentBlock[];
   createdAt?: string;
   errorMessage?: string;
+  /** The user stopped this turn: content is a partial answer, not a failure. */
+  interrupted?: boolean;
 }
 
 export interface TranscriptPayload {
@@ -225,19 +230,6 @@ export interface SessionInfo {
   messageCount?: number;
   createdAt?: string | null;
   model?: { provider?: string | null; modelId?: string | null } | null;
-}
-
-export interface SessionTreeNode {
-  id: string;
-  parentId?: string | null;
-  kind: string;
-  /** Message role for `kind: "message"` nodes. */
-  role?: string | null;
-  /** Raw preview text (localized labels are built in the UI). */
-  detail: string;
-  timestamp: string;
-  current?: boolean;
-  children: SessionTreeNode[];
 }
 
 export interface TrustDecision {

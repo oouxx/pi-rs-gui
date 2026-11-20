@@ -7,5 +7,5 @@
 pub const AGENT_EVENT: &str = "agent-event";
 /// Full `DesktopState` snapshot after every `Store::mutate`.
 pub const STATE_CHANGED: &str = "pi-gui:state-changed";
-/// Full display transcript after a turn / navigation / fork.
+/// Full display transcript after a turn / compaction / import.
 pub const TRANSCRIPT_CHANGED: &str = "pi-gui:selected-transcript-changed";

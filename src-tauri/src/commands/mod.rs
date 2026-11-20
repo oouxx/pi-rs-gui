@@ -664,34 +664,6 @@ pub async fn share_session(store: State<'_, Arc<Store>>) -> Result<String, AppEr
     Ok(url)
 }
 
-// ── Session tree (timeline) ──
-
-#[tauri::command]
-pub async fn get_session_tree(
-    store: State<'_, Arc<Store>>,
-    session_id: String,
-) -> Result<Vec<serde_json::Value>, AppError> {
-    store
-        .get_session_tree_json(&session_id)
-        .await
-        .map_err(AppError::from)
-}
-
-#[tauri::command]
-pub async fn navigate_session_tree(
-    app: AppHandle,
-    store: State<'_, Arc<Store>>,
-    session_id: String,
-    entry_id: String,
-) -> Result<Vec<serde_json::Value>, AppError> {
-    // `Store::navigate_session_tree` already emits the transcript update;
-    // emitting here too sent every navigation twice.
-    store
-        .navigate_session_tree(&app, &session_id, &entry_id)
-        .await
-        .map_err(AppError::from)
-}
-
 // ── Terminal ──
 
 #[tauri::command]
@@ -812,27 +784,7 @@ pub async fn compact_session(
         .map_err(AppError::from)
 }
 
-// ── Fork / import / reload (/fork, /import, /reload) ──
-
-#[tauri::command]
-pub async fn fork_session_at(
-    app: AppHandle,
-    store: State<'_, Arc<Store>>,
-    entry_id: String,
-) -> Result<DesktopState, AppError> {
-    store
-        .fork_session_at(&app, &entry_id)
-        .await
-        .map_err(AppError::from)
-}
-
-#[tauri::command]
-pub async fn clone_session(
-    app: AppHandle,
-    store: State<'_, Arc<Store>>,
-) -> Result<DesktopState, AppError> {
-    store.clone_session(&app).await.map_err(AppError::from)
-}
+// ── Import / reload (/import, /reload) ──
 
 #[tauri::command]
 pub async fn import_session(

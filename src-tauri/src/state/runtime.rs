@@ -37,7 +37,7 @@ impl Store {
     /// The factory captures the Store and AppHandle, reads current state at
     /// creation time, and subscribes to session events before returning. The
     /// subscription reads the session id from a shared holder (updated by the
-    /// actor on fork/import) so events keep the correct id after the session
+    /// actor on clone/import) so events keep the correct id after the session
     /// manager is swapped.
     fn build_runtime_factory(
         self: &Arc<Self>,
@@ -48,7 +48,7 @@ impl Store {
     ) {
         let store = self.clone();
         let a = app.clone();
-        // Current session id, shared with the actor so fork/import swaps keep
+        // Current session id, shared with the actor so import swaps keep
         // the event subscription's sid in sync.
         let sid_holder = Arc::new(std::sync::Mutex::new(String::new()));
         let sid_holder_f = sid_holder.clone();
@@ -200,7 +200,7 @@ impl Store {
                         .await;
 
                     // Subscribe to events. The session id comes from the shared
-                    // holder so fork/import swaps keep it in sync.
+                    // holder so import swaps keep it in sync.
                     let store2 = store.clone();
                     let a2 = a.clone();
                     session.subscribe(Arc::new(move |event: AgentSessionEvent| {

@@ -18,7 +18,6 @@ pub(crate) mod skills;
 pub(crate) mod store;
 pub(crate) mod terminal;
 pub(crate) mod transcript;
-pub(crate) mod tree;
 pub(crate) mod trust;
 pub(crate) mod types;
 pub(crate) mod ui;
@@ -101,14 +100,27 @@ mod tests {
     }
 
     #[test]
-    fn test_decide_cwd_fork_when_has_session_file_and_diff_cwd() {
-        let a = decide_cwd_action(Some("/old/sess.jsonl"), "/new/work", Some("/old/work"));
-        assert!(matches!(a, CwdAction::Fork));
+    fn test_decide_cwd_has_history_when_session_file_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("sess.jsonl");
+        std::fs::write(&file, "{}\n").unwrap();
+        let a = decide_cwd_action(file.to_str(), "/new/work", Some("/old/work"));
+        assert!(matches!(a, CwdAction::HasHistory));
     }
 
     #[test]
-    fn test_decide_cwd_fork_when_has_file_but_no_current_cwd() {
-        let a = decide_cwd_action(Some("/old/sess.jsonl"), "/new/work", None);
-        assert!(matches!(a, CwdAction::Fork));
+    fn test_decide_cwd_set_in_place_when_session_file_missing_on_disk() {
+        let a = decide_cwd_action(
+            Some("/nonexistent/sess.jsonl"),
+            "/new/work",
+            Some("/old/work"),
+        );
+        assert!(matches!(a, CwdAction::SetInPlace));
+    }
+
+    #[test]
+    fn test_decide_cwd_noop_when_path_unchanged() {
+        let a = decide_cwd_action(None, "/work", Some("/work"));
+        assert!(matches!(a, CwdAction::NoOp));
     }
 }

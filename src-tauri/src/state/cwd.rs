@@ -19,14 +19,18 @@ pub fn resolve_session_cwd(session_cwd: Option<&str>) -> String {
 pub enum CwdAction {
     /// Same as current cwd — do nothing.
     NoOp,
-    /// Session has no agent session yet — set cwd in place on the record.
+    /// Session has no history on disk yet — set cwd in place on the record.
     SetInPlace,
-    /// Session already has history — fork a new session (new cwd, copied history).
-    Fork,
+    /// Session already has history: its cwd is baked into the session file
+    /// header, so it cannot be moved. Callers surface this as an error.
+    HasHistory,
 }
 
-/// Decide the cwd action based on whether the session is already initialized
-/// (has a session_file) and whether the new path differs from the current cwd.
+/// Decide the cwd action based on whether the session already persisted
+/// messages (its session file exists) and whether the new path differs from
+/// the current cwd. A session file that does not exist yet carries no history
+/// (fresh session whose file path is computed but never written), so it can
+/// still be re-pointed at another directory.
 pub fn decide_cwd_action(
     session_file: Option<&str>,
     new_path: &str,
@@ -36,7 +40,7 @@ pub fn decide_cwd_action(
         return CwdAction::NoOp;
     }
     match session_file {
-        None => CwdAction::SetInPlace,
-        Some(_) => CwdAction::Fork,
+        Some(file) if std::path::Path::new(file).exists() => CwdAction::HasHistory,
+        _ => CwdAction::SetInPlace,
     }
 }

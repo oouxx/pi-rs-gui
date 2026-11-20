@@ -1,7 +1,7 @@
 //! Actor registry — maps session IDs to their mailbox handles.
 //!
 //! Extracted from `Store` so state mutation and actor lifecycle have separate
-//! owners. The registry is keyed by the session's *real* id; fork/import swaps
+//! owners. The registry is keyed by the session's *real* id; import swaps
 //! rename the key in place (the mailbox itself is unchanged).
 
 use std::collections::HashMap;
@@ -72,7 +72,7 @@ impl ActorRegistry {
             .clone()
     }
 
-    /// Re-key an existing mailbox after fork/import changed the session id.
+    /// Re-key an existing mailbox after an import changed the session id.
     pub async fn rename(&self, old_id: &str, new_id: &str) {
         if old_id == new_id {
             return;
