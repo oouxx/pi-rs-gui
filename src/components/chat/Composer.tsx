@@ -6,8 +6,11 @@ import {
   Paperclip,
   Square,
   FileText,
+  Image as ImageIcon,
   TerminalSquare,
 } from "lucide-react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +27,7 @@ import {
   fileCompletions,
   getModels,
   listSlashCommands,
+  type ComposerFile,
   type ComposerImage,
   type FileCompletion,
   type QueuedMessage,
@@ -41,14 +45,23 @@ import {
 } from "@/lib/composer-paths";
 import {
   MAX_ATTACHMENTS,
-  MAX_ATTACHMENT_BYTES,
   MAX_TEXT_ATTACHMENTS,
-  MAX_TEXT_ATTACHMENT_BYTES,
-  fileToComposerImage,
-  fileToTextAttachment,
-  isTextFile,
-  type TextAttachment,
+  attachmentFromFile,
+  attachmentFromPath,
+  filesFromTransfer,
+  formatSize,
+  isImageAttachment,
+  releaseAttachment,
+  toComposerFile,
+  toComposerImage,
+  type ComposerAttachment,
 } from "@/lib/attachments";
+
+let attachmentSeq = 0;
+function newAttachmentId(): string {
+  attachmentSeq += 1;
+  return `att-${Date.now()}-${attachmentSeq}`;
+}
 
 interface ComposerProps {
   sessionId: string | null;
@@ -56,12 +69,16 @@ interface ComposerProps {
   loading: boolean;
   streaming: boolean;
   queued: QueuedMessage[];
+  /** Whether the session's current model accepts image input (undefined = unknown). */
+  supportsImages?: boolean;
+  /** Provider limit on images per message, when the model declares one. */
+  maxImages?: number;
   onSend: (
     text: string,
     images?: ComposerImage[],
     streamingBehavior?: StreamingBehavior,
-    files?: TextAttachment[],
-  ) => void | Promise<void>;
+    files?: ComposerFile[],
+  ) => boolean | void | Promise<boolean | void>;
   onStop: () => void;
   /** Returns true when a builtin slash command was handled locally. */
   onSlashCommand: (text: string) => Promise<boolean>;
@@ -80,6 +97,8 @@ export default function Composer({
   loading,
   streaming,
   queued,
+  supportsImages,
+  maxImages: maxImagesProp,
   onSend,
   onStop,
   onSlashCommand,
@@ -89,10 +108,9 @@ export default function Composer({
   const { toast } = useToast();
   const { bindings } = useKeybindings();
   const { t } = useI18n();
+  const maxImages = Math.max(1, maxImagesProp ?? MAX_ATTACHMENTS);
   const [input, setInput] = useState("");
-  const [attachments, setAttachments] = useState<ComposerImage[]>([]);
-  const [attachmentNames, setAttachmentNames] = useState<string[]>([]);
-  const [textAttachments, setTextAttachments] = useState<TextAttachment[]>([]);
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [showSlash, setShowSlash] = useState(false);
   const [showMention, setShowMention] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -158,6 +176,7 @@ export default function Composer({
       .catch((e) => console.error("[composer] model list", e));
   }, []);
 
+
   // Focus the slash menu's search field so cmdk handles type-to-filter and
   // arrow navigation (floating picker).
   useEffect(() => {
@@ -215,106 +234,89 @@ export default function Composer({
   }, [showMention, mentionQuery, cwd]);
 
   // ── Attachments ────────────────────────────────────────────
-  const addFiles = useCallback(
-    async (files: FileList | File[]) => {
-      const all = Array.from(files);
-      const images = all.filter((f) => f.type.startsWith("image/"));
-      const textFiles = all.filter(
-        (f) => !f.type.startsWith("image/") && isTextFile(f),
-      );
-      if (images.length + textFiles.length < all.length) {
-        toast({
-          variant: "error",
-          title: t("composer.unsupportedFile"),
-          description: t("composer.unsupportedFileHint"),
-        });
-      }
-
-      const imageRoom = MAX_ATTACHMENTS - attachments.length;
-      const pickedImages = images.slice(0, Math.max(0, imageRoom));
-      if (images.length > imageRoom) {
+  // Files are handed to pi-rs's `read` tool, so an attachment only needs a
+  // name — plus a path when the OS gave us one (native dialog / native drag),
+  // in which case the bytes never enter the webview. Only pasted bytes are
+  // read here, as base64 at send time.
+  const addAttachments = useCallback(
+    (incoming: ComposerAttachment[]) => {
+      if (incoming.length === 0) return;
+      const currentImages = attachments.filter(isImageAttachment).length;
+      const currentFiles = attachments.length - currentImages;
+      const images = incoming.filter(isImageAttachment);
+      const files = incoming.filter((a) => !isImageAttachment(a));
+      const imageRoom = Math.max(0, maxImages - currentImages);
+      const fileRoom = Math.max(0, MAX_TEXT_ATTACHMENTS - currentFiles);
+      const pickedImages = images.slice(0, imageRoom);
+      const pickedFiles = files.slice(0, fileRoom);
+      const dropped = [...images.slice(imageRoom), ...files.slice(fileRoom)];
+      if (dropped.length > 0) {
+        dropped.forEach(releaseAttachment);
         toast({
           variant: "error",
           title: t("composer.tooManyAttachments"),
-          description: `At most ${MAX_ATTACHMENTS} images can be attached`,
+          description: t("composer.imageLimitHint", {
+            count: Math.max(imageRoom, fileRoom),
+          }),
         });
       }
-      const tooBigImages = pickedImages.filter(
-        (f) => f.size > MAX_ATTACHMENT_BYTES,
-      );
-      if (tooBigImages.length > 0) {
+      if (pickedImages.length > 0 && supportsImages === false) {
+        // Non-blocking: the user may switch to a vision model before sending.
         toast({
-          variant: "error",
-          title: t("composer.fileTooLarge"),
-          description: t("composer.imageTooLargeHint"),
+          title: t("composer.modelNoImage"),
+          description: t("composer.modelNoImageHint"),
         });
       }
-
-      const textRoom = MAX_TEXT_ATTACHMENTS - textAttachments.length;
-      const pickedText = textFiles.slice(0, Math.max(0, textRoom));
-      if (textFiles.length > textRoom) {
-        toast({
-          variant: "error",
-          title: t("composer.tooManyFiles"),
-          description: `At most ${MAX_TEXT_ATTACHMENTS} text files can be attached`,
-        });
-      }
-      const tooBigText = pickedText.filter(
-        (f) => f.size > MAX_TEXT_ATTACHMENT_BYTES,
-      );
-      if (tooBigText.length > 0) {
-        toast({
-          variant: "error",
-          title: t("composer.fileTooLarge"),
-          description: t("composer.textTooLargeHint"),
-        });
-      }
-
-      const okImages = pickedImages.filter(
-        (f) => f.size <= MAX_ATTACHMENT_BYTES,
-      );
-      const okText = pickedText.filter(
-        (f) => f.size <= MAX_TEXT_ATTACHMENT_BYTES,
-      );
-      if (okImages.length === 0 && okText.length === 0) return;
-
-      try {
-        const [convertedImages, convertedText] = await Promise.all([
-          Promise.all(okImages.map(fileToComposerImage)),
-          Promise.all(okText.map(fileToTextAttachment)),
-        ]);
-        if (convertedImages.length > 0) {
-          setAttachments((prev) =>
-            [...prev, ...convertedImages].slice(0, MAX_ATTACHMENTS),
-          );
-          setAttachmentNames((prev) =>
-            [...prev, ...okImages.map((f) => f.name)].slice(
-              0,
-              MAX_ATTACHMENTS,
-            ),
-          );
-        }
-        if (convertedText.length > 0) {
-          setTextAttachments((prev) =>
-            [...prev, ...convertedText].slice(0, MAX_TEXT_ATTACHMENTS),
-          );
-        }
-      } catch {
-        toast({ variant: "error", title: t("composer.readAttachmentFailed") });
-      }
+      const picked = [...pickedImages, ...pickedFiles];
+      if (picked.length === 0) return;
+      setAttachments((prev) => [...prev, ...picked]);
     },
-    [attachments.length, textAttachments.length, t, toast],
+    [attachments, maxImages, supportsImages, t, toast],
   );
 
-  const handleAttachClick = useCallback(() => {
+  const addFiles = useCallback(
+    (files: FileList | File[]) => {
+      const list = Array.from(files);
+      if (list.length === 0) return;
+      addAttachments(
+        list.map((file) => attachmentFromFile(file, newAttachmentId())),
+      );
+    },
+    [addAttachments],
+  );
+
+  const addPaths = useCallback(
+    (paths: string[]) => {
+      const list = paths.filter((path) => path.trim() !== "");
+      if (list.length === 0) return;
+      addAttachments(
+        list.map((path) => attachmentFromPath(path, newAttachmentId())),
+      );
+    },
+    [addAttachments],
+  );
+
+  const handleAttachClick = useCallback(async () => {
+    // Prefer the native dialog: it hands back absolute paths, so even a 500MB
+    // attachment never passes through the webview.
+    try {
+      const picked = await openDialog({
+        multiple: true,
+        title: t("composer.attach"),
+      });
+      if (picked) addPaths(Array.isArray(picked) ? picked : [picked]);
+      return;
+    } catch {
+      // Not running under Tauri (browser dev): fall back to the file input.
+    }
     fileInputRef.current?.click();
-  }, []);
+  }, [addPaths, t]);
 
   const handleFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (files) {
-        addFiles(files).catch(() => {});
+        addFiles(files);
         e.target.value = "";
       }
     },
@@ -324,36 +326,54 @@ export default function Composer({
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      const files = e.dataTransfer?.files;
-      if (files && files.length > 0) {
-        addFiles(files).catch(() => {});
-      }
+      const files = filesFromTransfer(e.dataTransfer);
+      if (files.length > 0) addFiles(files);
     },
     [addFiles],
   );
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      const images: File[] = [];
-      for (const item of items) {
-        if (item.type.startsWith("image/")) {
-          const f = item.getAsFile();
-          if (f) images.push(f);
-        }
-      }
-      if (images.length > 0) {
-        e.preventDefault();
-        addFiles(images).catch(() => {});
-      }
+      // Plain text pastes fall through to the textarea; only clipboard *files*
+      // (screenshots, files copied in Finder or an editor) become attachments.
+      const files = filesFromTransfer(e.clipboardData);
+      if (files.length === 0) return;
+      e.preventDefault();
+      addFiles(files);
     },
     [addFiles],
   );
 
-  const removeAttachment = useCallback((idx: number) => {
-    setAttachments((prev) => prev.filter((_, i) => i !== idx));
-    setAttachmentNames((prev) => prev.filter((_, i) => i !== idx));
+  // Tauri intercepts OS drag & drop, so DOM `onDrop` never fires in the
+  // packaged app. The native event carries absolute paths, which is exactly
+  // what the attachment pipeline wants: bytes never enter the webview.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type !== "drop") return;
+        addPaths(event.payload.paths ?? []);
+      })
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {
+        // Not running under Tauri (browser dev): DOM drop handles it.
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [addPaths]);
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => {
+      const target = prev.find((a) => a.id === id);
+      if (target) releaseAttachment(target);
+      return prev.filter((a) => a.id !== id);
+    });
   }, []);
 
   // ── Input / completion ─────────────────────────────────────
@@ -445,23 +465,23 @@ export default function Composer({
   const clearComposer = useCallback(() => {
     setInput("");
     prevInputRef.current = "";
-    setAttachments([]);
-    setAttachmentNames([]);
-    setTextAttachments([]);
+    setAttachments((prev) => {
+      prev.forEach(releaseAttachment);
+      return [];
+    });
     saveDraft(sessionId, "");
   }, [sessionId, saveDraft]);
 
   const handleSend = useCallback(
     async (followUp = false) => {
       const text = input.trim();
-      if (!text && attachments.length === 0 && textAttachments.length === 0)
-        return;
+      if (!text && attachments.length === 0) return;
       if (text.startsWith("/") && (await onSlashCommand(text))) {
         clearComposer();
         return;
       }
-      const imgs = attachments;
-      const files = textAttachments;
+      const all = attachments;
+      const draft = input;
       // While a turn runs: Enter steers (delivered at the next boundary),
       // Alt+Enter queues a follow-up (delivered after the run), matching the
       // TUI's Enter / Alt+Enter behavior.
@@ -470,22 +490,44 @@ export default function Composer({
           ? "followUp"
           : "steer"
         : undefined;
+      let images: ComposerImage[];
+      let files: ComposerFile[];
+      try {
+        [images, files] = await Promise.all([
+          Promise.all(all.filter(isImageAttachment).map(toComposerImage)),
+          Promise.all(all.filter((a) => !isImageAttachment(a)).map(toComposerFile)),
+        ]);
+      } catch {
+        toast({ variant: "error", title: t("composer.readAttachmentFailed") });
+        return;
+      }
       clearComposer();
-      await onSend(
+      const sent = await onSend(
         text,
-        imgs.length > 0 ? imgs : undefined,
+        images.length > 0 ? images : undefined,
         behavior,
         files.length > 0 ? files : undefined,
       );
+      if (sent === false) {
+        // The backend rejected the message (an image it cannot decode, a file
+        // that vanished): put the prompt and its attachments back.
+        setInput(draft);
+        prevInputRef.current = draft;
+        saveDraft(sessionId, draft);
+        setAttachments(all);
+      }
     },
     [
       input,
       attachments,
-      textAttachments,
       streaming,
       onSend,
       onSlashCommand,
       clearComposer,
+      saveDraft,
+      sessionId,
+      t,
+      toast,
     ],
   );
 
@@ -759,58 +801,66 @@ export default function Composer({
               ))}
             </div>
           )}
-          {/* Text/code attachment chips */}
-          {textAttachments.length > 0 && (
-            <div className="mb-2 flex flex-wrap items-center gap-1.5">
-              {textAttachments.map((file, idx) => (
-                <div
-                  key={`${file.name}-${idx}`}
-                  className="border-hairline bg-secondary/60 text-muted-foreground flex max-w-[240px] items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px]"
-                >
-                  <FileText className="text-subtle-foreground size-3 shrink-0" />
-                  <span className="truncate" title={file.name}>
-                    {file.name}
-                  </span>
-                  <button
-                    type="button"
-                    className="text-subtle-foreground hover:text-foreground shrink-0"
-                    onClick={() =>
-                      setTextAttachments((prev) =>
-                        prev.filter((_, index) => index !== idx),
-                      )
-                    }
-                    title={t("composer.removeFile")} aria-label={t("composer.removeFile")}
-                  >
-                    <X className="size-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          {/* Attachment preview chips */}
+          {/* Attachment chips: images get a thumbnail when we hold their bytes,
+              path-based ones (native dialog / drag) show a file chip. */}
           {attachments.length > 0 && (
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              {attachments.map((a, idx) => (
-                <div
-                  key={`${a.data.slice(0, 24)}-${idx}`}
-                  className="border-hairline group/att relative h-14 w-14 overflow-hidden rounded-lg border"
-                  title={attachmentNames[idx] ?? ""}
-                >
-                  <img
-                    src={`data:${a.mimeType};base64,${a.data}`}
-                    alt=""
-                    className="size-full object-cover"
-                  />
-                  <button
-                    type="button"
-                    className="bg-black/50 text-white absolute top-1 right-1 rounded-md p-0.5 opacity-0 transition-opacity group-hover/att:opacity-100"
-                    onClick={() => removeAttachment(idx)}
-                    title={t("composer.removeAttachment")} aria-label={t("composer.removeAttachment")}
+              {attachments.map((attachment) =>
+                attachment.kind === "image" ? (
+                  <div
+                    key={attachment.id}
+                    className="border-hairline group/att bg-secondary/60 relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-lg border"
+                    title={attachment.path ?? attachment.name}
                   >
-                    <X className="size-3" />
-                  </button>
-                </div>
-              ))}
+                    {attachment.previewUrl ? (
+                      <img
+                        src={attachment.previewUrl}
+                        alt=""
+                        className="size-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center gap-0.5 px-1">
+                        <ImageIcon className="text-subtle-foreground size-3.5" />
+                        <span className="text-subtle-foreground w-full truncate text-center text-[9px]">
+                          {attachment.name}
+                        </span>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="bg-black/50 text-white absolute top-1 right-1 rounded-md p-0.5 opacity-0 transition-opacity group-hover/att:opacity-100"
+                      onClick={() => removeAttachment(attachment.id)}
+                      title={t("composer.removeAttachment")}
+                      aria-label={t("composer.removeAttachment")}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    key={attachment.id}
+                    className="border-hairline bg-secondary/60 text-muted-foreground flex max-w-[240px] items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px]"
+                    title={attachment.path ?? attachment.name}
+                  >
+                    <FileText className="text-subtle-foreground size-3 shrink-0" />
+                    <span className="truncate">{attachment.name}</span>
+                    {attachment.size != null && (
+                      <span className="text-subtle-foreground shrink-0 tabular-nums">
+                        {formatSize(attachment.size)}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className="text-subtle-foreground hover:text-foreground shrink-0"
+                      onClick={() => removeAttachment(attachment.id)}
+                      title={t("composer.removeFile")}
+                      aria-label={t("composer.removeFile")}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+                ),
+              )}
             </div>
           )}
           <div className="border-border bg-card shadow-xs focus-within:border-ring/40 focus-within:ring-ring/10 rounded-2xl border transition-[border-color,box-shadow] duration-200 focus-within:shadow-sm focus-within:ring-4">
@@ -855,9 +905,7 @@ export default function Composer({
               <div className="flex items-center gap-1">
                 {streaming ? (
                   <>
-                    {(input.trim() ||
-                      attachments.length > 0 ||
-                      textAttachments.length > 0) && (
+                    {(input.trim() || attachments.length > 0) && (
                       <Button
                         size="icon-sm"
                         className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-full"
@@ -882,11 +930,7 @@ export default function Composer({
                     size="icon-sm"
                     className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:bg-muted disabled:text-subtle-foreground rounded-full disabled:opacity-100"
                     onClick={() => handleSend()}
-                    disabled={
-                      !input.trim() &&
-                      attachments.length === 0 &&
-                      textAttachments.length === 0
-                    }
+                    disabled={!input.trim() && attachments.length === 0}
                     title={t("composer.send")} aria-label={t("composer.send")}
                   >
                     <Send className="size-3.5" />
@@ -898,7 +942,6 @@ export default function Composer({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*,text/*,.md,.json,.ts,.tsx,.js,.jsx,.py,.rs,.go,.toml,.yaml,.yml,.sh,.css,.html,.csv,.sql,.xml"
             multiple
             className="hidden"
             onChange={handleFileChange}

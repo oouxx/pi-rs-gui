@@ -3,8 +3,7 @@ use std::sync::Arc;
 use crate::state::actor::SessionCommand;
 use crate::state::error::AppError;
 use crate::state::*;
-use crate::state::{mcp, model, providers, session, settings};
-use pi_agent_core::pi_ai_types::ContentBlock;
+use crate::state::{attachments, mcp, model, providers, session};
 use serde_json::json;
 use tauri::{AppHandle, State};
 
@@ -50,6 +49,8 @@ pub async fn delete_session(
 ) -> Result<DesktopState, AppError> {
     // Destroy the session's actor (abort + remove from the registry).
     store.shutdown_actor(&session_id).await;
+    // Spooled attachments belong to the session; drop them with it.
+    attachments::remove_session_dir(&session_id);
     let mut failure: Option<String> = None;
     let state = store
         .mutate(&app, |s| {
@@ -132,42 +133,53 @@ pub async fn submit_composer(
     options: Option<serde_json::Value>,
 ) -> Result<DesktopState, AppError> {
     // options: {
-    //   images: [{ data: <raw base64>, mimeType: "image/png" }],
+    //   images: [{ data: <base64> } | { path: <absolute> }, name, mimeType],
+    //   files:  [{ data: <base64> } | { path: <absolute> }, name],
     //   streamingBehavior: "steer" | "followUp"
     // }
+    // File contents never travel in the prompt: the pipeline references each
+    // file by absolute path so pi-rs's `read` tool pages through it, and only
+    // small text files are inlined.
     let streaming_behavior = options
         .as_ref()
         .and_then(|o| o.get("streamingBehavior"))
         .and_then(|v| v.as_str())
         .map(str::to_string);
-    let images: Option<Vec<ContentBlock>> = options
-        .and_then(|o| o.get("images").and_then(|v| v.as_array()).cloned())
-        .map(|arr| {
-            arr.into_iter()
-                .filter_map(|v| {
-                    let data = v.get("data").and_then(|d| d.as_str())?;
-                    if data.is_empty() {
-                        return None;
-                    }
-                    let mime = v
-                        .get("mimeType")
-                        .and_then(|m| m.as_str())
-                        .filter(|m| !m.is_empty())
-                        .unwrap_or("image/png")
-                        .to_string();
-                    Some(ContentBlock::Image {
-                        data: data.to_string(),
-                        mime_type: mime,
-                    })
-                })
-                .collect()
-        })
-        .filter(|v: &Vec<ContentBlock>| !v.is_empty());
+    let raw_images: Vec<attachments::ComposerImageInput> = parse_option(&options, "images")?;
+    let raw_files: Vec<attachments::ComposerFileInput> = parse_option(&options, "files")?;
+    if !raw_images.is_empty() || !raw_files.is_empty() {
+        let session_id = store.state.lock().await.selected_session_id.clone();
+        let prepared = attachments::prepare(&text, &raw_images, &raw_files, &session_id)
+            .map_err(AppError::from)?;
+        store
+            .send_message(
+                &app,
+                &prepared.prompt_text,
+                (!prepared.images.is_empty()).then_some(prepared.images),
+                streaming_behavior,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        return Ok(store.state.lock().await.clone());
+    }
     store
-        .send_message(&app, &text, images, streaming_behavior)
+        .send_message(&app, &text, None, streaming_behavior)
         .await
         .map_err(|e| e.to_string())?;
     Ok(store.state.lock().await.clone())
+}
+
+fn parse_option<T: serde::de::DeserializeOwned>(
+    options: &Option<serde_json::Value>,
+    key: &str,
+) -> Result<Vec<T>, AppError> {
+    options
+        .as_ref()
+        .and_then(|o| o.get(key).cloned())
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|e| AppError::from(format!("invalid {key}: {e}")))
+        .map(Option::unwrap_or_default)
 }
 
 #[tauri::command]
@@ -234,6 +246,14 @@ pub async fn get_models() -> Result<serde_json::Value, AppError> {
                 "available": has_auth,
                 "supportedThinkingLevels":
                     pi_agent_core::pi_ai_types::get_supported_thinking_levels(&m),
+                // Multimodal capability: whether the model accepts image input,
+                // and how many images one message may carry (provider limit).
+                "supportsImages": m.input.iter().any(|i| i == "image"),
+                "maxImagesPerMessage": m
+                    .input_limits
+                    .as_ref()
+                    .and_then(|limits| limits.images.as_ref())
+                    .and_then(|images| images.max_per_message),
             }));
         }
     }

@@ -66,6 +66,8 @@ export interface ToolCallBlockDto {
   isError?: boolean;
   /** Tool-specific payload from the ToolResult (e.g. edit diff/patch). */
   details?: unknown;
+  /** Inline images the tool returned (read on an image, screenshots, …). */
+  images?: ImageBlockDto[];
 }
 
 export interface ImageBlockDto {
@@ -114,12 +116,20 @@ export interface AgentEventPayload {
 
 // ── Transcript (src-tauri/src/state/transcript.rs) ───────────
 
+export interface TranscriptAttachmentDto {
+  name: string;
+  size?: number;
+  inlined?: boolean;
+}
+
 export interface TranscriptItem {
   id?: string;
   kind?: string;
   role?: string;
   text?: string;
   content?: RawContentBlock[];
+  /** Files the user attached; the prompt-side wrapper is not sent to the UI. */
+  attachments?: TranscriptAttachmentDto[];
   createdAt?: string;
   errorMessage?: string;
   /** The user stopped this turn: content is a partial answer, not a failure. */
@@ -145,6 +155,10 @@ export interface ModelOption {
   label: string;
   available: boolean;
   supportedThinkingLevels?: string[];
+  /** The model accepts image input (multimodal prompt attachments). */
+  supportsImages?: boolean;
+  /** Provider limit on images per message, when it declares one. */
+  maxImagesPerMessage?: number | null;
 }
 
 export interface ProviderInfo {

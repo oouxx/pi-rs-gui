@@ -17,7 +17,8 @@ A Tauri v2 + React 19 desktop GUI for [pi-rs](https://github.com/oouxx/pi-rs) �
 - **Chat** — streaming assistant messages with **render-cost throttled
   markdown**, **syntax-highlighted code blocks** (languages loaded on demand),
   **KaTeX math** and **Mermaid diagrams**, thinking blocks with elapsed time,
-  tool-call cards with **inline edit diffs** and **open-file-in-editor**,
+  tool-call cards with **inline edit diffs**, **tool-result image previews**
+  (click to enlarge) and **open-file-in-editor**,
   Stop button,
   **send while a turn is running** (Enter = steer, Alt+Enter = follow-up),
   context-usage indicator, per-session thinking level, in-chat search
@@ -26,8 +27,16 @@ A Tauri v2 + React 19 desktop GUI for [pi-rs](https://github.com/oouxx/pi-rs) �
   app's own commands plus extension/prompt/skill commands, with argument
   completion for `/model`), `@` workspace file completion aligned
   with the TS original autocomplete (fuzzy scoring, path scoping, quotes,
-  `~` expansion, directory continuation, Tab trigger), image attachments and
-  inlined **text/code file attachments** (paste or drop)
+  `~` expansion, directory continuation, Tab trigger), **attachments**
+  (paste, drop, native file dialog) with **no client-side size limit**:
+  images are normalized by pi-rs's image pipeline (format sniffing, non-inline
+  formats converted to PNG, resize to the model's inline limits) and sent as
+  image blocks, while files are **handed to the `read` tool by absolute path**
+  — only small UTF-8 text files (≤64KB) are inlined to save a tool round-trip,
+  so a 500MB log or a PDF costs one `read` call instead of the whole context
+  window. Pasted bytes are spooled to `~/.pi-rs/agent/attachments/<session>/`
+  (removed with the session) so every referenced file is readable. The
+  composer warns when the selected model is text-only
 - **Sessions** — sidebar with title + **full-text message search** / delete /
   working-directory picker / relative timestamps; session info panel
 - **MCP** — Settings → MCP manages `mcp.json` servers (global/project),
@@ -72,8 +81,8 @@ A Tauri v2 + React 19 desktop GUI for [pi-rs](https://github.com/oouxx/pi-rs) �
 │ pi-gui-rs (Rust, src-tauri/src)                   │
 │  lib.rs (command registration) · commands/mod.rs  │
 │  state/ (store, session, model, providers, skills,│
-│          extensions, settings, files, terminal,  │
-│          transcript, ui, cwd)                    │
+│          extensions, settings, files, attachments,│
+│          terminal, transcript, ui, cwd)          │
 └───────────────────────┬──────────────────────────┘
                         │ git tag dependency
 ┌───────────────────────┴──────────────────────────┐

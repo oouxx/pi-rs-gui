@@ -1,79 +1,173 @@
-import type { ComposerImage } from "../api/commands";
+import type { ComposerFile, ComposerImage } from "../api/commands";
 
-export const MAX_ATTACHMENTS = 4;
-export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+/**
+ * Composer attachment limits.
+ *
+ * No byte limits: non-image files are never inlined into the prompt — they are
+ * handed to pi-rs's `read` tool by absolute path (small text files aside, see
+ * `state/attachments.rs`), and images are downscaled to the model's inline
+ * limits by pi-rs. A local byte cap would only reject files the backend
+ * handles fine.
+ */
+export const MAX_ATTACHMENTS = 8;
+export const MAX_TEXT_ATTACHMENTS = 8;
 
-/** Text/code attachments are inlined into the prompt text. */
-export const MAX_TEXT_ATTACHMENTS = 4;
-export const MAX_TEXT_ATTACHMENT_BYTES = 256 * 1024;
-
-export interface TextAttachment {
+/**
+ * One attachment in the composer.
+ *
+ * `path` is set when the OS gave us one (native file dialog / native drag):
+ * the bytes then never enter the webview. `file` is set when only bytes are
+ * available (paste), and is turned into base64 at send time.
+ */
+export interface ComposerAttachment {
+  /** Local rendering id. */
+  id: string;
+  kind: "image" | "file";
   name: string;
-  content: string;
+  size?: number;
+  mimeType?: string;
+  path?: string;
+  file?: File;
+  /** Blob URL preview for images we hold bytes for. */
+  previewUrl?: string;
 }
 
-const TEXT_EXTENSIONS = new Set([
-  "txt", "md", "mdx", "rst", "log",
-  "json", "jsonc", "json5", "yaml", "yml", "toml", "ini", "cfg", "conf",
-  "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rs", "go", "java", "kt",
-  "c", "h", "cc", "cpp", "hpp", "cs", "rb", "php", "swift", "scala",
-  "sh", "bash", "zsh", "fish", "ps1", "bat",
-  "css", "scss", "less", "html", "htm", "xml", "svg", "vue", "svelte",
-  "sql", "graphql", "gql", "proto", "tf", "dockerfile", "makefile",
-  "csv", "tsv", "diff", "patch",
+/** Extensions we treat as images when the browser reports no MIME type. */
+const IMAGE_EXTENSIONS = new Set([
+  "png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "tif", "tiff",
 ]);
 
-const TEXT_MIME_TYPES = new Set([
-  "application/json",
-  "application/xml",
-  "application/javascript",
-  "application/typescript",
-  "application/x-sh",
-  "application/sql",
-]);
-
-/** Whether a dropped/picked file can be inlined as text. */
-export function isTextFile(file: File): boolean {
-  if (file.type.startsWith("text/")) return true;
-  if (TEXT_MIME_TYPES.has(file.type)) return true;
-  const name = file.name.toLowerCase();
-  if (name === "dockerfile" || name === "makefile") return true;
-  const dot = name.lastIndexOf(".");
-  if (dot < 0) return false;
-  return TEXT_EXTENSIONS.has(name.slice(dot + 1));
+export function isImageFile(file: File): boolean {
+  // SVG is markup, not a bitmap pi-rs can inline: it goes through the file
+  // channel (text, referenced or inlined by the backend).
+  if (isSvg(file.name, file.type)) return false;
+  if (file.type.startsWith("image/")) return true;
+  if (file.type && file.type !== "application/octet-stream") return false;
+  return hasImageExtension(file.name);
 }
 
-/** Read a File into a ComposerImage (raw base64 + mimeType). */
-export function fileToComposerImage(file: File): Promise<ComposerImage> {
+/** Same classification as {@link isImageFile}, for a bare path. */
+export function isImagePath(path: string): boolean {
+  if (isSvg(path, "")) return false;
+  return hasImageExtension(path);
+}
+
+function isSvg(name: string, type: string): boolean {
+  return type === "image/svg+xml" || /\.svg$/i.test(name);
+}
+
+function hasImageExtension(name: string): boolean {
+  const dot = name.toLowerCase().lastIndexOf(".");
+  return dot >= 0 && IMAGE_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
+}
+
+export const isImageAttachment = (a: ComposerAttachment) => a.kind === "image";
+
+/**
+ * Files carried by a clipboard or drag payload.
+ *
+ * `items` is the rich view (it separates text from files, so pasting a copied
+ * *file* — a screenshot, or a file copied in Finder/an editor — is detected),
+ * `files` is the flat fallback some platforms populate instead.
+ */
+export function filesFromTransfer(
+  data: {
+    items?: DataTransferItemList | null;
+    files?: FileList | null;
+  } | null,
+): File[] {
+  if (!data) return [];
+  const files: File[] = [];
+  for (const item of data.items ?? []) {
+    if (item.kind !== "file") continue;
+    const file = item.getAsFile();
+    if (file) files.push(file);
+  }
+  if (files.length === 0 && data.files) {
+    for (const file of data.files) files.push(file);
+  }
+  return files;
+}
+
+/** Human-readable byte size for chips (`1.4 MB`). */
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(1)} ${units[unit]}`;
+}
+
+/** Base file name of an absolute path (handles both separators). */
+export function baseName(path: string): string {
+  const parts = path.split(/[\\/]/);
+  return parts[parts.length - 1] || path;
+}
+
+export function attachmentFromFile(file: File, id: string): ComposerAttachment {
+  const image = isImageFile(file);
+  return {
+    id,
+    kind: image ? "image" : "file",
+    name: file.name || (image ? "image" : "file"),
+    size: file.size,
+    mimeType: file.type || undefined,
+    file,
+    previewUrl: image ? URL.createObjectURL(file) : undefined,
+  };
+}
+
+/** Image path whose bytes stay out of the webview (native dialog / drag). */
+export function attachmentFromPath(path: string, id: string): ComposerAttachment {
+  return {
+    id,
+    kind: isImagePath(path) ? "image" : "file",
+    name: baseName(path),
+    path,
+  };
+}
+
+export function releaseAttachment(attachment: ComposerAttachment): void {
+  if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+}
+
+/** Read a File into base64 (no `data:` prefix). */
+export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = typeof reader.result === "string" ? reader.result : "";
-      // result is `data:<mime>;base64,<data>` — strip the prefix.
       const comma = result.indexOf(",");
-      const data = comma >= 0 ? result.slice(comma + 1) : result;
-      const mimeMatch = result.match(/^data:([^;,]+)/);
-      resolve({
-        data,
-        mimeType: file.type || mimeMatch?.[1] || "image/png",
-      });
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
     };
     reader.onerror = () => reject(new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
 }
 
-/** Read a text/code file for inlining into the prompt. */
-export function fileToTextAttachment(file: File): Promise<TextAttachment> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      resolve({
-        name: file.name,
-        content: typeof reader.result === "string" ? reader.result : "",
-      });
-    };
-    reader.onerror = () => reject(new Error("Failed to read file"));
-    reader.readAsText(file);
-  });
+/** Build the wire payload for one attachment (base64 only when no path). */
+export async function toComposerImage(
+  attachment: ComposerAttachment,
+): Promise<ComposerImage> {
+  if (attachment.path) {
+    return { name: attachment.name, path: attachment.path, mimeType: "image/png" };
+  }
+  if (!attachment.file) throw new Error("Attachment has no bytes");
+  return {
+    name: attachment.name,
+    data: await fileToBase64(attachment.file),
+    mimeType: attachment.mimeType ?? "image/png",
+  };
+}
+
+export async function toComposerFile(
+  attachment: ComposerAttachment,
+): Promise<ComposerFile> {
+  if (attachment.path) return { name: attachment.name, path: attachment.path };
+  if (!attachment.file) throw new Error("Attachment has no bytes");
+  return { name: attachment.name, data: await fileToBase64(attachment.file) };
 }

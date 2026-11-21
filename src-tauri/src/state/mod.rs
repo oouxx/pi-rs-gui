@@ -1,5 +1,6 @@
 pub(crate) mod actor;
 pub(crate) mod actors;
+pub(crate) mod attachments;
 pub(crate) mod cwd;
 pub(crate) mod error;
 pub(crate) mod events;

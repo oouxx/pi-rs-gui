@@ -7,6 +7,7 @@ import { useI18n } from "@/i18n";
 import { useThrottledText } from "@/hooks/use-throttled-text";
 import type { ContentBlock, DisplayMessage } from "@/hooks/message-reducer";
 import ToolCallCard from "@/components/ToolCallCard";
+import { baseName, formatSize } from "@/lib/attachments";
 import ThinkingBlock from "@/components/ThinkingBlock";
 import { CopyButton, mdComponents, rehypePlugins, remarkPlugins } from "./markdown";
 
@@ -18,19 +19,6 @@ function imageDataUrl(block: ContentBlock): string {
   }
   const args = block.arguments as { data?: string } | string | undefined;
   return block.text ?? (typeof args === "object" ? args?.data : undefined) ?? "";
-}
-
-/** Split an inlined `<attached_files>` block from the user's prompt text so
- *  the bubble shows compact file chips instead of the raw file contents. */
-function parseAttachedFiles(content: string): { text: string; files: string[] } {
-  const match = content.match(
-    /^([\s\S]*?)\s*<attached_files>\n([\s\S]*?)\n<\/attached_files>\s*$/,
-  );
-  if (!match) return { text: content, files: [] };
-  const files = [...match[2].matchAll(/<file name="([^"]*)">/g)].map(
-    (item) => item[1],
-  );
-  return { text: match[1].trim(), files };
 }
 
 /** Render a single content block. Memoized: unchanged block references skip
@@ -72,6 +60,7 @@ const BlockRenderer = memo(function BlockRenderer({
           result={block.result}
           isError={block.isError}
           details={block.details}
+          images={block.images}
         />
       );
 
@@ -105,8 +94,7 @@ export const MessageItem = memo(function MessageItem({
 }) {
   const { t } = useI18n();
   const isLastAi = msg.role === "assistant" && isLast;
-  const userContent =
-    msg.role === "user" ? parseAttachedFiles(msg.content) : null;
+  const files = msg.attachments ?? [];
   return (
     <motion.div
       className="group mx-auto w-full max-w-[760px]"
@@ -123,19 +111,24 @@ export const MessageItem = memo(function MessageItem({
             text={msg.content}
             className="text-subtle-foreground hover:bg-background/70 hover:text-foreground absolute top-2 right-2 rounded-md p-1 opacity-0 transition-opacity group-hover:opacity-100"
           />
-          <div className="break-words whitespace-pre-wrap">
-            {userContent?.text}
-          </div>
-          {userContent && userContent.files.length > 0 && (
+          <div className="break-words whitespace-pre-wrap">{msg.content}</div>
+          {/* Attachments are handed to the `read` tool, not inlined: the bubble
+              keeps one chip per file so the prompt stays readable. */}
+          {files.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {userContent.files.map((name, index) => (
+              {files.map((file, index) => (
                 <span
-                  key={`${name}-${index}`}
+                  key={`${file.name}-${index}`}
                   className="border-hairline bg-background/60 text-muted-foreground inline-flex max-w-[240px] items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]"
-                  title={name}
+                  title={file.name}
                 >
                   <FileText className="text-subtle-foreground size-3 shrink-0" />
-                  <span className="truncate">{name}</span>
+                  <span className="truncate">{baseName(file.name)}</span>
+                  {file.size != null && (
+                    <span className="text-subtle-foreground shrink-0 tabular-nums">
+                      {formatSize(file.size)}
+                    </span>
+                  )}
                 </span>
               ))}
             </div>

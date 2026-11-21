@@ -118,10 +118,25 @@ export async function getActiveSessionCwd(): Promise<string | undefined> {
     return undefined;
   }
 }
+/**
+ * An image attachment on the wire: environment-dependent either an absolute
+ * `path` (file dialog / native drag — bytes never enter the webview) or base64
+ * `data` (paste).
+ */
 export interface ComposerImage {
-  /** Raw base64 (no `data:` prefix). */
-  data: string;
-  mimeType: string;
+  name?: string;
+  /** Absolute path when the OS provided one. */
+  path?: string;
+  /** Raw base64 (no `data:` prefix) when only bytes are available. */
+  data?: string;
+  mimeType?: string;
+}
+
+/** A non-image attachment: same two payload forms as {@link ComposerImage}. */
+export interface ComposerFile {
+  name: string;
+  path?: string;
+  data?: string;
 }
 
 export type StreamingBehavior = "steer" | "followUp";
@@ -130,9 +145,11 @@ export function submitComposer(
   text: string,
   images?: ComposerImage[],
   streamingBehavior?: StreamingBehavior,
+  files?: ComposerFile[],
 ) {
   const options: Record<string, unknown> = {};
   if (images && images.length > 0) options.images = images;
+  if (files && files.length > 0) options.files = files;
   if (streamingBehavior) options.streamingBehavior = streamingBehavior;
   return tauriInvoke<DesktopAppState>("submit_composer", {
     text,

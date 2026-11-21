@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Search,
   ArrowUp,
@@ -227,6 +234,18 @@ export default function ChatView({
     }, 800);
     return () => clearTimeout(id);
   }, [refreshModelPicker, refreshUsage, activeSessionId]);
+
+  // Multimodal capability of the session's current model: whether prompt
+  // images are accepted, and the provider's per-message image limit.
+  const activeModelCapabilities = useMemo(() => {
+    const match = modelList.find(
+      (m) => m.providerId === currentProvider && m.modelId === currentModel,
+    );
+    return {
+      supportsImages: match?.supportsImages,
+      maxImages: match?.maxImagesPerMessage ?? undefined,
+    };
+  }, [modelList, currentProvider, currentModel]);
 
   const handleModelSelect = useCallback(
     async (provider: string, modelId: string) => {
@@ -917,6 +936,8 @@ export default function ChatView({
             loading={loading}
             streaming={streaming}
             queued={queued}
+            supportsImages={activeModelCapabilities.supportsImages}
+            maxImages={activeModelCapabilities.maxImages}
             onSend={(text, images, behavior, files) =>
               sendMessage(text, images, behavior, files)
             }

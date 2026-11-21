@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { expand, FAST_TRANSITION, PANEL_TRANSITION } from "@/lib/motion";
 import {
@@ -26,6 +27,7 @@ import { errorText } from "@/lib/errors";
 import { useHighlightedCode } from "@/hooks/use-highlighted-code";
 import { useThrottledText } from "@/hooks/use-throttled-text";
 import { languageFromPath } from "@/lib/highlight";
+import type { ContentBlock } from "@/hooks/message-reducer";
 
 interface ToolCallCardProps {
   name: string;
@@ -35,6 +37,8 @@ interface ToolCallCardProps {
   isError?: boolean;
   /** ToolResult details (edit: diff/patch/firstChangedLine). */
   details?: unknown;
+  /** Inline images the tool returned (read on an image, screenshots, …). */
+  images?: ContentBlock[];
 }
 
 // ── Per-tool icon (the tool name itself is shown as the title) ──
@@ -460,6 +464,76 @@ function CodeText({
       className={`${className ?? ""} md-code`}
       dangerouslySetInnerHTML={{ __html: html }}
     />
+  );
+}
+
+/** Turn an image content block into a `data:` URL for `<img>`. */
+function imageBlockSrc(block: ContentBlock): string {
+  const data = block.data ?? "";
+  if (!data) return "";
+  if (data.startsWith("data:")) return data;
+  return `data:${block.mimeType || "image/png"};base64,${data}`;
+}
+
+/**
+ * Inline images a tool returned — `read` on an image file hands back a text
+ * note *plus* the image, and screenshot/MCP tools return image-only results.
+ * The model already sees them, so the user must too: thumbnails here, a
+ * full-screen preview on click (Escape / backdrop closes it).
+ */
+function ToolImages({ images }: { images?: ContentBlock[] }) {
+  const { t } = useI18n();
+  const [preview, setPreview] = useState<string | null>(null);
+  const sources = (images ?? [])
+    .filter((block) => block.type === "image")
+    .map(imageBlockSrc)
+    .filter(Boolean);
+
+  useEffect(() => {
+    if (!preview) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPreview(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [preview]);
+
+  if (sources.length === 0) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap items-start gap-2">
+      {sources.map((src, index) => (
+        <button
+          key={index}
+          type="button"
+          onClick={() => setPreview(src)}
+          title={t("tool.viewImage")}
+          aria-label={t("tool.viewImage")}
+          className="border-hairline bg-background/60 hover:border-muted-foreground/40 overflow-hidden rounded-lg border transition-colors"
+        >
+          <img
+            src={src}
+            alt=""
+            className="max-h-40 max-w-[280px] object-contain"
+          />
+        </button>
+      ))}
+      {preview &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
+            role="presentation"
+            onClick={() => setPreview(null)}
+          >
+            <img
+              src={preview}
+              alt=""
+              className="max-h-full max-w-full rounded-lg shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            />
+          </div>,
+          document.body,
+        )}
+    </div>
   );
 }
 
@@ -1172,6 +1246,7 @@ export default function ToolCallCard({
   result,
   isError,
   details,
+  images,
 }: ToolCallCardProps) {
   const { toast } = useToast();
   const { t } = useI18n();
@@ -1292,6 +1367,10 @@ export default function ToolCallCard({
           )}
         </span>
       </div>
+
+      {/* Images the tool returned are shown for every tool, above its own
+          rendering (read / screenshots / MCP tools). */}
+      <ToolImages images={images} />
 
       {name === "web_search" ? (
         <WebSearchBlock

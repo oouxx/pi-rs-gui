@@ -35,6 +35,15 @@ export interface ContentBlock {
   isError?: boolean;
   /** Tool-specific payload (edit diff/patch, …). */
   details?: unknown;
+  /** Images the tool returned (read on an image, screenshots, …). */
+  images?: ContentBlock[];
+}
+
+/** A file a user prompt references (rendered as a chip, not as content). */
+export interface MessageAttachment {
+  name: string;
+  size?: number;
+  inlined?: boolean;
 }
 
 export interface DisplayMessage {
@@ -42,6 +51,8 @@ export interface DisplayMessage {
   role: "user" | "assistant" | "system";
   content: string; // flattened text (backward compat)
   blocks: ContentBlock[]; // structured content blocks
+  /** Files the prompt references (the wrapper is stripped from `content`). */
+  attachments?: MessageAttachment[];
   createdAt: string;
   errorMessage?: string; // assistant run failure (LLM error, timeout)
   interrupted?: boolean; // user stopped the turn; content is partial
@@ -91,6 +102,15 @@ export function toBlocks(raw: RawContentBlock[] | undefined | null): ContentBloc
           result: b.result,
           isError: b.isError,
           details: b.details,
+          // Inline images the tool returned; kept so a reloaded session still
+          // shows the screenshot / image a tool produced.
+          images: Array.isArray(b.images)
+            ? b.images.map((image) => ({
+                type: "image" as const,
+                data: image.data,
+                mimeType: image.mimeType,
+              }))
+            : undefined,
         };
       case "image":
         return { type: "image", data: b.data, mimeType: b.mimeType };
@@ -290,6 +310,13 @@ export function transcriptToDisplay(
         role: t.role === "user" ? ("user" as const) : ("assistant" as const),
         content: t.text ?? blocksToText(blocks) ?? "",
         blocks,
+        attachments: Array.isArray(t.attachments)
+          ? t.attachments.map((file) => ({
+              name: file.name,
+              size: file.size,
+              inlined: file.inlined,
+            }))
+          : undefined,
         createdAt: t.createdAt ?? "",
         errorMessage:
           typeof t.errorMessage === "string" && t.errorMessage

@@ -1,9 +1,21 @@
 //! Agent event serialization and display transcript building.
 
+use crate::state::attachments::split_attachment_wrapper;
 use pi_agent_core::pi_ai_types::{ContentBlock, StopReason};
 use pi_agent_core::types::AgentMessage;
 use pi_coding_agent::core::agent_session::AgentSessionEvent;
 use serde_json::json;
+use std::collections::HashMap;
+
+/// A tool result as the transcript renders it: flattened text, terminal state,
+/// tool-specific details and any inline images the tool produced.
+#[derive(Debug, Clone)]
+struct ToolResultEntry {
+    text: String,
+    is_error: bool,
+    details: serde_json::Value,
+    images: Vec<serde_json::Value>,
+}
 
 /// Serialize an AgentSessionEvent into a (type, data) pair for the frontend.
 /// Maps the core passthrough variants to their legacy frontend event types
@@ -210,8 +222,7 @@ pub const INTERRUPTED_TOOL_MESSAGE: &str =
     "Run interrupted (timeout or crash): this tool call never returned a result.";
 
 /// Result text shown for a tool call the user stopped before it returned.
-pub const STOPPED_TOOL_MESSAGE: &str =
-    "Stopped before this tool call returned a result.";
+pub const STOPPED_TOOL_MESSAGE: &str = "Stopped before this tool call returned a result.";
 
 /// Same as [`build_display_transcript`], but tool calls that never produced a
 /// result are rendered as interrupted errors instead of staying in the
@@ -243,9 +254,11 @@ fn build_display_transcript_inner(
     msgs: &[AgentMessage],
     orphan_reason: Option<&str>,
 ) -> Vec<serde_json::Value> {
-    // First pass: collect tool results keyed by tool_call_id.
-    let mut tool_results: std::collections::HashMap<String, (String, bool, serde_json::Value)> =
-        std::collections::HashMap::new();
+    // First pass: collect tool results keyed by tool_call_id. Image blocks a
+    // tool returned (the `read` tool on an image file, screenshot/MCP tools)
+    // are kept so the card can show them — dropping them left the user with
+    // only the "Read image file [image/png]" note while the model saw the image.
+    let mut tool_results: HashMap<String, ToolResultEntry> = HashMap::new();
     for msg in msgs {
         if let AgentMessage::ToolResult {
             tool_call_id,
@@ -265,7 +278,26 @@ fn build_display_transcript_inner(
                     }
                 })
                 .collect();
-            tool_results.insert(tool_call_id.clone(), (text, *is_error, details.clone()));
+            let images: Vec<serde_json::Value> = content
+                .iter()
+                .filter_map(|b| match b {
+                    ContentBlock::Image { data, mime_type } => Some(json!({
+                        "type": "image",
+                        "data": data,
+                        "mimeType": mime_type,
+                    })),
+                    _ => None,
+                })
+                .collect();
+            tool_results.insert(
+                tool_call_id.clone(),
+                ToolResultEntry {
+                    text,
+                    is_error: *is_error,
+                    details: details.clone(),
+                    images,
+                },
+            );
         }
     }
 
@@ -276,9 +308,7 @@ fn build_display_transcript_inner(
     let mut out: Vec<serde_json::Value> = Vec::new();
     for msg in msgs {
         let (role, content, ts, error_message, interrupted) = match msg {
-            AgentMessage::User { content, timestamp } => {
-                ("user", content, *timestamp, None, false)
-            }
+            AgentMessage::User { content, timestamp } => ("user", content, *timestamp, None, false),
             AgentMessage::Assistant {
                 content,
                 timestamp,
@@ -307,12 +337,17 @@ fn build_display_transcript_inner(
             for b in arr.iter_mut() {
                 if b.get("type").and_then(|t| t.as_str()) == Some("toolCall") {
                     if let Some(id) = b.get("id").and_then(|i| i.as_str()) {
-                        if let Some((result, is_error, details)) = tool_results.get(id) {
-                            b["status"] = json!(if *is_error { "error" } else { "success" });
-                            b["result"] = json!(result);
-                            b["isError"] = json!(is_error);
+                        if let Some(entry) = tool_results.get(id) {
+                            b["status"] = json!(if entry.is_error { "error" } else { "success" });
+                            b["result"] = json!(entry.text);
+                            b["isError"] = json!(entry.is_error);
                             // Tool-specific payload (edit diff/patch, …).
-                            b["details"] = details.clone();
+                            b["details"] = entry.details.clone();
+                            // Inline images the tool produced (read on an image,
+                            // screenshots from MCP/extension tools).
+                            if !entry.images.is_empty() {
+                                b["images"] = json!(entry.images);
+                            }
                         } else if let Some(reason) = orphan_reason {
                             // The turn died before this call produced a result.
                             // Surface it as an error so the card stops spinning.
@@ -381,6 +416,17 @@ fn build_display_transcript_inner(
                 chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
             });
 
+        // A prompt carrying attachments ends with this pipeline's wrapper (the
+        // references and inlined text live there). The bubble shows the typed
+        // text plus file chips, so the wrapper is split off — inline content
+        // would otherwise render as a wall of text.
+        let (text, files) = if role == "user" {
+            let (visible, files) = split_attachment_wrapper(&text);
+            (visible, files)
+        } else {
+            (text, Vec::new())
+        };
+
         let mut item = json!({
             "id": format!("msg-{}", ts),
             "kind": "message",
@@ -389,6 +435,16 @@ fn build_display_transcript_inner(
             "content": blocks_val,
             "createdAt": created,
         });
+        if !files.is_empty() {
+            item["attachments"] = json!(files
+                .iter()
+                .map(|file| json!({
+                    "name": file.name,
+                    "size": file.size,
+                    "inlined": file.inlined,
+                }))
+                .collect::<Vec<_>>());
+        }
         if let Some(err) = error_message {
             if !err.is_empty() {
                 item["errorMessage"] = json!(err);
@@ -512,6 +568,61 @@ mod tests {
         assert_eq!(block["isError"], true);
         assert_eq!(block["interrupted"], true);
         assert_eq!(block["result"], "run interrupted");
+    }
+
+    #[test]
+    fn keeps_images_a_tool_returned() {
+        let mut result = tool_result("t1", "Read image file [image/png]", false, 3);
+        if let AgentMessage::ToolResult { content, .. } = &mut result {
+            content.push(ContentBlock::Image {
+                data: "QUJD".into(),
+                mime_type: "image/png".into(),
+            });
+        }
+        let transcript = build_display_transcript(&[
+            user("look at this", 1),
+            tool_call("t1", 2),
+            result,
+            assistant(vec![ContentBlock::text("done")], None, 4),
+        ]);
+
+        let block = &transcript[1]["content"][0];
+        assert_eq!(block["result"], "Read image file [image/png]");
+        let images = block["images"].as_array().expect("images must survive");
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0]["type"], "image");
+        assert_eq!(images[0]["mimeType"], "image/png");
+        assert_eq!(images[0]["data"], "QUJD");
+    }
+
+    #[test]
+    fn omits_images_key_when_a_tool_returned_none() {
+        let transcript = build_display_transcript(&[
+            user("run it", 1),
+            tool_call("t1", 2),
+            tool_result("t1", "ok", false, 3),
+        ]);
+
+        assert!(transcript[1]["content"][0].get("images").is_none());
+    }
+
+    #[test]
+    fn user_attachments_are_chips_not_prompt_plumbing() {
+        let prompt = format!(
+            "summarise this\n\n{}\n  <file name=\"/tmp/a.md\" size=\"3\">\nbody\n  </file>\n  <file name=\"/tmp/b.pdf\" size=\"99\"/>\n  <note>read them</note>\n{}",
+            "<pi_gui_attachments marker=\"v1\">",
+            "</pi_gui_attachments>"
+        );
+        let transcript = build_display_transcript(&[user(&prompt, 1)]);
+
+        let item = &transcript[0];
+        assert_eq!(item["text"], "summarise this");
+        let files = item["attachments"].as_array().expect("attachment chips");
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0]["name"], "/tmp/a.md");
+        assert_eq!(files[0]["inlined"], true);
+        assert_eq!(files[1]["size"], 99);
+        assert_eq!(files[1]["inlined"], false);
     }
 
     #[test]

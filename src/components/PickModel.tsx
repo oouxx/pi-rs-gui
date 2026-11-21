@@ -2,20 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Search, Check } from "lucide-react"
 import { useI18n } from "@/i18n"
+import type { ModelOption, ProviderInfo } from "@/api/types"
 
-export interface ProviderInfo {
-  id: string
-  name: string
-  hasAuth: boolean
-}
-
-export interface ModelOption {
-  providerId: string
-  modelId: string
-  label: string
-  available: boolean
-  supportedThinkingLevels?: string[]
-}
+// Re-exported so callers keep importing the picker's data shape from here.
+export type { ModelOption, ProviderInfo }
 
 interface PickModelProps {
   models: readonly ModelOption[]

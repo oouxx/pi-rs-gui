@@ -10,6 +10,7 @@ import {
   createSession as apiCreateSession,
   deleteSession as apiDeleteSession,
   renameSession as apiRenameSession,
+  type ComposerFile,
   type ComposerImage,
   type DesktopAppState,
   type QueuedMessage,
@@ -17,7 +18,7 @@ import {
 } from "../api/commands";
 import { tauriListen } from "../api/events";
 import { EVENTS } from "../api/eventNames";
-import type { TextAttachment } from "../lib/attachments";
+import { baseName } from "../lib/attachments";
 import {
   isPermissionGranted,
   requestPermission,
@@ -36,6 +37,7 @@ import {
 } from "../hooks/message-reducer";
 import { showToast } from "../components/ui/toast";
 import { parseError } from "../lib/errors";
+import { toolResultPayload } from "../lib/tool-result";
 
 export interface SessionItem {
   id: string;
@@ -83,31 +85,6 @@ function dropQueuedDeltas() {
   if (deltaRaf !== null) cancelAnimationFrame(deltaRaf);
   deltaRaf = null;
   deltaQueue = [];
-}
-
-/** Extract display text + tool-specific details from an `AgentToolResult`. */
-function toolResultPayload(result: unknown): {
-  text: string;
-  details?: unknown;
-} {
-  if (typeof result === "string") return { text: result };
-  if (result && typeof result === "object") {
-    const record = result as Record<string, unknown>;
-    const content = record.content;
-    let text = "";
-    if (Array.isArray(content)) {
-      text = content
-        .map((block) => {
-          if (!block || typeof block !== "object") return "";
-          const item = block as Record<string, unknown>;
-          return item.type === "text" ? String(item.text ?? "") : "";
-        })
-        .join("");
-    }
-    if (!text) text = JSON.stringify(result, null, 2);
-    return { text, details: record.details };
-  }
-  return { text: result == null ? "" : String(result) };
 }
 
 /** OS notification for a background run; best effort when permission is
@@ -159,8 +136,8 @@ export interface ChatState {
     text: string,
     attachments?: ComposerImage[],
     streamingBehavior?: StreamingBehavior,
-    files?: TextAttachment[],
-  ): Promise<void>;
+    files?: ComposerFile[],
+  ): Promise<boolean>;
 
   /** Handle one `agent-event` payload for the selected session. */
   handleAgentEvent(evt: AgentEventPayload): void;
@@ -267,23 +244,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   async sendMessage(text, attachments, streamingBehavior, files) {
-    const attachedBlock =
-      files && files.length > 0
-        ? `<attached_files>\n${files
-            .map(
-              (file) =>
-                `<file name="${file.name.replace(/"/g, "'")}">\n${file.content}\n</file>`,
-            )
-            .join("\n")}\n</attached_files>`
-        : "";
-    const payloadText = [text, attachedBlock].filter(Boolean).join("\n\n");
+    // Attachment references are assembled in the backend (it owns path
+    // resolution, spooling and the prompt wrapper), so the prompt text here is
+    // exactly what the user typed.
+    const payloadText = text;
     const hasContent =
       !!text.trim() ||
       (attachments != null && attachments.length > 0) ||
       (files != null && files.length > 0);
-    if (!hasContent) return;
+    if (!hasContent) return false;
     const wasStreaming = streamingRef;
-    if (wasStreaming && !streamingBehavior) return;
+    if (wasStreaming && !streamingBehavior) return false;
 
     // Queue into the running turn. No optimistic user bubble: streaming deltas
     // only ever target the last assistant message, so a user message at the
@@ -302,7 +273,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ],
       }));
       try {
-        await submitComposer(payloadText, attachments, streamingBehavior);
+        await submitComposer(payloadText, attachments, streamingBehavior, files);
       } catch (error) {
         set((state) => ({ queued: state.queued.slice(0, -1) }));
         showToast({
@@ -310,8 +281,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           title: "Could not queue message",
           description: errorText(error),
         });
+        return false;
       }
-      return;
+      return true;
     }
 
     // Auto-title: rename "New thread" sessions based on the first message.
@@ -331,40 +303,60 @@ export const useChatStore = create<ChatState>((set, get) => ({
       apiRenameSession(currentSession.id, autoTitle).catch(() => {});
     }
 
-    // Optimistically add the user message (text + attachment thumbnails).
-    // `payloadText` includes the <attached_files> marker so MessageItem can
-    // render compact file chips instead of the inlined content.
+    // Optimistically add the user message: typed text, image thumbnails and a
+    // chip per referenced file. Path-based images have no bytes in the webview,
+    // so they show up as file chips until the transcript reloads.
     const blocks: DisplayMessage["blocks"] = [{ type: "text", text: payloadText }];
-    if (attachments && attachments.length > 0) {
-      for (const a of attachments) {
-        blocks.push({
-          type: "image",
-          data: a.data,
-          mimeType: a.mimeType,
-          text: `data:${a.mimeType};base64,${a.data}`,
-        });
-      }
+    for (const image of attachments ?? []) {
+      if (!image.data) continue;
+      blocks.push({
+        type: "image",
+        data: image.data,
+        mimeType: image.mimeType,
+      });
     }
     const userMsg: DisplayMessage = {
       id: `msg-opt-${Date.now()}`,
       role: "user",
       content: payloadText,
       blocks,
+      attachments: [
+        // Images handed over by path have no bytes here, so they can only be
+        // shown as a chip until the transcript reloads with the real block.
+        ...(attachments ?? [])
+          .filter((image) => !image.data)
+          .map((image) => ({
+            name: image.name ?? baseName(image.path ?? ""),
+            inlined: false,
+          })),
+        ...(files ?? []).map((file) => ({
+          name: file.path ? baseName(file.path) : file.name,
+          inlined: false,
+        })),
+      ],
       createdAt: new Date().toISOString(),
     };
     set((state) => ({ messages: [...state.messages, userMsg] }));
     streamingRef = true;
     set({ streaming: true });
     try {
-      await submitComposer(payloadText, attachments);
+      await submitComposer(payloadText, attachments, undefined, files);
+      return true;
     } catch (error) {
       streamingRef = false;
       set({ streaming: false });
+      // The prompt never reached the agent (e.g. an image the provider cannot
+      // accept): drop the optimistic bubble and hand the failure back to the
+      // composer so the draft and its attachments are restored.
+      set((state) => ({
+        messages: state.messages.filter((m) => m.id !== userMsg.id),
+      }));
       showToast({
         variant: "error",
         title: "Send failed",
         description: errorText(error),
       });
+      return false;
     }
   },
 
@@ -497,7 +489,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     if (et === "tool_execution_end") {
       const { tool_call_id, result, is_error } = evt.data;
-      const { text: resultStr, details } = toolResultPayload(result);
+      const { text: resultStr, details, images } = toolResultPayload(result);
       set((state) => {
         if (state.messages.length === 0) return state;
         const last = state.messages[state.messages.length - 1];
@@ -510,6 +502,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 result: resultStr,
                 isError: !!is_error,
                 details,
+                // Images the tool returned (read on an image, screenshots, …).
+                ...(images.length > 0 ? { images } : {}),
               }
             : b,
         );
