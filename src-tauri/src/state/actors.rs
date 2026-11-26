@@ -10,7 +10,7 @@ use std::time::Instant;
 
 use tokio::sync::{oneshot, Mutex};
 
-use super::actor::{SessionCommand, SessionHandle};
+use super::actor::{SessionCommand, SessionCommandSender, SessionHandle};
 
 #[derive(Default)]
 pub struct ActorRegistry {
@@ -80,6 +80,22 @@ impl ActorRegistry {
         let mut reg = self.handles.lock().await;
         if let Some(handle) = reg.remove(old_id) {
             reg.insert(new_id.to_string(), handle);
+        }
+    }
+
+    /// Send a command to every registered actor, ignoring the reply.
+    ///
+    /// Used for state that must be mirrored into all live sessions (queue
+    /// modes). Does not touch their idle timers: a settings change should not
+    /// keep otherwise-idle sessions alive.
+    pub async fn broadcast(&self, make: impl Fn() -> SessionCommand) {
+        let senders: Vec<SessionCommandSender> = {
+            let reg = self.handles.lock().await;
+            reg.values().map(|handle| handle.tx.clone()).collect()
+        };
+        for tx in senders {
+            // A closed mailbox just means that actor is gone.
+            let _ = tx.send(make());
         }
     }
 

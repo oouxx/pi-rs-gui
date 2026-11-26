@@ -14,7 +14,7 @@
 use std::sync::Arc;
 
 use pi_agent_core::pi_ai_types::ContentBlock;
-use pi_agent_core::types::AgentMessage;
+use pi_agent_core::types::{AgentMessage, QueueMode};
 use pi_coding_agent::core::agent_session::PromptOptions;
 use pi_coding_agent::core::agent_session_runtime::AgentSessionRuntime;
 use serde_json::json;
@@ -68,7 +68,10 @@ pub enum SessionCommand {
     SendMessage {
         text: String,
         images: Vec<ContentBlock>,
-        /// `steer` (interrupt) or `followUp` (wait) when a turn is running.
+        /// `steer` (deliver at the next turn boundary) or `followUp` (deliver
+        /// once the run settles) when a turn is running. Both only enqueue:
+        /// pi-rs keeps the message in its own queue, so the call returns
+        /// immediately and the run keeps going.
         streaming_behavior: Option<String>,
         reply: oneshot::Sender<Result<(), String>>,
     },
@@ -90,6 +93,17 @@ pub enum SessionCommand {
     },
     Reload {
         reply: oneshot::Sender<Result<(), String>>,
+    },
+    /// Mirror the settings' queue modes into this live session.
+    ///
+    /// `steeringMode` / `followUpMode` live in settings.json and pi-rs only
+    /// reads them when a session is built (or on `reload()`), so without this
+    /// push the General-tab dropdowns would never reach a running session.
+    SyncQueueModes {
+        /// `"all"` or `"one-at-a-time"` (settings.json spelling).
+        steering: String,
+        follow_up: String,
+        reply: oneshot::Sender<()>,
     },
     SetName {
         name: String,
@@ -283,6 +297,15 @@ impl SessionActor {
             SessionCommand::Reload { reply } => {
                 self.session.reload().await;
                 let _ = reply.send(Ok(()));
+            }
+            SessionCommand::SyncQueueModes {
+                steering,
+                follow_up,
+                reply,
+            } => {
+                self.session.set_steering_mode(queue_mode(&steering)).await;
+                self.session.set_follow_up_mode(queue_mode(&follow_up)).await;
+                let _ = reply.send(());
             }
             SessionCommand::SetName { name, reply } => {
                 self.session.set_session_name(&name);
@@ -497,6 +520,10 @@ impl SessionActor {
         let app = self.app.clone();
         let store = Arc::clone(&self.store);
         let sid = self.session_id.clone();
+        // Kept for the rejection path below: a steer/follow-up that pi-rs
+        // refuses never entered a queue, so the frontend must drop that chip.
+        let queued_attempt = streaming_behavior.is_some();
+        let queued_text = text.clone();
 
         let turn = tokio::spawn(async move {
             // `add_user_text` is no longer public (v1.87); `prompt` is the
@@ -533,6 +560,26 @@ impl SessionActor {
             };
 
             if let Some(message) = failure.as_deref() {
+                // A steer / follow-up that pi-rs refused (e.g. a manual
+                // compaction is in flight) never joined the queue, but the run
+                // it meant to join is still going: report the rejection and
+                // leave that run alone. Aborting here would kill a turn the
+                // user never asked to stop.
+                if queued_attempt && session_after.is_streaming().await {
+                    write_line(
+                        "LLM",
+                        &format!("sid={sid} queue rejected: {message}"),
+                    );
+                    let _ = app.emit(
+                        super::events::AGENT_EVENT,
+                        FrontendEvent {
+                            event_type: "queue_error".into(),
+                            session_id: sid.clone(),
+                            data: json!({ "message": message, "text": queued_text }),
+                        },
+                    );
+                    return;
+                }
                 write_line("LLM", &format!("sid={sid} run failed: {message}"));
                 let _ = app.emit(
                     super::events::AGENT_EVENT,
@@ -560,6 +607,20 @@ impl SessionActor {
                     )
                     .await;
                 }
+            }
+
+            // A steered / follow-up prompt only enqueues the message and
+            // returns while the run it joined is still streaming. Treating
+            // that as "turn finished" would emit a transcript that replaces the
+            // in-flight view and flips the frontend's streaming flag, wiping the
+            // queued chips — the message would look like it was never held.
+            // The real turn's supervisor emits the transcript when it ends.
+            if failure.is_none() && session_after.is_streaming().await {
+                write_line(
+                    "LLM",
+                    &format!("sid={sid} message queued mid-run; transcript deferred"),
+                );
+                return;
             }
 
             // Emit the transcript so the frontend reflects the final state
@@ -630,6 +691,15 @@ impl SessionActor {
     }
 }
 
+/// `"all"` / `"one-at-a-time"` (settings.json spelling) → pi-rs `QueueMode`.
+/// Anything unrecognised keeps the pi-rs default.
+fn queue_mode(value: &str) -> QueueMode {
+    match value {
+        "all" => QueueMode::All,
+        _ => QueueMode::OneAtATime,
+    }
+}
+
 /// Best-effort text for a panic payload (`&str`, `String`, or nothing useful).
 fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     payload
@@ -651,5 +721,19 @@ async fn recycle_actor(store: Arc<Store>, app: AppHandle, sid: String, reason: &
     store.shutdown_actor(&sid).await;
     if let Err(error) = store.ensure_actor(&app, &sid).await {
         write_line("LLM", &format!("sid={sid} actor recycle failed: {error}"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn queue_mode_maps_the_settings_spelling() {
+        assert_eq!(queue_mode("all"), QueueMode::All);
+        assert_eq!(queue_mode("one-at-a-time"), QueueMode::OneAtATime);
+        // Anything unrecognised must keep pi-rs's own default.
+        assert_eq!(queue_mode(""), QueueMode::OneAtATime);
+        assert_eq!(queue_mode("nonsense"), QueueMode::OneAtATime);
     }
 }

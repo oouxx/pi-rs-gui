@@ -109,6 +109,9 @@ export interface AgentEventPayload {
     partial_result?: unknown;
     is_error?: boolean;
     will_retry?: boolean;
+    /** `queue_update`: pi-rs's authoritative steering / follow-up queues. */
+    steering?: string[];
+    follow_up?: string[];
     /** ToolCallDelta payload (non-streamed form). */
     [key: string]: unknown;
   };

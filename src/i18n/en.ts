@@ -132,6 +132,8 @@ const en = {
   "composer.modelNoImage": "Current model is text-only",
   "composer.modelNoImageHint":
     "It will ignore the attached image. Switch to a vision model to use it.",
+  "composer.queueFailed": "Message not queued",
+  "composer.queueFailedHint": "The running turn refused it: {message}",
   "composer.readAttachmentFailed": "Failed to read attachment",
   "composer.searchCommands": "Search commands",
   "composer.removeFile": "Remove file",

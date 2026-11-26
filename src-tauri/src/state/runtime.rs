@@ -360,6 +360,9 @@ impl Store {
 
         let handle = SessionActor::spawn(runtime, self.clone(), app.clone(), sid_holder);
         self.actors.insert(sid.clone(), handle).await;
+        // pi-rs always builds a session with `one-at-a-time` queue modes and
+        // only re-reads settings on reload, so apply the configured ones here.
+        self.push_queue_modes(&sid).await;
         Ok((sid, session_file))
     }
 

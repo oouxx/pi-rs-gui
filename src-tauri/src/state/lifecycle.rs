@@ -192,6 +192,39 @@ impl Store {
             .await?
     }
 
+    /// Push the settings' queue modes into one live actor.
+    ///
+    /// pi-rs builds a session with `QueueMode::OneAtATime` hard-coded and only
+    /// re-reads settings.json on `reload()`, so this is what makes the
+    /// General-tab steering / follow-up modes real.
+    pub async fn push_queue_modes(&self, session_id: &str) {
+        let (steering, follow_up) = super::settings::queue_modes();
+        let _ = self
+            .send_cmd(session_id, |reply| SessionCommand::SyncQueueModes {
+                steering,
+                follow_up,
+                reply,
+            })
+            .await;
+    }
+
+    /// Push the settings' queue modes into every live session (the setting
+    /// changed).
+    pub async fn sync_queue_modes(&self) {
+        let (steering, follow_up) = super::settings::queue_modes();
+        self.actors
+            .broadcast(|| {
+                // Nobody waits on a broadcast: the reply channel is dropped.
+                let (reply, _rx) = tokio::sync::oneshot::channel();
+                SessionCommand::SyncQueueModes {
+                    steering: steering.clone(),
+                    follow_up: follow_up.clone(),
+                    reply,
+                }
+            })
+            .await;
+    }
+
     /// Create a new session. The runtime (and therefore the real session id)
     /// is created first; the UI record is then inserted with that id, so there
     /// is no placeholder id to rewrite afterwards.

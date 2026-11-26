@@ -522,10 +522,16 @@ pub async fn get_general_settings() -> Result<serde_json::Value, AppError> {
 
 #[tauri::command]
 pub async fn set_general_setting(
+    store: State<'_, Arc<Store>>,
     key: String,
     value: serde_json::Value,
 ) -> Result<serde_json::Value, AppError> {
     settings::set_general_setting(&key, value)?;
+    // `steeringMode` / `followUpMode` only reach live sessions through this
+    // push: pi-rs reads them from settings.json when a session is built.
+    if key == "steeringMode" || key == "followUpMode" {
+        store.sync_queue_modes().await;
+    }
     Ok(settings::get_general_settings())
 }
 

@@ -19,6 +19,7 @@ import {
 import { tauriListen } from "../api/events";
 import { EVENTS } from "../api/eventNames";
 import { baseName } from "../lib/attachments";
+import { queuedFromQueueUpdate, removeQueuedChip } from "../lib/queue";
 import {
   isPermissionGranted,
   requestPermission,
@@ -28,6 +29,8 @@ import type { AgentEventPayload, TranscriptPayload } from "../api/types";
 import {
   appendAssistantStep,
   applyDeltaBatch,
+  applyToolExecution,
+  deliverQueuedUserMessage,
   extractText,
   replaceAssistantStep,
   toBlocks,
@@ -36,6 +39,7 @@ import {
   type StreamDelta,
 } from "../hooks/message-reducer";
 import { showToast } from "../components/ui/toast";
+import { t } from "../i18n";
 import { parseError } from "../lib/errors";
 import { toolResultPayload } from "../lib/tool-result";
 
@@ -258,24 +262,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     // Queue into the running turn. No optimistic user bubble: streaming deltas
     // only ever target the last assistant message, so a user message at the
-    // tail would swallow them.
+    // tail would swallow them. The chip is optimistic only for latency: pi-rs
+    // echoes its real queue back as `queue_update`, which replaces this list.
     if (wasStreaming && streamingBehavior) {
-      set((state) => ({
-        queued: [
-          ...state.queued,
-          {
-            text:
-              text.trim() ||
-              files?.map((file) => file.name).join(", ") ||
-              "(attachment)",
-            mode: streamingBehavior,
-          },
-        ],
-      }));
+      const chip: QueuedMessage = {
+        text:
+          text.trim() ||
+          files?.map((file) => file.name).join(", ") ||
+          "(attachment)",
+        mode: streamingBehavior,
+      };
+      set((state) => ({ queued: [...state.queued, chip] }));
       try {
         await submitComposer(payloadText, attachments, streamingBehavior, files);
       } catch (error) {
-        set((state) => ({ queued: state.queued.slice(0, -1) }));
+        // Drop only this chip: a `queue_update` may already have replaced the
+        // list, in which case the reference is gone and this is a no-op.
+        set((state) => ({ queued: state.queued.filter((q) => q !== chip) }));
         showToast({
           variant: "error",
           title: "Could not queue message",
@@ -365,11 +368,53 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (switchingRef) return;
     const et = evt.event_type;
 
+    if (et === "queue_update") {
+      // pi-rs owns the queue: mirror it rather than tracking what we sent.
+      // Chips now clear exactly when the agent drains a message (a turn
+      // boundary for steer, settle for follow-up) instead of whenever the
+      // frontend briefly thinks the run ended.
+      set({ queued: queuedFromQueueUpdate(evt.data) });
+      return;
+    }
+
+    if (et === "queue_error") {
+      // The running turn refused the message (e.g. a manual compaction is in
+      // flight): it never entered pi-rs's queue, so drop its chip and tell the
+      // user. The run itself keeps going — the backend does not abort it.
+      const text = typeof evt.data?.text === "string" ? evt.data.text : undefined;
+      const message = evt.data?.message ? String(evt.data.message) : "Unknown error";
+      set((state) => ({ queued: removeQueuedChip(state.queued, text) }));
+      showToast({
+        variant: "error",
+        title: t("composer.queueFailed"),
+        description: t("composer.queueFailedHint", { message }),
+      });
+      return;
+    }
+
     if (et === "message_start") {
-      // pi-rs also emits MessageStart for user prompts and tool results; only
-      // assistant messages become bubbles.
       const msg = evt.data?.message;
-      if (!msg || msg.role !== "assistant") return;
+      if (!msg) return;
+      // pi-rs also emits MessageStart for user prompts and tool results. A user
+      // message here is a queued steer/follow-up coming out of pi-rs's queue at
+      // the boundary where it is actually inserted — render it there (the
+      // caller's own prompt is skipped: it has an optimistic bubble and no
+      // chip).
+      if (msg.role !== "assistant") {
+        if (msg.role !== "user") return;
+        const rawBlocks = msg.content;
+        const text = extractText(rawBlocks);
+        set((state) => {
+          const delivered = deliverQueuedUserMessage(
+            state.messages,
+            state.queued,
+            text,
+            toBlocks(rawBlocks),
+          );
+          return delivered ?? {};
+        });
+        return;
+      }
       streamingRef = true;
       set({ streaming: true });
       const rawBlocks = msg.content;
@@ -450,73 +495,58 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     if (et === "tool_execution_start") {
       const { tool_call_id, tool_name } = evt.data;
-      set((state) => {
-        if (state.messages.length === 0) return state;
-        const last = state.messages[state.messages.length - 1];
-        if (last.role !== "assistant") return state;
-        const blocks = last.blocks.map((b) =>
-          b.type === "toolCall" && (b.id === tool_call_id || b.name === tool_name)
-            ? { ...b, status: "running" as const }
-            : b,
-        );
-        return {
-          messages: [...state.messages.slice(0, -1), { ...last, blocks }],
-        };
-      });
+      set((state) => ({
+        messages: applyToolExecution(state.messages, {
+          phase: "start",
+          id: tool_call_id,
+          name: tool_name,
+        }),
+      }));
       return;
     }
 
     if (et === "tool_execution_update") {
-      const { tool_call_id } = evt.data;
+      const { tool_call_id, tool_name } = evt.data;
       const partial = evt.data.partial_result;
-      const partialStr =
-        typeof partial === "string" ? partial : JSON.stringify(partial, null, 2);
-      set((state) => {
-        if (state.messages.length === 0) return state;
-        const last = state.messages[state.messages.length - 1];
-        if (last.role !== "assistant") return state;
-        const blocks = last.blocks.map((b) =>
-          b.type === "toolCall" && b.id === tool_call_id
-            ? { ...b, result: (b.result ?? "") + partialStr }
-            : b,
-        );
-        return {
-          messages: [...state.messages.slice(0, -1), { ...last, blocks }],
-        };
-      });
+      set((state) => ({
+        messages: applyToolExecution(state.messages, {
+          phase: "update",
+          id: tool_call_id,
+          name: tool_name,
+          appendResult:
+            typeof partial === "string"
+              ? partial
+              : JSON.stringify(partial, null, 2),
+        }),
+      }));
       return;
     }
 
     if (et === "tool_execution_end") {
-      const { tool_call_id, result, is_error } = evt.data;
+      const { tool_call_id, tool_name, result, is_error } = evt.data;
       const { text: resultStr, details, images } = toolResultPayload(result);
-      set((state) => {
-        if (state.messages.length === 0) return state;
-        const last = state.messages[state.messages.length - 1];
-        if (last.role !== "assistant") return state;
-        const blocks = last.blocks.map((b) =>
-          b.type === "toolCall" && b.id === tool_call_id
-            ? {
-                ...b,
-                status: is_error ? ("error" as const) : ("success" as const),
-                result: resultStr,
-                isError: !!is_error,
-                details,
-                // Images the tool returned (read on an image, screenshots, …).
-                ...(images.length > 0 ? { images } : {}),
-              }
-            : b,
-        );
-        return {
-          messages: [...state.messages.slice(0, -1), { ...last, blocks }],
-        };
-      });
+      set((state) => ({
+        messages: applyToolExecution(state.messages, {
+          phase: "end",
+          id: tool_call_id,
+          name: tool_name,
+          result: resultStr,
+          isError: !!is_error,
+          details,
+          images,
+        }),
+      }));
     }
   },
 
   applyTranscript(payload) {
     switchingRef = false;
     streamingRef = false;
+    // The replaced list has no relation to the streamed one: drop batched
+    // deltas (they carry pre-replace offsets and would write into the wrong
+    // blocks) and restart step accounting.
+    dropQueuedDeltas();
+    stepOffset = 0;
     const messages = payload ? transcriptToDisplay(payload.transcript) : [];
     // A failed turn's error bubble is not part of the agent transcript: the
     // `run_error` event adds it, and this transcript replace used to wipe it,
@@ -570,7 +600,9 @@ export function useChatSync() {
       if (state.activeSessionId !== prev.activeSessionId) {
         activeSessionIdRef = state.activeSessionId;
       }
-      // Pending steer/follow-up chips clear when the run ends.
+      // `queue_update` is the source of truth while a run is alive; this is
+      // only the fallback for a queue pi-rs never reported (e.g. it was
+      // dropped with the run before the final drain event arrived).
       if (prev.streaming && !state.streaming && state.queued.length > 0) {
         useChatStore.setState({ queued: [] });
       }

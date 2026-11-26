@@ -14,6 +14,23 @@ fn parse<T: DeserializeOwned>(value: &Value, key: &str) -> Result<T, String> {
     serde_json::from_value(value.clone()).map_err(|e| format!("invalid {key}: {e}"))
 }
 
+/// The steering / follow-up queue modes as settings.json spells them
+/// (`"all"` / `"one-at-a-time"`), for pushing into live sessions.
+pub fn queue_modes() -> (String, String) {
+    fn spell<T: serde::Serialize>(mode: &T) -> String {
+        serde_json::to_value(mode)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_string))
+            .unwrap_or_else(|| "one-at-a-time".to_string())
+    }
+    with_mgr(|mgr| {
+        (
+            spell(&mgr.get_steering_mode()),
+            spell(&mgr.get_follow_up_mode()),
+        )
+    })
+}
+
 fn with_mgr<F, R>(f: F) -> R
 where
     F: FnOnce(&mut SettingsManager) -> R,

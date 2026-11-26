@@ -11,6 +11,7 @@
 
 import type {
   AgentEventPayload,
+  QueuedMessage,
   RawContentBlock,
   TextBlockDto,
   ToolCallBlockDto,
@@ -261,6 +262,112 @@ export function appendAssistantStep(
 }
 
 /**
+ * True once a tool call carries a real provider id.
+ *
+ * `toolcall_start` may arrive before the id does and the reducer stamps a
+ * synthetic `tc-<index>`; such a block can only be found by name.
+ */
+function hasRealToolId(block: ContentBlock): boolean {
+  return (
+    typeof block.id === "string" &&
+    block.id.length > 0 &&
+    !block.id.startsWith("tc-")
+  );
+}
+
+function isFinishedTool(block: ContentBlock): boolean {
+  return block.status === "success" || block.status === "error";
+}
+
+/**
+ * Index of the tool-call block a `tool_execution_*` event belongs to.
+ *
+ * - The id is authoritative.
+ * - Otherwise match by **name**, but only against blocks that are still
+ *   unresolved and still carry a synthetic id. Matching finished same-name
+ *   blocks is what used to flip an earlier `edit` back to "Running" whenever
+ *   the next `edit` started, leaving its timer running forever.
+ */
+export function findToolBlockIndex(
+  blocks: readonly ContentBlock[],
+  id?: string,
+  name?: string,
+): number {
+  if (id) {
+    const byId = blocks.findIndex((b) => b.type === "toolCall" && b.id === id);
+    if (byId >= 0) return byId;
+  }
+  if (!name) return -1;
+  return blocks.findIndex(
+    (b) =>
+      b.type === "toolCall" &&
+      b.name === name &&
+      !isFinishedTool(b) &&
+      !hasRealToolId(b),
+  );
+}
+
+export interface ToolExecutionEvent {
+  /** `start` / `update` / `end` of one tool call. */
+  phase: "start" | "update" | "end";
+  id?: string;
+  name?: string;
+  /** `update`: raw partial result, already stringified by the caller. */
+  appendResult?: string;
+  /** `end`: final result text / error flag / details / inline images. */
+  result?: string;
+  isError?: boolean;
+  details?: unknown;
+  images?: ContentBlock[];
+}
+
+/**
+ * Apply a tool-execution event to the transcript.
+ *
+ * The block is located with {@link findToolBlockIndex} and, when it was found
+ * by name, gets the real id stamped on it — so the matching `end` (which may
+ * only know the id) cannot drift onto another block.
+ */
+export function applyToolExecution(
+  prev: DisplayMessage[],
+  event: ToolExecutionEvent,
+): DisplayMessage[] {
+  // The execution events always belong to the step that is currently open, so
+  // they target the newest assistant bubble. Scanning back (instead of
+  // insisting the tail is an assistant message) keeps a tool result from being
+  // dropped when a queued steer was just rendered after that bubble.
+  let at = prev.length - 1;
+  while (at >= 0 && prev[at].role !== "assistant") at -= 1;
+  if (at < 0) return prev;
+  const target = prev[at];
+  const index = findToolBlockIndex(target.blocks, event.id, event.name);
+  if (index < 0) return prev;
+  const block = target.blocks[index];
+  const next: ContentBlock = { ...block, id: event.id ?? block.id };
+  switch (event.phase) {
+    case "start":
+      next.status = "running";
+      break;
+    case "update":
+      next.result = (block.result ?? "") + (event.appendResult ?? "");
+      break;
+    case "end":
+      next.status = event.isError ? "error" : "success";
+      next.result = event.result ?? "";
+      next.isError = !!event.isError;
+      next.details = event.details;
+      // Images the tool returned (read on an image, screenshots, …).
+      if (event.images && event.images.length > 0) next.images = event.images;
+      break;
+  }
+  const blocks = [...target.blocks];
+  blocks[index] = next;
+  const messages = [...prev];
+  messages[at] = { ...target, blocks };
+  return messages;
+}
+
+/**
  * Replace the current assistant step's blocks with the authoritative snapshot
  * from `message_done` / `message_end` (self-healing after streaming deltas).
  * Both events carry the same payload shape, so they share this logic.
@@ -276,7 +383,25 @@ export function replaceAssistantStep(
   const last = prev[prev.length - 1];
   if (last.role !== "assistant") return prev;
   const merged = [...last.blocks];
-  merged.splice(offset, merged.length - offset, ...blocks);
+  // The snapshot only describes the model's output: keep whatever the tool
+  // execution events already learned about those calls, otherwise a late
+  // snapshot turns a finished card back into "Pending".
+  const carried = blocks.map((block, i) => {
+    const before = last.blocks[offset + i];
+    if (!before || before.type !== "toolCall" || block.type !== "toolCall") {
+      return block;
+    }
+    if (before.id !== block.id) return block;
+    return {
+      ...block,
+      status: before.status,
+      result: before.result,
+      isError: before.isError,
+      details: before.details,
+      images: before.images,
+    };
+  });
+  merged.splice(offset, merged.length - offset, ...carried);
   return [
     ...prev.slice(0, -1),
     {
@@ -287,6 +412,46 @@ export function replaceAssistantStep(
       interrupted: interrupted ?? last.interrupted,
     },
   ];
+}
+
+// ── Queued (steer / follow-up) delivery ─────────────────────
+
+/**
+ * A user message pi-rs just inserted into the context.
+ *
+ * The GUI only forwards `streamingBehavior`; pi-rs holds the text in its own
+ * queue and emits `MessageStart` for it when it is actually inserted (a turn
+ * boundary for steer, settle for follow-up). Rendering it here is what makes a
+ * delivered steer visible *at the point it landed* instead of only after the
+ * whole run's transcript refresh.
+ *
+ * Returns `null` for the caller's own prompt (`MessageStart` is emitted for it
+ * too; it already has an optimistic bubble) — the queued chips are the only
+ * signal that this message came out of the queue.
+ */
+export function deliverQueuedUserMessage(
+  prev: DisplayMessage[],
+  queued: readonly QueuedMessage[],
+  text: string,
+  blocks: ContentBlock[],
+): { messages: DisplayMessage[]; queued: QueuedMessage[] } | null {
+  if (queued.length === 0 || !text.trim()) return null;
+  // Exact match first (the common case: steer text is queued verbatim), then
+  // fall back to the oldest chip — pi-rs drains in queue order, and prepared
+  // prompts (attachments, skill/template expansion) differ from what was typed.
+  const exact = queued.findIndex((item) => item.text === text);
+  const index = exact >= 0 ? exact : 0;
+  const message: DisplayMessage = {
+    id: `msg-queued-${Date.now()}`,
+    role: "user",
+    content: text,
+    blocks,
+    createdAt: new Date().toISOString(),
+  };
+  return {
+    messages: [...prev, message],
+    queued: queued.filter((_, i) => i !== index),
+  };
 }
 
 // ── Transcript reload ────────────────────────────────────────

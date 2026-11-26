@@ -132,6 +132,8 @@ const zh: Record<TranslationKey, string> = {
   "composer.imageLimitHint": "最多只能附加 {count} 张图片",
   "composer.modelNoImage": "当前模型不支持图片",
   "composer.modelNoImageHint": "模型会忽略附加的图片，切换到视觉模型即可使用。",
+  "composer.queueFailed": "消息未能排队",
+  "composer.queueFailedHint": "正在跑的这一轮拒绝了它：{message}",
   "composer.readAttachmentFailed": "读取附件失败",
   "composer.searchCommands": "搜索命令",
   "composer.removeFile": "移除文件",
